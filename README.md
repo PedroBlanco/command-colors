@@ -34,3 +34,13 @@ Diagramas PlantUML en diagrams/ y escenario de ejemplo **sintético** en scenari
 No incluir imágenes, cartas, mapas, PDF o transcripciones de materiales originales sin permiso aplicable. El uso no comercial y la posesión de juegos físicos no conceden por sí solos una licencia de redistribución. Proyecto independiente, no afiliado a GMT Games.
 
 La rama principal se modifica tras revisión mediante PR. Las pruebas deben poder ejecutarse localmente; no introducir dependencias de GitHub Actions hasta justificarlas.
+
+## Pasarela API experimental (CCW-009)
+
+El módulo [packages/local-api/gateway.mjs](packages/local-api/gateway.mjs) define endpoints HTTP para sesiones, partidas, invitaciones y comandos usando servicios **inyectados**, con ocho pruebas locales. No existe todavía un lanzador operativo ni integración real de los módulos de las PR #28 y #29. [Contrato y límites](docs/13-pasarela-api-local.md).
+
+```powershell
+node --test packages/local-api/gateway.test.mjs
+```
+
+**Solo pruebas en 127.0.0.1.** No desplegar la pasarela ni utilizar contraseñas reales.
