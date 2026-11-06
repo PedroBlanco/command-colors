@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Command & Colors — laboratorio local</title>
+<style>
+:root{color-scheme:light;font:16px system-ui,sans-serif;background:#ecf1f0;color:#263840}
+body{max-width:1050px;margin:0 auto;padding:16px}
+header{border-bottom:2px solid #53756e;margin-bottom:12px} h1{font-size:1.45rem} h2{font-size:1.12rem;margin-top:0}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:12px}
+section{background:#fff;border:1px solid #cbd8d3;border-radius:10px;padding:16px;min-width:0}
+label{display:block;margin:10px 0} input{display:block;width:100%;min-height:42px;box-sizing:border-box;border:1px solid #a4b5b0;border-radius:6px;padding:8px;font:inherit}
+button{font:inherit;border:1px solid #547b73;background:#eaf3ef;border-radius:7px;padding:10px;margin:4px 4px 4px 0;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}button:focus-visible,input:focus-visible{outline:3px solid #bd8b29}
+code{overflow-wrap:anywhere}.notice{padding:12px;background:#fff0cb;border-radius:7px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius:7px;padding:9px;min-height:45px}
+#current{font-weight:700}#message{min-height:2em}
+</style></head>
+<body>
+<header><h1>Command & Colors Web — laboratorio</h1><p>Sesiones de navegador y partidas sintéticas. No hay reglas oficiales ni juego completo.</p></header>
+<p class="notice"><strong>Solo en este ordenador.</strong> Las cuentas son ficticias; no introduzcas contraseñas ni datos personales reales. La prueba HTTP local no equivale a una instalación segura en Internet.</p>
+<p id="message" role="status" aria-live="polite"></p>
+<main>
+<section><h2>Acceso</h2><form id="login-form"><label>Usuario<input id="handle" required autocomplete="username" placeholder="alice"></label><label>Contraseña de prueba<input id="password" type="password" required autocomplete="current-password"></label><button>Entrar</button></form><p id="current">Sin sesión</p><button id="logout">Cerrar sesión</button></section>
+<section><h2>Partida privada</h2><button id="create">Crear partida</button><label>Identificador de partida<input id="match-id" spellcheck="false"></label><button id="refresh">Consultar partida</button><pre id="lobby">Sin partida cargada</pre></section>
+<section><h2>Invitaciones</h2><label>Usuario al que invitar<input id="invitee" placeholder="bob"></label><button id="invite">Emitir invitación</button><p><strong>Token de invitación (copia y comparte solo con el destinatario):</strong></p><pre id="invite-token">—</pre><label>Token recibido<input id="received" spellcheck="false"></label><button id="accept">Aceptar</button><button id="reject">Rechazar</button></section>
+<section><h2>Estado privado</h2><button id="turn">Finalizar turno ficticio</button><button id="events">Consultar eventos públicos</button><pre id="state">Sin partida activa</pre></section>
+</main>
+<script type="module" src="/browser-ui.mjs"></script>
+</body></html>
