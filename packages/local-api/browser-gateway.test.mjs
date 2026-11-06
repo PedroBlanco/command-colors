@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:net';
+import {request as httpRequest} from 'node:http';
 import {once} from 'node:events';
 import {createAccessGateway} from './gateway.mjs';
 
@@ -132,3 +133,20 @@ test('legacy bearer gateway remains independent of browser-cookie mode',async()=
     assert.equal(result.status,201);
   }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
+
+test('HTTP rejects forged Host and Host-port even for health and HTML',()=>harness(async({call,origin})=>{
+  const localHost=new URL(origin).host;
+  assert.equal((await call('GET','/health',{headers:{host:localHost}})).status,200);
+  // Node fetch() deliberately ignores a supplied Host header, so use node:http.
+  const forged = (path, host) => new Promise((resolve, reject) => {
+    const url = new URL(path,origin);
+    const req = httpRequest(url,{headers:{Host:host}}, res => {
+      res.resume(); res.once('end',()=>resolve(res.statusCode));
+    });
+    req.once('error',reject);req.end();
+  });
+  for(const badHost of ['evil.example','localhost:8788','127.0.0.1:65500']) {
+    assert.equal(await forged('/',badHost),403);
+    assert.equal(await forged('/health',badHost),403);
+  }
+}));
