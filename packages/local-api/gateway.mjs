@@ -114,6 +114,7 @@ export function createAccessGateway({identity, invitations, getStore} = {}) {
       if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
       if (req.method === 'GET' && resource === 'events') {
         const store = await getStore(matchId);
+        if (store.view(actor)?.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         const events = store.publicEvents(actor);
         return reply(res, 200, {events: events ?? []});
       }
@@ -121,6 +122,7 @@ export function createAccessGateway({identity, invitations, getStore} = {}) {
         const body = await jsonRequest(req);
         // NEVER trust the actor field supplied by a client.
         const store = await getStore(matchId);
+        if (store.view(actor)?.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         const result = await store.dispatch({actor, type: body.type,
           expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey});
         // The adapter must not accidentally project another match's state.
