@@ -25,6 +25,7 @@ Aplicación web no comercial de juegos por turnos para **dos jugadores humanos**
 - [Fuentes y derechos](docs/07-fuentes-y-derechos.md)
 - [Decisiones pendientes](docs/08-decisiones-pendientes.md)
 - [Backlog de tareas](backlog.csv)
+- [Maqueta HTML de tablero](prototipo/tablero.html) — abrir localmente en el navegador; interactiva, **sin reglas ni servidor**
 
 Diagramas PlantUML en diagrams/ y escenario de ejemplo **sintético** en scenarios/.
 
