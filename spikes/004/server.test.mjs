@@ -53,3 +53,21 @@ test('SSE: publicar solo revisión (no contenidos privados)', () => {
  unsubscribe();
  assert.deepEqual(notifications,[1]);
 });
+
+
+test('SSE real por HTTP: eventos sin cartas privadas', async () => {
+ const server=createApp();server.listen(0,'127.0.0.1');await once(server,'listening');
+ const root=`http://127.0.0.1:${server.address().port}`,ac=new AbortController();
+ try {
+  const stream=await fetch(root+'/api/events',{headers:{'x-demo-player':'B'},signal:ac.signal});
+  assert.equal(stream.status,200);
+  assert.match(stream.headers.get('content-type'),/text\/event-stream/);
+  const reader=stream.body.getReader(),decoder=new TextDecoder();
+  const start=decoder.decode((await reader.read()).value);
+  assert.match(start,/"revision":0/);assert.equal(start.includes('ONLY_'),false);
+  const result=await fetch(root+'/api/command',{method:'POST',headers:{'content-type':'application/json','x-demo-player':'A'},body:JSON.stringify({type:'end_demo_turn',expectedRevision:0,idempotencyKey:'sse-http-command'})});
+  assert.equal(result.status,200);
+  const notified=decoder.decode((await reader.read()).value);
+  assert.match(notified,/"revision":1/);assert.equal(notified.includes('ONLY_'),false);
+ }finally{ac.abort();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
