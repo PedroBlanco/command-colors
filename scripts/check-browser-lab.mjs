@@ -13,7 +13,8 @@ const tests = [
   'packages/sqlite-store/lifecycle.test.mjs', 'packages/local-api/browser-session.test.mjs',
   'packages/local-api/browser-gateway.test.mjs',
   'packages/local-api/browser-sqlite-smoke.test.mjs',
-  'scripts/check-browser-lab.test.mjs'
+  'scripts/check-browser-lab.test.mjs',
+  'scripts/browser-lab.launcher.test.mjs'
 ];
 
 function nodeSupported() {
