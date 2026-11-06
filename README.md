@@ -85,3 +85,17 @@ node scripts/browser-lab.mjs
 El primer arranque crea cuentas de prueba `alice` y `bob` con contraseñas aleatorias (mostradas una sola vez). Abrir `http://127.0.0.1:8788` en **dos perfiles de navegador diferentes** (normal/privado); las pestañas del mismo perfil comparten sesión. Consultar la [guía de uso y seguridad](docs/17-sesiones-navegador-laboratorio.md).
 
 Esta interfaz mínima **no sustituye** a la del tablero SVG de la PR #27, pendiente de validación. No incorpora reglas de movimiento ni datos oficiales.
+
+## Primera validación guiada (laboratorio I2)
+
+La rama `test/i2-first-validation` contiene la [guía de aceptación](docs/18-guia-primera-validacion.md), un diagnóstico **de solo lectura** y una nueva prueba HTTP de dos usuarios contra SQLite real.
+
+En Windows 11, con Node.js 22.16.0 o posterior compatible:
+
+```powershell
+node scripts/check-browser-lab.mjs
+.\scripts\test-local.ps1
+node scripts/browser-lab.mjs
+```
+
+El diagnóstico no modifica la base ni crea cuentas. El servidor experimental solo escucha en `127.0.0.1:8788`. La [PR #27 del tablero](https://github.com/PedroBlanco/command-colors/pull/27) se comprueba **por separado**. La aplicación todavía no implementa las reglas de Ancients, ni está preparada para Internet.
