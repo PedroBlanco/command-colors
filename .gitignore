@@ -6,3 +6,13 @@
 *.sqlite3-wal
 *.sqlite3-shm
 .local-data/
+
+# Manifiestos y ficheros temporales de la utilidad de backup local
+*.sqlite.manifest.json
+*.sqlite3.manifest.json
+*.partial
+*.partial-shm
+*.partial-wal
+*.restore-partial
+*.restore-partial-shm
+*.restore-partial-wal
