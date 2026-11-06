@@ -1,0 +1,47 @@
+{
+  "id": "test-synthetic-001",
+  "game": "ancients",
+  "kind": "synthetic-test-only",
+  "title": "Escenario sintético para pruebas — NO OFICIAL",
+  "rulesetVersion": "draft-0.1",
+  "board": {
+    "columns": 13,
+    "rows": 9
+  },
+  "players": [
+    {
+      "side": "A",
+      "handSize": 4
+    },
+    {
+      "side": "B",
+      "handSize": 4
+    }
+  ],
+  "units": [
+    {
+      "id": "u-a-1",
+      "side": "A",
+      "kind": "test-infantry",
+      "hex": {
+        "col": 3,
+        "row": 4
+      }
+    },
+    {
+      "id": "u-b-1",
+      "side": "B",
+      "kind": "test-infantry",
+      "hex": {
+        "col": 8,
+        "row": 4
+      }
+    }
+  ],
+  "terrain": [],
+  "victory": {
+    "kind": "test-only",
+    "banners": 1
+  },
+  "warning": "No contiene reglas ni despliegues oficiales. No es jugable con el motor porque aún no existe."
+}

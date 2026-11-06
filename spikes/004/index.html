@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Command & Colors Web — experimento de revisión</title>
+<style>
+body{font:16px system-ui;background:#eff3f0;margin:1rem auto;max-width:800px;padding:0 1rem;color:#273647}
+main{background:white;padding:1rem;border-radius:12px}button,select{font:inherit;padding:.65rem;border:1px solid #aaa;border-radius:7px}
+pre{background:#f2f4f7;padding:1rem;white-space:pre-wrap;overflow-wrap:anywhere}small{color:#625b47}
+</style>
+<main><h1>Experimento multijugador (sin reglamento)</h1>
+<p>Abre dos pestañas: selecciona el jugador A en una y B en otra. Las identidades de demostración <strong>no son autenticación</strong>.</p>
+<label>Identidad ficticia <select id="player"><option>A</option><option>B</option></select></label>
+<button id="refresh">Actualizar vista</button><button id="turn">Finalizar turno ficticio</button>
+<h2>Tu vista privada</h2><pre id="state">Cargando...</pre><p id="message" aria-live="polite"></p>
+<small>¡No exponer este servidor en red! Solo 127.0.0.1. No hay base de datos, sesiones, reglas de movimiento ni privacidad segura frente a usuarios reales.</small>
+</main>
+<script>
+const player=document.querySelector('#player'),state=document.querySelector('#state'),message=document.querySelector('#message');
+let revision=0,subscription;
+async function refresh(){
+ const r=await fetch('/api/state',{headers:{'x-demo-player':player.value}}),data=await r.json();
+ revision=data.revision;state.textContent=JSON.stringify(data,null,2);
+}
+async function connect(){
+ if(subscription)subscription.abort();
+ const controller=new AbortController();subscription=controller;
+ await refresh();
+ try {
+  const r=await fetch('/api/events',{headers:{'x-demo-player':player.value},signal:controller.signal});
+  if(!r.ok||!r.body)throw Error('SSE no disponible');
+  const reader=r.body.getReader(),decoder=new TextDecoder();let buffer='';
+  while(true){
+   const {done,value}=await reader.read();if(done)break;
+   buffer+=decoder.decode(value,{stream:true});
+   let end;while((end=buffer.indexOf('\n\n'))>=0){
+    const packet=buffer.slice(0,end);buffer=buffer.slice(end+2);
+    const data=packet.split('\n').find(line=>line.startsWith('data: '));
+    if(data){const evt=JSON.parse(data.slice(6));if(evt.revision!==revision)await refresh();}
+   }
+  }
+ }catch(e){if(!controller.signal.aborted)message.textContent='Conexión de avisos interrumpida; se puede actualizar manualmente';}
+}
+player.addEventListener('change',connect);document.querySelector('#refresh').onclick=refresh;
+document.querySelector('#turn').onclick=async()=>{
+ const key=globalThis.crypto?.randomUUID?.().replaceAll('-','')||String(Date.now())+'abc12345';
+ const r=await fetch('/api/command',{method:'POST',headers:{'x-demo-player':player.value,'content-type':'application/json'},body:JSON.stringify({type:'end_demo_turn',expectedRevision:revision,idempotencyKey:key})});
+ const result=await r.json();message.textContent=`HTTP ${r.status} · ${result.code}`;await refresh();
+};
+connect();
+</script>
+</html>

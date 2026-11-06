@@ -1,0 +1,18 @@
+@startuml
+title Estados generales de partida
+[*] --> INVITED
+INVITED --> READY : invitación aceptada
+INVITED --> CANCELLED : rechazo/caducidad
+READY --> ACTIVE : inicio
+ACTIVE --> FINISHED : victoria/rendición válida
+ACTIVE --> SUSPENDED : suspensión administrativa
+SUSPENDED --> ACTIVE : reactivación
+ACTIVE --> CANCELLED : cierre justificado
+FINISHED --> [*]
+CANCELLED --> [*]
+note right of ACTIVE
+Desconexión ≠ suspensión.
+Un defensor puede actuar sin
+ser propietario del turno.
+end note
+@enduml

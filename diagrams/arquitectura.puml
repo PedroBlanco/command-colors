@@ -1,0 +1,24 @@
+@startuml
+title Command & Colors Web — arquitectura propuesta
+skinparam componentStyle rectangle
+actor "Jugador A" as A
+actor "Jugador B" as B
+component "Navegador A" as CA
+component "Navegador B" as CB
+component "API / sesiones / permisos" as API
+component "Proyector de vistas privadas" as VP
+component "Motor de reglas puro" as CORE
+component "Ruleset Ancients" as ANC
+component "Ruleset Napoleonics" as NAP
+database "Estados + eventos + revisiones" as DB
+A --> CA
+B --> CB
+CA --> API : HTTPS + SSE
+CB --> API : HTTPS + SSE
+API --> VP
+API --> CORE
+CORE --> ANC
+CORE --> NAP
+API --> DB
+VP --> DB
+@enduml
