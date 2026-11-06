@@ -2,7 +2,7 @@
 
 Aplicación web no comercial de juegos por turnos para **dos jugadores humanos**. Primero *Command & Colors: Ancients* básico; después *Napoleonics* básico y ampliaciones.
 
-**Estado:** iteración 0, definición y diseño. No existe todavía un motor de reglas, servidor, ni partida multijugador.
+**Estado:** desarrollo experimental. Hay prototipos locales de tablero, comunicaciones HTTP y almacenamiento; **no existe todavía un juego funcional, un servicio seguro para usuarios reales ni un motor de reglas completo**.
 
 ## Decisiones confirmadas
 
