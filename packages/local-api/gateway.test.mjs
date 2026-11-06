@@ -31,7 +31,7 @@ function fixture() {
   };
   const hands={A:['SECRET_A'],B:['SECRET_B_1','SECRET_B_2']};
   const store={
-    view:actor=>({you:actor,revision,turn,board:[],yourHand:[...hands[actor]],opponentCardCount:hands[actor==='A'?'B':'A'].length}),
+    view:actor=>({matchId:MATCH,you:actor,revision,turn,board:[],yourHand:[...hands[actor]],opponentCardCount:hands[actor==='A'?'B':'A'].length}),
     publicEvents:()=>[{type:'SYNTHETIC',revision}],
     dispatch:async action=>{
       called.push(action);
