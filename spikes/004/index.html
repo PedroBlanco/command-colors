@@ -1,50 +1,67 @@
 <!doctype html>
-<html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Command & Colors Web — experimento de revisión</title>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Command & Colors Web — tablero experimental</title>
 <style>
-body{font:16px system-ui;background:#eff3f0;margin:1rem auto;max-width:800px;padding:0 1rem;color:#273647}
-main{background:white;padding:1rem;border-radius:12px}button,select{font:inherit;padding:.65rem;border:1px solid #aaa;border-radius:7px}
-pre{background:#f2f4f7;padding:1rem;white-space:pre-wrap;overflow-wrap:anywhere}small{color:#625b47}
+:root { font-family:system-ui,-apple-system,"Segoe UI",sans-serif; color:#23343e; background:#edf1ee; }
+* { box-sizing:border-box; }
+body { margin:0; }
+header { background:#263c4b; color:white; padding:14px max(14px,calc((100vw - 1200px)/2)); }
+header strong { display:block; font-size:1.18rem; letter-spacing:.04em; }
+header small { color:#d6e1e3; }
+main { max-width:1200px; margin:auto; padding:14px; display:grid; grid-template-columns:minmax(0,3fr) minmax(225px,1fr); gap:14px; }
+.panel { background:#fff; border:1px solid #d0dbd6; border-radius:12px; padding:14px; min-width:0; }
+h1 { font-size:1.25rem; margin:0 0 8px; } h2 { font-size:1rem; margin:0 0 8px; }
+p { line-height:1.5; margin:8px 0; } small,.hint { color:#4d6166; }
+.toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; }
+.actions { display:flex; flex-wrap:wrap; gap:7px; }
+button,select { background:white; color:#223845; border:1px solid #8ca6aa; border-radius:7px; min-height:42px; padding:8px 10px; font:inherit; }
+button:disabled { opacity:.45; cursor:not-allowed; }
+button:not(:disabled),select { cursor:pointer; }
+button:focus-visible,select:focus-visible,.hex-target:focus-visible { outline:3px solid #e2a831; outline-offset:2px; }
+#viewport { height:min(66vh,600px); min-height:330px; overflow:hidden; background:#e7e8dc; border:1px solid #b6c9bc; border-radius:9px; margin-top:12px; touch-action:none; cursor:grab; }
+#viewport.dragging { cursor:grabbing; }
+#board { width:100%; height:100%; display:block; user-select:none; }
+.hex-shape { fill:#ecede3; stroke:#93a89c; stroke-width:1.3; }
+.hex-target:nth-child(even) .hex-shape { fill:#e0e8df; }
+.hex-target:hover .hex-shape,.hex-target:focus .hex-shape { fill:#f8ebc2; }
+.hex-target.selected .hex-shape { fill:#ffdc87; stroke:#b57a20; stroke-width:3.5; }
+.token rect { stroke:white; stroke-width:2; } .token text { fill:white; font-size:13px; font-weight:700; }
+aside { display:grid; align-content:start; gap:14px; }
+.hand { display:flex; flex-wrap:wrap; gap:7px; padding:0; list-style:none; }
+.hand li { padding:10px 9px; border-radius:7px; border:1px solid #aec2c8; background:#e9f1f3; font-size:.85rem; }
+#selected { display:block; background:#f0f4f2; padding:9px; border-radius:8px; min-height:42px; }
+.warning { background:#fff4d8; border-color:#dfca8c; font-size:.88rem; }
+#message { min-height:1.5rem; } #connection { font-size:.9rem; }
+@media (max-width:780px) { main { grid-template-columns:1fr; padding:8px; gap:8px; } #viewport { height:45vh; min-height:315px; } .panel { padding:10px; } }
 </style>
-<main><h1>Experimento multijugador (sin reglamento)</h1>
-<p>Abre dos pestañas: selecciona el jugador A en una y B en otra. Las identidades de demostración <strong>no son autenticación</strong>.</p>
-<label>Identidad ficticia <select id="player"><option>A</option><option>B</option></select></label>
-<button id="refresh">Actualizar vista</button><button id="turn">Finalizar turno ficticio</button>
-<h2>Tu vista privada</h2><pre id="state">Cargando...</pre><p id="message" aria-live="polite"></p>
-<small>¡No exponer este servidor en red! Solo 127.0.0.1. No hay base de datos, sesiones, reglas de movimiento ni privacidad segura frente a usuarios reales.</small>
+</head>
+<body>
+<header><strong>COMMAND & COLORS WEB</strong><small>Iteración 1 · Tablero y sincronización de demostración</small></header>
+<main>
+<section class="panel" aria-label="Tablero de prueba">
+<div class="toolbar">
+<div><h1>Tablero hexagonal — 13 × 9</h1><small>Selecciona un hexágono, arrastra para desplazarte o utiliza el zoom.</small></div>
+<div class="actions"><button id="zoom-in" title="Acercar">Acercar +</button><button id="zoom-out" title="Alejar">Alejar −</button><button id="reset">Centrar</button></div>
+</div>
+<div id="viewport"><svg id="board" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Tablero táctico ficticio"></svg></div>
+<p id="zoom" class="hint">Zoom: 100 %</p>
+<p id="selected" aria-live="polite">Selecciona un hexágono para inspeccionarlo.</p>
+</section>
+<aside>
+<div class="panel">
+<h2>Jugador e información pública</h2>
+<label for="player">Identidad de demostración:</label> <select id="player"><option value="A">A</option><option value="B">B</option></select>
+<p><strong id="turn">Turno: —</strong></p><p id="opponent">Cartas del contrario: —</p><p id="connection" role="status" aria-live="polite">Conectando…</p>
+<div class="actions"><button id="refresh">Actualizar</button><button id="end-turn" disabled>Finalizar turno ficticio</button></div>
+<p id="message" aria-live="polite"></p>
+</div>
+<div class="panel"><h2>Tu mano (ficticia)</h2><ul id="hand" class="hand"><li>Cargando…</li></ul></div>
+<div class="panel warning"><strong>No es una partida jugable.</strong><p>Identidades A/B simuladas, sin autenticación; unidades y cartas ficticias; servidor en memoria, sin reglamento ni persistencia. No exponer a Internet ni a redes no confiables.</p></div>
+</aside>
 </main>
-<script>
-const player=document.querySelector('#player'),state=document.querySelector('#state'),message=document.querySelector('#message');
-let revision=0,subscription;
-async function refresh(){
- const r=await fetch('/api/state',{headers:{'x-demo-player':player.value}}),data=await r.json();
- revision=data.revision;state.textContent=JSON.stringify(data,null,2);
-}
-async function connect(){
- if(subscription)subscription.abort();
- const controller=new AbortController();subscription=controller;
- await refresh();
- try {
-  const r=await fetch('/api/events',{headers:{'x-demo-player':player.value},signal:controller.signal});
-  if(!r.ok||!r.body)throw Error('SSE no disponible');
-  const reader=r.body.getReader(),decoder=new TextDecoder();let buffer='';
-  while(true){
-   const {done,value}=await reader.read();if(done)break;
-   buffer+=decoder.decode(value,{stream:true});
-   let end;while((end=buffer.indexOf('\n\n'))>=0){
-    const packet=buffer.slice(0,end);buffer=buffer.slice(end+2);
-    const data=packet.split('\n').find(line=>line.startsWith('data: '));
-    if(data){const evt=JSON.parse(data.slice(6));if(evt.revision!==revision)await refresh();}
-   }
-  }
- }catch(e){if(!controller.signal.aborted)message.textContent='Conexión de avisos interrumpida; se puede actualizar manualmente';}
-}
-player.addEventListener('change',connect);document.querySelector('#refresh').onclick=refresh;
-document.querySelector('#turn').onclick=async()=>{
- const key=globalThis.crypto?.randomUUID?.().replaceAll('-','')||String(Date.now())+'abc12345';
- const r=await fetch('/api/command',{method:'POST',headers:{'x-demo-player':player.value,'content-type':'application/json'},body:JSON.stringify({type:'end_demo_turn',expectedRevision:revision,idempotencyKey:key})});
- const result=await r.json();message.textContent=`HTTP ${r.status} · ${result.code}`;await refresh();
-};
-connect();
-</script>
+<script type="module" src="/spikes/004/board-client.mjs"></script>
+</body>
 </html>
