@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Command & Colors Web — maqueta sin reglas</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#1b2c37;background:#edf1ef}
+*{box-sizing:border-box}body{margin:0}header{background:#203748;color:#fff;padding:14px 18px}
+header strong{font-size:19px}header small{display:block;color:#cadada}
+main{max-width:1200px;margin:auto;padding:14px;display:grid;grid-template-columns:minmax(0,3fr) minmax(250px,1fr);gap:14px}
+section,aside>div{background:white;border:1px solid #cbd5d2;border-radius:12px;padding:12px}
+h1,h2{margin:0 0 8px}h1{font-size:18px}h2{font-size:15px}
+p{font-size:13px;color:#52626c;line-height:1.5}
+.controls{display:flex;gap:7px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+button{background:white;border:1px solid #abbdb7;border-radius:8px;padding:8px 12px;min-height:40px;cursor:pointer;font:inherit}
+button:focus-visible,[tabindex]:focus-visible{outline:3px solid #e6a93b;outline-offset:2px}
+#frame{margin-top:10px;background:#e5e6d7;border:1px solid #bccabf;height:min(64vh,620px);min-height:340px;touch-action:none;overflow:hidden;cursor:grab}
+#frame.dragging{cursor:grabbing}
+svg{width:100%;height:100%;display:block}
+.hex{fill:#e3e9df;stroke:#9bac9f;stroke-width:1.2;cursor:pointer}
+.hex:nth-child(odd){fill:#edf0e3}.hex.selected{stroke:#ac7304;stroke-width:4;fill:#ffe7a2}
+.unit{pointer-events:none}.unit rect{stroke:#fff;stroke-width:1.5}.unit text{fill:#fff;font:bold 13px system-ui;text-anchor:middle}
+aside{display:flex;flex-direction:column;gap:12px}
+.card{display:inline-block;margin:4px;padding:8px 12px;background:#eef5f4;border-radius:8px;border:1px solid #b1cdca;font-size:13px}
+.notice{background:#fff6df;border:1px solid #ead59c;padding:10px;border-radius:8px}
+output{display:block;background:#f0f4f3;border-radius:8px;padding:10px;font-size:14px;min-height:58px}
+@media(max-width:850px){main{grid-template-columns:1fr;padding:8px}#frame{height:48vh;min-height:325px}}
+</style>
+</head>
+<body>
+<header><strong>COMMAND & COLORS WEB</strong><small>Prototipo visual · Iteración 0 · No es un juego funcional</small></header>
+<main>
+<section>
+<div class="controls">
+<div><h1>Tablero de prueba — 13 × 9</h1><p>Selecciona un hexágono, arrastra el tablero o usa el zoom.</p></div>
+<div><button id="out" aria-label="Alejar">−</button> <button id="in" aria-label="Acercar">+</button> <button id="reset">Centrar</button></div>
+</div>
+<div id="frame"><svg id="board" role="img" aria-label="Tablero hexagonal sintético interactivo" viewBox="0 0 570 460" xmlns="http://www.w3.org/2000/svg"><g id="cells"></g><g id="pieces"></g></svg></div>
+<p id="zoom">Zoom: 100 %</p>
+</section>
+<aside>
+<div><h2>Vista de jugador (simulada)</h2><p>Tu turno: espera de carta. Rival: cuatro cartas, sin mostrar su contenido.</p></div>
+<div><h2>Mano ficticia</h2><span class="card">Carta A</span><span class="card">Carta B</span><span class="card">Carta C</span></div>
+<div><h2>Inspección</h2><output id="selected" aria-live="polite">Selecciona un hexágono.</output></div>
+<div class="notice">Esta maqueta utiliza unidades, cartas y posiciones ficticias. No hay reglas validadas, autenticación, servidor, persistencia ni escenarios oficiales. Los sectores se implementarán tras comprobar su definición normativa.</div>
+</aside>
+</main>
+<script>
+(function(){
+"use strict";
+var ns="http://www.w3.org/2000/svg",svg=document.getElementById("board"),
+    cells=document.getElementById("cells"),pieces=document.getElementById("pieces"),
+    selected=document.getElementById("selected"),frame=document.getElementById("frame"),R=25;
+var pos=function(c,r){return [42+1.5*R*c,42+Math.sqrt(3)*R*(r+(c%2)/2)];};
+var node=function(t,attrs,parent){var el=document.createElementNS(ns,t);Object.keys(attrs).forEach(function(k){el.setAttribute(k,attrs[k]);});parent.appendChild(el);return el;};
+var units=[{c:3,r:2,t:"A",side:"Norte"},{c:7,r:2,t:"B",side:"Norte"},{c:5,r:6,t:"C",side:"Sur"},{c:9,r:6,t:"D",side:"Sur"}];
+var byCell=new Map(units.map(function(u){return [u.c+","+u.r,u];})),last=null,hexes=new Map();
+for(var c=0;c<13;c++){for(var r=0;r<9;r++){
+  var pt=pos(c,r),poly=[];
+  for(var k=0;k<6;k++){var a=k*Math.PI/3;poly.push((pt[0]+R*Math.cos(a)).toFixed(2)+","+(pt[1]+R*Math.sin(a)).toFixed(2));}
+  var key=c+","+r,h=node("polygon",{points:poly.join(" "),class:"hex",tabindex:"0",role:"button","aria-label":"Columna "+(c+1)+", fila "+(r+1)},cells);
+  hexes.set(key,h);
+  (function(col,row,hex){var choose=function(){if(last){last.classList.remove("selected");}last=hex;hex.classList.add("selected");var u=byCell.get(col+","+row);selected.textContent="Columna "+(col+1)+", fila "+(row+1)+(u?" · Unidad ficticia "+u.t+" ("+u.side+")":" · Vacío");};hex.addEventListener("click",choose);hex.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();choose();}});})(c,r,h);
+}}
+units.forEach(function(u){var p=pos(u.c,u.r),g=node("g",{class:"unit"},pieces);node("rect",{x:p[0]-20,y:p[1]-15,width:40,height:30,rx:5,fill:u.side==="Norte"?"#a94737":"#286782"},g);var t=node("text",{x:p[0],y:p[1]+5},g);t.textContent=u.t;});
+var base={x:0,y:0,w:570,h:460},view={x:0,y:0,w:570,h:460},drag=null;
+function apply(){svg.setAttribute("viewBox",[view.x,view.y,view.w,view.h].join(" "));document.getElementById("zoom").textContent="Zoom: "+Math.round(base.w/view.w*100)+" %";}
+function zoom(m){var w=Math.min(base.w*1.4,Math.max(base.w/3,view.w*m)),h=w*base.h/base.w;view.x+=(view.w-w)/2;view.y+=(view.h-h)/2;view.w=w;view.h=h;apply();}
+document.getElementById("in").onclick=function(){zoom(.8);};
+document.getElementById("out").onclick=function(){zoom(1.25);};
+document.getElementById("reset").onclick=function(){view={x:0,y:0,w:570,h:460};apply();};
+frame.addEventListener("pointerdown",function(e){drag={id:e.pointerId,x:e.clientX,y:e.clientY,vx:view.x,vy:view.y};frame.setPointerCapture(e.pointerId);});
+frame.addEventListener("pointermove",function(e){if(!drag||drag.id!==e.pointerId)return;var b=svg.getBoundingClientRect();view.x=drag.vx-(e.clientX-drag.x)*view.w/b.width;view.y=drag.vy-(e.clientY-drag.y)*view.h/b.height;frame.classList.add("dragging");apply();});
+function stop(e){if(drag&&drag.id===e.pointerId){drag=null;frame.classList.remove("dragging");}}
+frame.addEventListener("pointerup",stop);frame.addEventListener("pointercancel",stop);
+apply();
+})();
+</script>
+</body></html>
