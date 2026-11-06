@@ -14,7 +14,7 @@ git switch test/i2-first-validation
 node scripts/check-browser-lab.mjs
 ```
 
-El diagnóstico **no crea ni modifica ninguna base de datos**. Comprueba versión de Node, existencia de suites, disponibilidad del puerto `127.0.0.1:8788` y si ya existe una base local de prueba. Si falta algún archivo, comprobar la rama activa; no mezclar los archivos de `main` con los del laboratorio apilado.
+El diagnóstico **no crea ni modifica ninguna base de datos**. El lanzador comprueba que puede abrir el puerto **antes** de crear cuentas o ficheros SQLite: si el puerto está ocupado, termina sin generar una base incompleta. Comprueba versión de Node, existencia de suites, disponibilidad del puerto `127.0.0.1:8788` y si ya existe una base local de prueba. Si falta algún archivo, comprobar la rama activa; no mezclar los archivos de `main` con los del laboratorio apilado.
 
 Para cambiar el puerto de forma temporal:
 
@@ -29,7 +29,7 @@ node scripts/check-browser-lab.mjs
 .\scripts\test-local.ps1
 ```
 
-La batería cubre geometría, servidor experimental, identidades, invitaciones, almacenamiento, API, SQLite, restauración, cookies, rechazo de orígenes y una prueba **HTTP con base SQLite real**. Si alguna prueba falla, conservar el informe de PowerShell (sin compartir contraseñas ni tokens) y detener la validación manual.
+La batería cubre geometría, servidor experimental, identidades, invitaciones, almacenamiento, API, SQLite, restauración, cookies, rechazo de orígenes y una prueba **HTTP con base SQLite real**. Además ejecuta una prueba que arranca el **lanzador real** en un proceso independiente, completa una partida ficticia entre dos cuentas, detiene el proceso, lo reinicia y comprueba que recupera los datos. Otra prueba confirma que un puerto ocupado no deja una base nueva inutilizable. Si alguna prueba falla, conservar el informe de PowerShell (sin compartir contraseñas ni tokens) y detener la validación manual.
 
 ## 3. Abrir el laboratorio
 
