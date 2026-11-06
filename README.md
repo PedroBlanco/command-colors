@@ -34,3 +34,13 @@ Diagramas PlantUML en diagrams/ y escenario de ejemplo **sintético** en scenari
 No incluir imágenes, cartas, mapas, PDF o transcripciones de materiales originales sin permiso aplicable. El uso no comercial y la posesión de juegos físicos no conceden por sí solos una licencia de redistribución. Proyecto independiente, no afiliado a GMT Games.
 
 La rama principal se modifica tras revisión mediante PR. Las pruebas deben poder ejecutarse localmente; no introducir dependencias de GitHub Actions hasta justificarlas.
+
+## Prueba local de identidad e invitaciones (CCW-007)
+
+Se ha preparado un módulo **independiente y en memoria** para comprobar dos cuentas, sesiones temporales e invitaciones privadas. No existe todavía un formulario de registro ni un servidor de autenticación. [Alcance y limitaciones](docs/12-identidad-e-invitaciones.md).
+
+```powershell
+node --test packages/access-control/access.test.mjs
+```
+
+**No exponer los servicios de prueba a Internet.** La identidad e invitaciones no están conectadas a las demostraciones web ni a la base de datos.
