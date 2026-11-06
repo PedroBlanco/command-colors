@@ -124,16 +124,18 @@ test('API: error interno no devuelve excepción ni secretos',()=>{
 
 test('API: bloquea proyección de un almacén asociado a otra partida',()=>{
   const services=fixture();
+  let called=0;
   services.getStore=async()=>({
     view:()=>({matchId:'00000000-0000-4000-8000-000000000000',yourHand:['OTHER_MATCH_PRIVATE']}),
-    publicEvents:()=>[],
-    dispatch:async()=>({status:200,code:'APPLIED',view:{matchId:'00000000-0000-4000-8000-000000000000',yourHand:['OTHER_MATCH_PRIVATE']}})
+    publicEvents:()=>{called++;return [];},
+    dispatch:async()=>{called++;return {status:200,code:'APPLIED',view:{matchId:'00000000-0000-4000-8000-000000000000',yourHand:['OTHER_MATCH_PRIVATE']}};}
   });
   return withApi(async({request})=>{
     await createReady(request);
     const read=await request('GET',`/api/matches/${MATCH}`,A);
     const write=await request('POST',`/api/matches/${MATCH}/commands`,A,{type:'pass_demo_turn',expectedRevision:0});
-    assert.equal(read.status,503);assert.equal(write.status,503);
+    const events=await request('GET',`/api/matches/${MATCH}/events`,A);
+    assert.equal(read.status,503);assert.equal(write.status,503);assert.equal(events.status,503);assert.equal(called,0);
     assert.equal(JSON.stringify([read.body,write.body]).includes('OTHER_MATCH_PRIVATE'),false);
   },services);
 });
