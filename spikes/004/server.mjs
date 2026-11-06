@@ -4,6 +4,12 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 
 const UI_PATH = fileURLToPath(new URL('./index.html', import.meta.url));
+const STATIC_PATHS = new Map([
+  ['/', {path: UI_PATH, type: 'text/html'}],
+  ['/spikes/004/board-client.mjs', {path: fileURLToPath(new URL('./board-client.mjs', import.meta.url)), type: 'text/javascript'}],
+  ['/spikes/004/board-view.mjs', {path: fileURLToPath(new URL('./board-view.mjs', import.meta.url)), type: 'text/javascript'}],
+  ['/packages/hex-grid/hex.mjs', {path: fileURLToPath(new URL('../../packages/hex-grid/hex.mjs', import.meta.url)), type: 'text/javascript'}]
+]);
 
 export function createDemo() {
   let state = {
@@ -68,9 +74,10 @@ export function createApp(demo = createDemo()) {
         res.writeHead(status, {'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'});
         res.end(JSON.stringify(data));
       };
-      if (req.method === 'GET' && url.pathname === '/') {
-        res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'});
-        res.end(await readFile(UI_PATH));
+      const staticAsset = STATIC_PATHS.get(url.pathname);
+      if (req.method === 'GET' && staticAsset) {
+        res.writeHead(200, {'content-type': `${staticAsset.type}; charset=utf-8`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'});
+        res.end(await readFile(staticAsset.path));
         return;
       }
       if (url.pathname.startsWith('/api/')) {
