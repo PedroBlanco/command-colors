@@ -1,31 +1,30 @@
-# CCW-004 — Experimento vertical de arquitectura (local)
+# CCW-004 / CCW-006 — Demostración web local de dos jugadores
 
-**No es un juego, ni un sistema seguro para Internet.** Tiene dos participantes simulados A/B, un turno ficticio, manos ficticias y una vista diferente por jugador. El escenario de prueba no procede de GMT Games. El servidor usa solo memoria: **no persiste partidas**.
+**No es un juego ni un sistema seguro para Internet.** Dos identidades **ficticias** A/B, turno simulado y manos ficticias; el servidor funciona solo en memoria. No hay persistencia ni reglas; el tablero se representa como 117 hexágonos SVG con dos unidades de ejemplo. Se sirve exclusivamente en `127.0.0.1`.
 
-## Uso
+## Requisitos y prueba en Windows 11
 
-Requiere Node.js >=22 (probado localmente con Node.js 22.16.0; para producción se evaluará una línea LTS soportada). Sin instalar dependencias, ejecutar desde la raíz del repositorio:
+Node.js >=22. Desde PowerShell en la raíz del repositorio, sin dependencias de npm ni WSL:
 
-```sh
-node --test packages/hex-grid/hex.test.mjs spikes/004/server.test.mjs
+```powershell
+node --test packages/hex-grid/hex.test.mjs spikes/004/*.test.mjs
 node spikes/004/server.mjs
 ```
 
-Abrir `http://127.0.0.1:8787` en dos pestañas (una con A y otra B) y pulsar «Finalizar turno ficticio». La otra vista se actualiza cuando llega el aviso SSE. Si existe conflicto, se devuelve HTTP 409 y se muestra el estado actualizado. El servidor **solo escucha en loopback** por diseño. Detener con Ctrl+C.
+Abrir `http://127.0.0.1:8787` en dos pestañas, asignar A y B, elegir hexágonos, acercar/alejar y arrastrar. Finalizar un turno ficticio en A y observar en B el aviso SSE y cambio de turno. Repetir en sentido contrario. Una misma partida de demostración se comparte entre pestañas mientras el proceso continúe ejecutándose.
 
-## Contrato experimental
+La prueba sobre un teléfono físico requiere un paso posterior: la versión **no escucha en la red local**, y no debe modificarse a `0.0.0.0` con identidades sin autenticar. La responsividad puede examinarse en las herramientas de desarrollo del navegador, aunque no sustituye a la prueba real.
 
-- `GET /api/state`: cabecera `x-demo-player: A` o `B` (simulación de sesión, **no es autenticación**). Respuesta con revisión, turno, unidades ficticias, mano propia y **solo el número de cartas** ajenas.
-- `POST /api/command`: `{ "type": "end_demo_turn", "expectedRevision": 0, "idempotencyKey": "solicitud_123" }` y cabecera `x-demo-player`. Solo el participante cuyo turno está activo puede incrementar la revisión.
-- `GET /api/events`: stream SSE solicitado mediante `fetch()` con la cabecera de demostración; evento `{"revision":n}` **sin información oculta**.
-- Cliente HTML autocontenido que usa `fetch`, stream SSE y navegador normal sin dependencia de framework.
+## Diseño del prototipo
 
-La idempotencia se guarda solo en memoria. La prueba de concurrencia envía simultáneamente dos comandos con igual revisión y comprueba que únicamente uno es aceptado. Una llamada de un jugador no autorizado o fuera de turno se rechaza.
+- `index.html`: estructura adaptable y estilos, sin dependencias.
+- `board-client.mjs`: refresco HTTP, notificaciones SSE, manejo de identidad ficticia, mano privada y zoom/desplazamiento.
+- `board-view.mjs`: proyección visual **solo** de unidades públicas y selección por clic/teclado, usando `packages/hex-grid`.
+- `server.mjs`: rutas explícitas para los módulos estáticos, sin ofrecer acceso general al sistema de archivos.
+- `board-view.test.mjs` y `board-http.test.mjs`: topología de vista, accesibilidad básica, rechazados y rutas HTTP.
 
-## Lo que demuestra y lo que NO demuestra
+El cliente no puede mover unidades ni dictar cartas o resultados al servidor. El botón «Finalizar turno ficticio» es la única acción del servidor de ejemplo y sigue comprobando actor, revisión e idempotencia. Los resultados de cartas y el tablero real todavía no están implementados.
 
-**Demostrado localmente:** separación conceptual entre estado y proyección privada, intercambio HTTP entre pestañas, control de versión, idempotencia y avisos sin cartas privadas; pruebas unitarias y HTTP sin servicios externos.
+## Límites conocidos
 
-**Pendiente antes de producción:** base de datos transaccional, usuarios/sesiones reales, autenticación y CSRF, HTTPS, rate limiting, validación completa, reglas, migraciones, estado duradero, SSE con reconexión y cursors, logs seguros, restauración, pruebas de seguridad y clientes móviles reales.
-
-Este spike no aprueba la pila de tecnologías: proporciona evidencia para decidir. No incluye npm, Actions ni WSL.
+Sin login real, invitaciones, TLS, datos persistidos, validación de reglas, sectores oficiales, escenarios oficiales, notificaciones persistentes ni garantías de compatibilidad con dispositivos físicos. Las etiquetas A/B pueden falsificarse en HTTP: **jamás publicar este ejemplo en Internet o red no confiable**. La sincronización SSE no reconecta automáticamente si se corta; permite actualizar manualmente. Las pruebas de vista se ejecutan con DOM simulado, no equivalen a pruebas de navegador real.
