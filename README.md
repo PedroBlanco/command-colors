@@ -45,5 +45,15 @@ Ejecutar desde PowerShell, con Node.js 22 o posterior (sin WSL ni Actions):
 .\scripts\test-local.ps1
 ```
 
-La [guía de integración](docs/14-prueba-integrada-local.md) explica el alcance y las limitaciones. Los módulos de producción, el login web y la base de datos duradera no están implementados. **No utilizar este laboratorio con jugadores ni en redes externas.**
+La [guía de integración](docs/14-prueba-integrada-local.md) explica el alcance y las limitaciones. La base de datos duradera se estudia en el siguiente incremento con SQLite **solo para desarrollo local**. Faltan base de datos y sesiones validadas para producción, login web y motor reglamentario. **No utilizar este laboratorio con jugadores ni en redes externas.**
+
+## Persistencia de laboratorio con SQLite (I2)
+
+Se ha añadido una prueba de persistencia **en archivo SQLite real**, usando `node:sqlite` (experimental en Node.js 22.16.0). Conserva usuarios ficticios, sesiones, invitaciones, estado privado, eventos e idempotencia tras cerrar/reabrir la base de datos. Incluye pruebas con un proceso nuevo, concurrencia entre conexiones, rollback y tres flujos HTTP contra la base de datos.
+
+```powershell
+node --test packages/sqlite-store/sqlite.test.mjs packages/local-api/sqlite-compose.test.mjs
+```
+
+También se ejecutan desde `.\scripts\test-local.ps1`. Consulta [guía SQLite local](docs/15-sqlite-desarrollo-local.md). **No es un despliegue ni sustituye PostgreSQL como opción prevista.** No usar con partidas o datos reales; faltan HTTPS, cookies seguras, CSRF, límites de intentos, backups y migraciones.
 
