@@ -34,3 +34,14 @@ Diagramas PlantUML en diagrams/ y escenario de ejemplo **sintético** en scenari
 No incluir imágenes, cartas, mapas, PDF o transcripciones de materiales originales sin permiso aplicable. El uso no comercial y la posesión de juegos físicos no conceden por sí solos una licencia de redistribución. Proyecto independiente, no afiliado a GMT Games.
 
 La rama principal se modifica tras revisión mediante PR. Las pruebas deben poder ejecutarse localmente; no introducir dependencias de GitHub Actions hasta justificarlas.
+
+## Probar el tablero experimental (Windows 11)
+
+Con Node.js 22 o posterior, desde la raíz del repositorio:
+
+```powershell
+node --test packages/hex-grid/hex.test.mjs spikes/004/*.test.mjs
+node spikes/004/server.mjs
+```
+
+Abrir `http://127.0.0.1:8787` en dos pestañas. Identidades ficticias A/B, tablero SVG, cartas sintéticas y turnos simulados. **Solo local; no exponer a redes ni Internet.** Más información: [incremento I1](docs/10-incremento-tablero-svg.md) y [guía de prueba](spikes/004/README.md).
