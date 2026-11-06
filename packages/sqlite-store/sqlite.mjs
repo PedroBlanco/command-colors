@@ -94,11 +94,16 @@ export function openSqliteComposition({file, clock = Date.now,
   }
   mkdirSync(dirname(file), {recursive: true});
   const db = new DatabaseSync(file);
-  db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=4000;');
-  // Reject unknown/future database versions before mutating a schema.
-  // Version 0 of the previous local prototype is adopted only if its tables match exactly.
-  initializeSchema(db, () => db.exec(SCHEMA));
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
+  try {
+    db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=4000;');
+    // Reject unknown/future versions before writing anything to this database.
+    // Adopt metadata version 0 only when the former lab schema matches exactly.
+    initializeSchema(db, () => db.exec(SCHEMA));
+    db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
+  } catch (error) {
+    db.close();
+    throw error;
+  }
   function atomic(fn) {
     db.exec('BEGIN IMMEDIATE');
     try { const result = fn(); db.exec('COMMIT'); return result; }
