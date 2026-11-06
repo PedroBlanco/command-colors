@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {mkdtemp, readFile, writeFile, rm, stat} from 'node:fs/promises';
+import {mkdtemp, readdir, readFile, writeFile, rm, stat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
@@ -91,7 +91,11 @@ test('backup: WAL database copied consistently and verified with manifest hash',
  const view=new DatabaseSync(source,{readOnly:true});
  assert.equal(view.prepare('SELECT game_revision AS n FROM matches').get().n,1);
  assert.equal(view.prepare('SELECT count(*) AS n FROM sessions').get().n,1);
- view.close();db.close();
+ assert.equal(view.prepare('PRAGMA journal_mode').get().journal_mode,'delete');
+ view.close();
+ const leftover=await readdir(dir);
+ assert.equal(leftover.some(n=>n.startsWith('safe-copy.sqlite') && (n.endsWith('-wal') || n.endsWith('-shm') || n.includes('.partial'))),false);
+ db.close();
 }));
 
 test('backup: existing backup or sidecar never overwritten',()=>withTemp(async dir=>{
