@@ -54,7 +54,6 @@ test('SSE: publicar solo revisión (no contenidos privados)', () => {
  assert.deepEqual(notifications,[1]);
 });
 
-
 test('SSE real por HTTP: eventos sin cartas privadas', async () => {
  const server=createApp();server.listen(0,'127.0.0.1');await once(server,'listening');
  const root=`http://127.0.0.1:${server.address().port}`,ac=new AbortController();
