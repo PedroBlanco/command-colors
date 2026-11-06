@@ -121,3 +121,19 @@ test('API: error interno no devuelve excepción ni secretos',()=>{
     assert.equal(result.status,503);assert.deepEqual(result.body,{code:'SERVICE_UNAVAILABLE'});
   },services);
 });
+
+test('API: bloquea proyección de un almacén asociado a otra partida',()=>{
+  const services=fixture();
+  services.getStore=async()=>({
+    view:()=>({matchId:'00000000-0000-4000-8000-000000000000',yourHand:['OTHER_MATCH_PRIVATE']}),
+    publicEvents:()=>[],
+    dispatch:async()=>({status:200,code:'APPLIED',view:{matchId:'00000000-0000-4000-8000-000000000000',yourHand:['OTHER_MATCH_PRIVATE']}})
+  });
+  return withApi(async({request})=>{
+    await createReady(request);
+    const read=await request('GET',`/api/matches/${MATCH}`,A);
+    const write=await request('POST',`/api/matches/${MATCH}/commands`,A,{type:'pass_demo_turn',expectedRevision:0});
+    assert.equal(read.status,503);assert.equal(write.status,503);
+    assert.equal(JSON.stringify([read.body,write.body]).includes('OTHER_MATCH_PRIVATE'),false);
+  },services);
+});
