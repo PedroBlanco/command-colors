@@ -1,0 +1,25 @@
+ID,Iteración,Título,Dependencias,Prioridad,Requisito
+CCW-001,0,Revisar requisitos y decisiones abiertas,,P0,RF-01..20
+CCW-002,0,Identificar ediciones y jerarquía de fuentes,,P0,RF-14
+CCW-003,0,Revisar derechos y solicitar permisos,,P0,RNF-08
+CCW-004,0,Evaluar pila con prueba vertical,,P0,RNF-06
+CCW-005,1,Geometría hexagonal y sectores,CCW-004,P0,RF-02
+CCW-006,1,Interfaz SVG adaptable y táctil,CCW-005,P0,RF-02
+CCW-007,2,Usuarios e invitaciones,CCW-004,P0,RF-03
+CCW-008,2,Estado transaccional con revisiones,CCW-004,P0,RF-05
+CCW-009,2,Vistas privadas y API,CCW-007/CCW-008,P0,RF-07
+CCW-010,2,SSE y recuperación de eventos,CCW-009,P1,RF-04
+CCW-011,3,Estados y permisos de turno Ancients,CCW-008,P0,RF-06
+CCW-012,3,Mazo y manos privadas,CCW-009/CCW-011,P0,RF-07
+CCW-013,3,Cartas simples y órdenes,CCW-011/CCW-012,P0,RF-06
+CCW-014,4,Movimiento legal,CCW-005/CCW-013,P0,RF-06
+CCW-015,5,Dados digitales en servidor,CCW-011,P0,RF-08
+CCW-016,5,Dados físicos declarados,CCW-015,P1,RF-09
+CCW-017,5,Combate y decisiones defensivas,CCW-014/CCW-015,P0,RF-10
+CCW-018,6,Cobertura reglas Ancients básico,CCW-017,P0,RF-14
+CCW-019,7,Escenarios oficiales autorizados,CCW-018/CCW-003,P0,RF-13
+CCW-020,7,Deshacer e historial,CCW-008/CCW-017,P0,RF-11/12/16
+CCW-021,8,Auditoría y aceptación Ancients,CCW-019/CCW-020,P0,RF-01..20
+CCW-022,9,Adaptador Napoleonics,CCW-021,P1,RF-15
+CCW-023,10,Combate y reacciones Napoleonics,CCW-022,P1,RF-15
+CCW-024,11,Escenarios y aceptación Napoleonics,CCW-023,P1,RF-15

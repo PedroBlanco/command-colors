@@ -1,0 +1,17 @@
+@startuml
+title Fases del turno Ancients
+[*] --> AWAIT_CARD
+AWAIT_CARD --> ASSIGN_ORDERS : jugar carta
+ASSIGN_ORDERS --> MOVEMENT : asignar órdenes
+MOVEMENT --> COMBAT : terminar movimientos
+COMBAT --> RESOLUTION : declarar combate
+RESOLUTION --> PENDING_DEFENSE : decisión defensiva necesaria
+PENDING_DEFENSE --> RESOLUTION : defensor responde
+RESOLUTION --> COMBAT : combate cerrado
+COMBAT --> DRAW_CARD : fin combates
+DRAW_CARD --> AWAIT_CARD : cambiar turno
+note right of COMBAT
+No comenzar otro combate
+si existe uno en curso.
+end note
+@enduml
