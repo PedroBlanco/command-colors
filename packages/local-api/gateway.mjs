@@ -103,7 +103,7 @@ export function createAccessGateway({identity, invitations, getStore} = {}) {
         if (lobby.status !== 'READY') return reply(res, 200, {matchId, status: lobby.status, players: lobby.players});
         const store = await getStore(matchId);
         const state = store.view(actor);
-        if (!state) return reply(res, 404, {code: 'NOT_FOUND'});
+        if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         return reply(res, 200, {matchId, status: lobby.status, players: lobby.players, state});
       }
       if (req.method === 'POST' && resource === 'invitations') {
@@ -123,7 +123,9 @@ export function createAccessGateway({identity, invitations, getStore} = {}) {
         const store = await getStore(matchId);
         const result = await store.dispatch({actor, type: body.type,
           expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey});
-        // Store responses are always already projected to actor; whitelist response fields.
+        // The adapter must not accidentally project another match's state.
+        if (result.view && result.view.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
+        // Store responses are already projected to actor; whitelist response fields.
         return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
       }
       return reply(res, 404, {code: 'NOT_FOUND'});
