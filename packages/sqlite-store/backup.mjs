@@ -32,6 +32,21 @@ function inspectFile(path) {
   finally {db.close();}
 }
 
+/**
+ * A SQLite backup may retain the source's WAL journal-mode flag. Turn the
+ * completed COPY ONLY into a standalone DELETE-journal database so that
+ * verifying/restoring it does not create -wal/-shm sidecars containing data.
+ * The live source remains in WAL mode.
+ */
+function finalizeSnapshotJournal(path) {
+  const copy = new DatabaseSync(path);
+  try {
+    copy.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    const mode = copy.prepare('PRAGMA journal_mode=DELETE').get().journal_mode;
+    if (mode !== 'delete') throw new Error('BACKUP_JOURNAL_FINALIZATION_FAILED');
+  } finally { copy.close(); }
+}
+
 async function fsyncFile(path) {
   const f = await open(path, 'r');
   try {await f.sync();}
@@ -52,6 +67,7 @@ export async function createVerifiedBackup({sourceDb, destination} = {}) {
   let sidecarLinked = false;
   try {
     await sqliteBackup(sourceDb, tmp);
+    finalizeSnapshotJournal(tmp);
     await chmod(tmp, 0o600); // POSIX only; Windows requires filesystem ACLs
     await fsyncFile(tmp);
     const schema = inspectFile(tmp);
@@ -77,6 +93,8 @@ export async function createVerifiedBackup({sourceDb, destination} = {}) {
     throw error;
   } finally {
     await rm(tmp, {force: true}).catch(() => {});
+    await rm(`${tmp}-wal`, {force: true}).catch(() => {});
+    await rm(`${tmp}-shm`, {force: true}).catch(() => {});
     await rm(tmpManifest, {force: true}).catch(() => {});
   }
 }
@@ -122,5 +140,9 @@ export async function restoreVerifiedBackup({backupPath, destination} = {}) {
     }
     await link(tmp, target); // link fails if a destination appeared during restore
     return {restored: true, destination: target};
-  } finally {await rm(tmp, {force: true}).catch(() => {});}
+  } finally {
+    await rm(tmp, {force: true}).catch(() => {});
+    await rm(`${tmp}-wal`, {force: true}).catch(() => {});
+    await rm(`${tmp}-shm`, {force: true}).catch(() => {});
+  }
 }
