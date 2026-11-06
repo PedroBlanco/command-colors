@@ -34,3 +34,13 @@ Diagramas PlantUML en diagrams/ y escenario de ejemplo **sintético** en scenari
 No incluir imágenes, cartas, mapas, PDF o transcripciones de materiales originales sin permiso aplicable. El uso no comercial y la posesión de juegos físicos no conceden por sí solos una licencia de redistribución. Proyecto independiente, no afiliado a GMT Games.
 
 La rama principal se modifica tras revisión mediante PR. Las pruebas deben poder ejecutarse localmente; no introducir dependencias de GitHub Actions hasta justificarlas.
+
+## Contrato experimental de persistencia
+
+Se ha preparado un almacén local **solo para pruebas** que guarda estados sintéticos, eventos y claves de idempotencia; incluye tests de recuperación, concurrencia y privacidad. Consulte [contrato y límites](docs/11-contrato-persistencia.md).
+
+```powershell
+node --test packages/match-store/store.test.mjs
+```
+
+No está conectado al servidor HTTP ni sustituye la futura persistencia transaccional en base de datos.
