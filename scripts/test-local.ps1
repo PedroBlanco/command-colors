@@ -8,7 +8,9 @@ $files = @(
   "packages/access-control/access.test.mjs",
   "packages/match-store/store.test.mjs",
   "packages/local-api/gateway.test.mjs",
-  "packages/local-api/compose.test.mjs"
+  "packages/local-api/compose.test.mjs",
+  "packages/sqlite-store/sqlite.test.mjs",
+  "packages/local-api/sqlite-compose.test.mjs"
 )
 & node --test @files
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
