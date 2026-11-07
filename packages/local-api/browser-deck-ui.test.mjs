@@ -21,7 +21,7 @@ async function withBrowser(run) {
  const window={addEventListener(type,fn){handlers.set(type,fn)}};
  const state={login:false,lobby:'INVITING',initialized:false,phase:'AWAIT_CARD',revision:0,
    handA:['own_1','own_2'],handB:['other_1','other_2','other_3'],discard:[],inPlay:null,turn:'A',
-   board:[{id:'unit_a',side:'A',col:3,row:4},{id:'unit_b',side:'B',col:9,row:4}]};
+   board:[{id:'unit_a',side:'A',col:3,row:4},{id:'unit_b',side:'B',col:9,row:4}],movedUnitIds:[]};
  class FakeEventSource {
    constructor(url){this.url=url;this.closed=false;this.listeners=new Map();sources.push(this)}
    addEventListener(type,fn){this.listeners.set(type,fn)}
@@ -38,7 +38,7 @@ async function withBrowser(run) {
    else if(path==='/api/matches'&&options.method==='POST'){status=201;response={matchId:MATCH}}
    else if(path===`/api/matches/${MATCH}`&&state.login){
      const view={matchId:MATCH,you:'A',turn:state.turn,revision:state.revision,yourHand:[...state.handA],
-       opponentCardCount:state.handB.length,board:structuredClone(state.board)};
+       opponentCardCount:state.handB.length,board:structuredClone(state.board),movedUnitIds:[...state.movedUnitIds]};
      if(state.initialized)Object.assign(view,{phase:state.phase,actingSide:state.turn,drawPileCount:13,
        discardPile:[...state.discard],cardInPlay:state.inPlay,pendingDecision:null});
      status=200;response={status:state.lobby,players:[{side:'A',handle:'alice'},{side:'B',handle:'bob'}],
@@ -60,7 +60,7 @@ async function withBrowser(run) {
        else{if(data.type==='play_synthetic_card'){state.inPlay=data.cardRef;state.handA.splice(state.handA.indexOf(data.cardRef),1)}
          if(data.type==='move_synthetic_unit'){
            const unit=state.board.find(x=>x.id===data.unitId);
-           if(unit){unit.col=data.path.at(-1).col;unit.row=data.path.at(-1).row;}
+           if(unit){unit.col=data.path.at(-1).col;unit.row=data.path.at(-1).row;state.movedUnitIds.push(unit.id);}
          }
          if(data.type==='acknowledge_synthetic_draw'){state.discard.push(state.inPlay);state.inPlay=null;state.handA.push('new_card');state.turn='B'}
          state.phase=next[data.type];state.revision++;status=200;response={code:'APPLIED'};}
@@ -195,6 +195,7 @@ test('manual movement button sends sanitized own-unit path after order assignmen
  assert.equal(sent.body.expectedRevision,2);
  assert.equal(Object.hasOwn(sent.body,'actor'),false);
  assert.equal(c.state.board[0].col,4);
+ assert.equal(c.element('deck-undo').disabled,true);
  assert.equal(c.element('deck-movement').disabled,false);
  const before=c.requests.length;
  c.element('deck-move-path').value='13,4';
