@@ -99,3 +99,9 @@ node scripts/browser-lab.mjs
 ```
 
 El diagnóstico no modifica la base ni crea cuentas. El servidor experimental solo escucha en `127.0.0.1:8788`. La [PR #27 del tablero](https://github.com/PedroBlanco/command-colors/pull/27) se comprueba **por separado**. La aplicación todavía no implementa las reglas de Ancients, ni está preparada para Internet.
+
+## Regresión integral del laboratorio I2
+
+La [revisión de regresión completa](docs/19-informe-regresion-integral-i2.md) ejecutó **93 pruebas automatizadas con 0 fallos**, usando Node.js 22.16.0 y la lista exacta de las 15 suites que ejecuta `scripts/test-local.ps1`. Incluye una corrección en el verificador de SQLite que impide registrar bases sin sus restricciones. Se compararon 32 archivos de código y pruebas mediante hashes Git contra los publicados en la rama.
+
+**Importante:** el script PowerShell todavía debe ejecutarse en Windows, y la aceptación visual en navegador sigue pendiente; el entorno de prueba bloqueó la navegación con Chromium. Las PR continúan en borrador y no se ha modificado `main`.
