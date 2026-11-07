@@ -7,11 +7,15 @@ async function withBrowser(run) {
   const originals={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,EventSource:globalThis.EventSource};
   const elements=new Map(),handlers=new Map(),requests=[],feeds=[];
   function element(id) {
-    if(!elements.has(id))elements.set(id,{value:'',textContent:'',handlers:new Map(),addEventListener(event,fn){this.handlers.set(event,fn)},
+    if(!elements.has(id))elements.set(id,{value:'',textContent:'',hidden:false,disabled:false,children:[],handlers:new Map(),
+      addEventListener(event,fn){this.handlers.set(event,fn)},
+      replaceChildren(){this.children=[];this.value=''},
+      appendChild(option){this.children.push(option);if(this.children.length===1)this.value=option.value},
       async dispatch(event){return await this.handlers.get(event)?.({preventDefault(){}})}});
     return elements.get(id);
   }
-  const document={hidden:false,getElementById:element,addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
+  const document={hidden:false,getElementById:element,createElement:()=>({value:'',textContent:''}),
+    addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
   const window={addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
   const state={login:false,lobby:'INVITING',revision:0};
   class FakeEventSource {
