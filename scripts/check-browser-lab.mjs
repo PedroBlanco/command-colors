@@ -19,7 +19,9 @@ const tests = [
   'packages/local-api/revision-stream.test.mjs',
   'packages/local-api/browser-ui.test.mjs',
   'packages/turn-phase/phase.test.mjs',
-  'packages/command-deck/deck.test.mjs'
+  'packages/command-deck/deck.test.mjs',
+  'packages/command-deck/sqlite-game.test.mjs',
+  'packages/local-api/command-deck-http.test.mjs'
 ];
 
 function nodeSupported() {
