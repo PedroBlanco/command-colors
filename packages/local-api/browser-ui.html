@@ -10,7 +10,9 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1
 section{background:#fff;border:1px solid #cbd8d3;border-radius:10px;padding:16px;min-width:0}
 label{display:block;margin:10px 0} input{display:block;width:100%;min-height:42px;box-sizing:border-box;border:1px solid #a4b5b0;border-radius:6px;padding:8px;font:inherit}
 button{font:inherit;border:1px solid #547b73;background:#eaf3ef;border-radius:7px;padding:10px;margin:4px 4px 4px 0;cursor:pointer}
-button:disabled{opacity:.45;cursor:not-allowed}button:focus-visible,input:focus-visible{outline:3px solid #bd8b29}
+button:disabled{opacity:.45;cursor:not-allowed}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #bd8b29}
+select{display:block;width:100%;min-height:42px;border:1px solid #a4b5b0;border-radius:6px;padding:8px;font:inherit}
+[hidden]{display:none!important}
 code{overflow-wrap:anywhere}.notice{padding:12px;background:#fff0cb;border-radius:7px}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius:7px;padding:9px;min-height:45px}
 #current{font-weight:700}#message{min-height:2em}
@@ -24,6 +26,21 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section><h2>Partida privada</h2><button id="create">Crear partida</button><label>Identificador de partida<input id="match-id" spellcheck="false"></label><button id="refresh">Consultar partida</button><pre id="lobby">Sin partida cargada</pre></section>
 <section><h2>Invitaciones</h2><label>Usuario al que invitar<input id="invitee" placeholder="bob"></label><button id="invite">Emitir invitación</button><p><strong>Token de invitación (copia y comparte solo con el destinatario):</strong></p><pre id="invite-token">—</pre><label>Token recibido<input id="received" spellcheck="false"></label><button id="accept">Aceptar</button><button id="reject">Rechazar</button></section>
 <section><h2>Estado privado</h2><p id="connection" role="status" aria-live="polite">Avisos en tiempo real desconectados</p><button id="turn">Finalizar turno ficticio</button><button id="events">Consultar eventos públicos</button><pre id="state">Sin partida activa</pre></section>
+<section aria-labelledby="deck-title"><h2 id="deck-title">Mazo de mando sintético</h2>
+<p>Solo identificadores ficticios. No incluye cartas ni reglas oficiales de Ancients.</p>
+<button id="deck-initialize" disabled>Inicializar mazo de prueba (jugador A)</button>
+<div id="deck-panel" hidden>
+<p id="deck-status" role="status">Mazo no inicializado</p>
+<label>Carta de tu mano<select id="deck-card"></select></label><button id="deck-play" disabled>Jugar carta</button>
+<label>Unidades ficticias que reciben orden (separadas por coma o espacio)
+<input id="deck-units" placeholder="unit_a, unit_b" spellcheck="false"></label>
+<button id="deck-orders" disabled>Asignar órdenes</button><button id="deck-undo" disabled>Deshacer órdenes</button>
+<button id="deck-movement" disabled>Terminar movimiento</button>
+<label>Objetivo ficticio para pedir defensa<input id="deck-target" placeholder="unit_b" spellcheck="false"></label>
+<button id="deck-ask-defense" disabled>Pedir decisión defensiva</button>
+<button id="deck-stand" disabled>Defender: STAND</button><button id="deck-evade" disabled>Defender: EVADE</button>
+<button id="deck-combat" disabled>Terminar combate</button><button id="deck-draw" disabled>Robar carta y terminar turno</button>
+</div></section>
 </main>
 <script type="module" src="/browser-ui.mjs"></script>
 </body></html>
