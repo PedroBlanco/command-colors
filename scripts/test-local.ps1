@@ -33,7 +33,9 @@ try {
     "packages/dice-roller/dice.test.mjs",
     "packages/order-validator/validator.test.mjs",
     "packages/order-validator/server-context.test.mjs",
-    "packages/movement/movement.test.mjs"
+    "packages/movement/movement.test.mjs",
+    "packages/movement/server-policy.test.mjs",
+    "packages/command-deck/movement-sqlite.test.mjs"
   )
   & node --test @files
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
