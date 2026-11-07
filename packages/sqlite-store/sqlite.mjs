@@ -7,6 +7,7 @@ import {randomBytes, randomUUID, createHash, scrypt as callbackScrypt, timingSaf
 import {promisify} from 'node:util';
 import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
+import {initializeSchema} from './schema-version.mjs';
 
 const scrypt = promisify(callbackScrypt);
 const KDF = Object.freeze({N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024});
@@ -93,8 +94,16 @@ export function openSqliteComposition({file, clock = Date.now,
   }
   mkdirSync(dirname(file), {recursive: true});
   const db = new DatabaseSync(file);
-  db.exec('PRAGMA busy_timeout = 4000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');
-  db.exec(SCHEMA);
+  try {
+    db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=4000;');
+    // Reject unknown/future versions before writing anything to this database.
+    // Adopt metadata version 0 only when the former lab schema matches exactly.
+    initializeSchema(db, () => db.exec(SCHEMA));
+    db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
+  } catch (error) {
+    db.close();
+    throw error;
+  }
   function atomic(fn) {
     db.exec('BEGIN IMMEDIATE');
     try { const result = fn(); db.exec('COMMIT'); return result; }

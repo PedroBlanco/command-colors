@@ -57,3 +57,16 @@ node --test packages/sqlite-store/sqlite.test.mjs packages/local-api/sqlite-comp
 
 También se ejecutan desde `.\scripts\test-local.ps1`. Consulta [guía SQLite local](docs/15-sqlite-desarrollo-local.md). **No es un despliegue ni sustituye PostgreSQL como opción prevista.** No usar con partidas o datos reales; faltan HTTPS, cookies seguras, CSRF, límites de intentos, backups y migraciones.
 
+
+## Copia y restauración SQLite (solo laboratorio)
+
+La [guía de versión de esquema y copias](docs/16-versionado-copias-sqlite-local.md) introduce una marca de esquema v1, una copia coherente de SQLite en WAL y restauración verificada mediante integridad + SHA-256. La copia se publica en formato autónomo (sin archivos `-wal/-shm`). Para probarlo en Windows 11 con Node.js >=22.16.0:
+
+```powershell
+node --test packages/sqlite-store/lifecycle.test.mjs
+node scripts/sqlite-maintenance.mjs backup .\datos\prueba.sqlite .\copias\prueba-copia.sqlite
+node scripts/sqlite-maintenance.mjs verify .\copias\prueba-copia.sqlite
+node scripts/sqlite-maintenance.mjs restore .\copias\prueba-copia.sqlite .\datos\prueba-restaurada.sqlite
+```
+
+**No utilizar con datos reales**, no exponer el laboratorio en la red ni considerar estas copias como respaldo de producción. La herramienta exige destinos inexistentes; la restauración requiere parada de la aplicación.
