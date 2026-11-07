@@ -1,0 +1,65 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {initialSyntheticTurn,transitionSyntheticTurn,TURN_PHASES} from './phase.mjs';
+const command=(s,actor,type,extra={})=>({actor,type,expectedRevision:s.revision,...extra});
+const advance=(s,actor,type,extra={})=>{
+ const r=transitionSyntheticTurn(s,command(s,actor,type,extra));assert.equal(r.accepted,true,JSON.stringify(r));
+ assert.equal(r.nextState.revision,s.revision+1);assert.equal(r.events.length,1);return r.nextState;
+};
+function combat(){let s=initialSyntheticTurn();s=advance(s,'A','play_synthetic_card',{cardRef:'SIM_CARD'});
+ s=advance(s,'A','assign_synthetic_orders',{unitIds:['A_1']});return advance(s,'A','finish_synthetic_movement');}
+
+test('fases y estado inicial',()=>{assert.deepEqual(TURN_PHASES,['AWAIT_CARD','ASSIGN_ORDERS','MOVEMENT','COMBAT','DRAW_CARD']);
+ assert.equal(initialSyntheticTurn().turn,'A');assert.equal(initialSyntheticTurn({startingSide:'B'}).turn,'B');
+ assert.throws(()=>initialSyntheticTurn({startingSide:'C'}),TypeError);});
+test('un turno completo cambia de A a B, conserva contador',()=>{let s=initialSyntheticTurn();
+ s=advance(s,'A','play_synthetic_card',{cardRef:'SIM_CARD'});assert.equal(s.phase,'ASSIGN_ORDERS');
+ s=advance(s,'A','assign_synthetic_orders',{unitIds:['A_1']});assert.equal(s.phase,'MOVEMENT');
+ s=advance(s,'A','finish_synthetic_movement');s=advance(s,'A','finish_synthetic_combat');
+ assert.equal(s.phase,'DRAW_CARD');s=advance(s,'A','acknowledge_synthetic_draw');
+ assert.equal(s.turn,'B');assert.equal(s.phase,'AWAIT_CARD');assert.equal(s.revision,5);
+ assert.equal(s.playedCard,null);assert.deepEqual(s.orderedUnits,[]);});
+test('el otro jugador no puede actuar si no hay decisión pendiente',()=>{const s=initialSyntheticTurn();
+ assert.equal(transitionSyntheticTurn(s,command(s,'B','play_synthetic_card',{cardRef:'X'})).rejection,'NOT_ACTING_PLAYER');});
+test('defensor contesta sin transferir el turno principal; el estado sobrevive JSON',()=>{let s=combat();
+ s=advance(s,'A','ask_synthetic_defense',{targetUnit:'B_2'});
+ assert.equal(s.turn,'A');assert.equal(s.phase,'COMBAT');assert.equal(s.pendingDecision.actor,'B');
+ s=advance(JSON.parse(JSON.stringify(s)),'B','answer_synthetic_defense',{choice:'EVADE'});
+ assert.equal(s.turn,'A');assert.equal(s.phase,'COMBAT');assert.equal(s.lastDefense.choice,'EVADE');
+ s=advance(s,'A','finish_synthetic_combat');assert.equal(s.phase,'DRAW_CARD');});
+test('una decisión inválida no altera estado ni revisión',()=>{let s=combat();s=advance(s,'A','ask_synthetic_defense',{targetUnit:'B_2'});
+ const old=JSON.stringify(s);const r=transitionSyntheticTurn(s,command(s,'B','answer_synthetic_defense',{choice:'ATTACK'}));
+ assert.equal(r.rejection,'WRONG_PHASE_OR_INPUT');assert.equal(JSON.stringify(s),old);});
+test('actor del atacante no puede responder por defensor',()=>{let s=combat();s=advance(s,'A','ask_synthetic_defense',{targetUnit:'B_2'});
+ assert.equal(transitionSyntheticTurn(s,command(s,'A','answer_synthetic_defense',{choice:'STAND'})).rejection,'NOT_ACTING_PLAYER');});
+test('no finalizar combate con una decisión sin resolver',()=>{let s=combat();s=advance(s,'A','ask_synthetic_defense',{targetUnit:'B_2'});
+ assert.equal(transitionSyntheticTurn(s,command(s,'B','finish_synthetic_combat')).rejection,'DECISION_OR_PHASE_PENDING');});
+test('deshacer órdenes es posible solo inmediatamente después de asignarlas',()=>{let s=initialSyntheticTurn();
+ s=advance(s,'A','play_synthetic_card',{cardRef:'SIM_CARD'});
+ s=advance(s,'A','assign_synthetic_orders',{unitIds:['A_1','A_2']});
+ s=advance(s,'A','undo_synthetic_orders');assert.equal(s.phase,'ASSIGN_ORDERS');
+ assert.equal(s.playedCard,'SIM_CARD');assert.deepEqual(s.orderedUnits,[]);
+ assert.equal(transitionSyntheticTurn(s,command(s,'A','undo_synthetic_orders')).rejection,'UNDO_NOT_AVAILABLE');});
+test('no se deshacen órdenes después de cambiar de fase',()=>{const s=combat();
+ assert.equal(transitionSyntheticTurn(s,command(s,'A','undo_synthetic_orders')).rejection,'UNDO_NOT_AVAILABLE');});
+test('comandos fuera de fase rechazados',()=>{const s=initialSyntheticTurn();
+ for(const type of ['assign_synthetic_orders','finish_synthetic_movement','ask_synthetic_defense','answer_synthetic_defense','finish_synthetic_combat','acknowledge_synthetic_draw']){
+  assert.equal(transitionSyntheticTurn(s,command(s,'A',type)).accepted,false);
+ }});
+test('la revisión esperada rechaza reintentos de estado obsoleto',()=>{const s=initialSyntheticTurn(),n=advance(s,'A','play_synthetic_card',{cardRef:'X'});
+ assert.equal(transitionSyntheticTurn(n,command(s,'A','play_synthetic_card',{cardRef:'Y'})).rejection,'STALE_REVISION');});
+test('no se admiten identificadores peligrosos, duplicados ni órdenes excesivas',()=>{let s=initialSyntheticTurn();
+ assert.equal(transitionSyntheticTurn(s,command(s,'A','play_synthetic_card',{cardRef:'../secret'})).accepted,false);
+ s=advance(s,'A','play_synthetic_card',{cardRef:'X'});
+ for(const unitIds of [['A_1','A_1'],['A_1','../../evil'],null,Array.from({length:118},(_,i)=>`U${i}`)]){
+  assert.equal(transitionSyntheticTurn(s,command(s,'A','assign_synthetic_orders',{unitIds})).accepted,false);
+ }});
+test('función pura: sin mutaciones del estado original',()=>{const s=initialSyntheticTurn(),raw=JSON.stringify(s);
+ const r=transitionSyntheticTurn(s,command(s,'A','play_synthetic_card',{cardRef:'X'}));assert.equal(JSON.stringify(s),raw);
+ r.nextState.orderedUnits.push('FAKE');assert.deepEqual(s.orderedUnits,[]);});
+test('nunca continuar un estado de versión no reconocida',()=>{const s=initialSyntheticTurn();
+ assert.throws(()=>transitionSyntheticTurn({...s,ruleset:'unknown'},command(s,'A','play_synthetic_card',{cardRef:'X'})),/INVALID_PHASE_STATE/);
+ assert.throws(()=>transitionSyntheticTurn({...s,revision:-1},command(s,'A','play_synthetic_card',{cardRef:'X'})),/INVALID_PHASE_STATE/);});
+test('tipo desconocido o actor ausente rechazado',()=>{const s=initialSyntheticTurn();
+ assert.equal(transitionSyntheticTurn(s,command(s,'A','hack_state')).rejection,'UNSUPPORTED_COMMAND');
+ assert.equal(transitionSyntheticTurn(s,{type:'play_synthetic_card',expectedRevision:0,cardRef:'X'}).rejection,'INVALID_COMMAND');});

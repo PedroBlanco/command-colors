@@ -118,3 +118,13 @@ node --test packages/local-api/revision-stream.test.mjs packages/local-api/brows
 ```
 
 Este canal SSE usa sondeo de laboratorio, limitado a `127.0.0.1` y 16 conexiones. No hay sincronización interproceso ni servidor seguro de producción. La página de laboratorio sigue siendo **distinta** del tablero SVG de la PR #27; la validación visual en navegador permanece pendiente.
+
+## Iteración 3 — Contrato sintético de fases del turno
+
+El paquete `packages/turn-phase/` contiene un **prototipo puro y sin reglas oficiales** que permite comprobar la secuencia de fases, la autorización del actor y las decisiones pendientes del defensor sin avanzar el turno del atacante. Incluye 15 pruebas locales:
+
+```powershell
+node --test packages/turn-phase/phase.test.mjs
+```
+
+Consultar [el contrato y sus limitaciones](docs/21-maquina-fases-sintetica.md). **No implementa cartas, movimientos ni combates reales, y no debe confundirse con una versión jugable de Ancients.** La rama es independiente del laboratorio web y del tablero pendientes de revisión.
