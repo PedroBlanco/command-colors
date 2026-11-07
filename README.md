@@ -148,3 +148,16 @@ node --test packages/turn-phase/phase.test.mjs
 ```
 
 Consultar [el contrato y sus limitaciones](docs/21-maquina-fases-sintetica.md). **No implementa cartas, movimientos ni combates reales, y no debe confundirse con una versión jugable de Ancients.** El módulo ya está en `main`, pero continúa sin conectarse al estado reglamentario o al tablero SVG pendiente de revisión.
+
+## Iteración 3 — Mazo de mando y manos ocultas (CCW-012)
+
+El módulo `packages/command-deck/` introduce un **mazo de ejemplares opacos** y una interfaz de estado privado por jugador. Reparte manos con tamaños configurables, mezcla mediante `crypto.randomInt`, valida que no se pierdan ni dupliquen cartas, y procesa juego, descarte y robo en coordinación con las **fases sintéticas** de la iteración 3. El servidor conservará el estado completo; cada jugador recibirá exclusivamente su mano y el recuento público de cartas del contrario.
+
+```powershell
+node --test packages/command-deck/deck.test.mjs
+.\scripts\test-local.ps1
+```
+
+**21/21 pruebas del módulo superadas localmente** con el reducer real de fases de `main`. El script y el diagnóstico contemplan ahora **19 suites**; no se ha ejecutado todavía su conjunto completo sobre Windows. Véanse el [contrato del mazo opaco](docs/23-mazo-mando-opaco-i3.md) y la [matriz de reglas](docs/04-matriz-reglas.md).
+
+**Limitaciones:** no incluye cartas oficiales, efectos, reglas de agotamiento, movimientos, combates ni persistencia de estas manos en la base de datos. No es una partida jugable y no debe exponerse por Internet.
