@@ -35,6 +35,13 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <label>Unidades ficticias que reciben orden (separadas por coma o espacio)
 <input id="deck-units" placeholder="synthetic-a" spellcheck="false"></label>
 <button id="deck-orders" disabled>Asignar órdenes</button><button id="deck-undo" disabled>Deshacer órdenes</button>
+<fieldset><legend>Movimiento ficticio (no reglamento oficial)</legend>
+<label>Unidad propia a mover<input id="deck-move-unit" placeholder="synthetic-a" spellcheck="false"></label>
+<label>Ruta hexagonal (columna,fila; columna,fila)
+<input id="deck-move-path" placeholder="4,4; 4,5" spellcheck="false"></label>
+<button id="deck-move" disabled>Mover unidad</button>
+<p>Indica cada hexágono de la ruta, sin repetir el origen. El servidor valida ocupación, órdenes y distancia.</p>
+</fieldset>
 <button id="deck-movement" disabled>Terminar movimiento</button>
 <label>Objetivo ficticio para pedir defensa<input id="deck-target" placeholder="unit_b" spellcheck="false"></label>
 <button id="deck-ask-defense" disabled>Pedir decisión defensiva</button>
