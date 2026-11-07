@@ -39,3 +39,10 @@ test('clients cannot select enemy or absent units or malformed paths',()=>{
   assert.throws(()=>deckCommand(view(),'move_synthetic_unit',{unitId:'synthetic-a',path},KEY),/RUTA_INVALIDA/);
  }
 });
+
+test('after a move the public movement tracker disables undo and rejects moving the same unit locally',()=>{
+ const state={...view(),movedUnitIds:['synthetic-a']};
+ assert.deepEqual(deckActions(state),['move_synthetic_unit','finish_synthetic_movement']);
+ assert.throws(()=>deckCommand(state,'move_synthetic_unit',{unitId:'synthetic-a',path:[{col:4,row:4}]},KEY),/UNIDAD_YA_MOVIDA/);
+ assert.deepEqual(deckCommand({...state,movedUnitIds:[]},'move_synthetic_unit',{unitId:'synthetic-a',path:[{col:4,row:4}]},KEY).path,[{col:4,row:4}]);
+});
