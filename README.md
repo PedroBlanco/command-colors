@@ -174,7 +174,7 @@ node --test packages/local-api/command-deck-http.test.mjs
 .\scripts\test-local.ps1
 ```
 
-**39 pruebas del mazo y su adaptador SQLite superadas**. Las **4 pruebas HTTP completas**, añadidas al repositorio, tienen sintaxis comprobada, pero aún no se han ejecutado en este incremento con todas las fuentes del backend reunidas. El procedimiento general enumera **21 suites**, pendiente de regresión conjunta. Lee el [contrato de persistencia y rutas API](docs/24-mazo-persistente-api-i3.md).
+**39 pruebas del mazo y su adaptador SQLite superadas**. Las **4 pruebas HTTP originales ya han pasado** con SQLite y backend reales. Se añadieron **2 pruebas con cookies** (protección de origen, privacidad y fases) también superadas; las tres suites de SQLite y HTTP acumulan **24/24 pruebas en una ejecución conjunta**. El procedimiento general enumera **22 suites**, pendiente de regresión conjunta. Lee el [contrato de persistencia y rutas API](docs/24-mazo-persistente-api-i3.md).
 
 Se mantienen datos y comandos ficticios. **No** hay integración reglamentaria, cartas oficiales, interfaz de juego completa, seguridad de producción ni permisos de distribución de materiales. La PR #27 del tablero sigue pendiente de aceptación visual.
 
@@ -188,6 +188,6 @@ Las pruebas añadidas a la batería son:
 node --test packages/local-api/deck-controls.test.mjs packages/local-api/browser-deck-ui.test.mjs
 ```
 
-**13/13 pruebas nuevas superadas**, más dos pruebas reproducidas de compatibilidad SSE en la ejecución local. La batería general comprende ahora **23 suites**; todavía no se ha probado íntegramente en Windows ni se ha ejecutado la suite HTTP con SQLite pendiente de la PR #40. Consultar la [guía de aceptación del mazo](docs/25-interfaz-mazo-sintetico-i3.md).
+**13/13 pruebas nuevas superadas**, más dos pruebas reproducidas de compatibilidad SSE en la ejecución local. La batería general comprende ahora **24 suites**; todavía no se ha probado íntegramente en Windows y ya se han ejecutado las seis pruebas HTTP+SQLite con cookies y Bearer de la PR #40. Consultar la [guía de aceptación del mazo](docs/25-interfaz-mazo-sintetico-i3.md).
 
 Esta interfaz no utiliza todavía el tablero SVG (PR #27), no implementa *Ancients* reglamentario y **no debe exponerse fuera de 127.0.0.1**.
