@@ -148,3 +148,14 @@ node --test packages/turn-phase/phase.test.mjs
 ```
 
 Consultar [el contrato y sus limitaciones](docs/21-maquina-fases-sintetica.md). **No implementa cartas, movimientos ni combates reales, y no debe confundirse con una versión jugable de Ancients.** El módulo ya está en `main`, pero continúa sin conectarse al estado reglamentario o al tablero SVG pendiente de revisión.
+
+## Probar el tablero experimental (Windows 11)
+
+Con Node.js 22 o posterior, desde la raíz del repositorio:
+
+```powershell
+node --test packages/hex-grid/hex.test.mjs spikes/004/*.test.mjs
+node spikes/004/server.mjs
+```
+
+Abrir `http://127.0.0.1:8787` en dos pestañas. Identidades ficticias A/B, tablero SVG, cartas sintéticas y turnos simulados. **Solo local; no exponer a redes ni Internet.** Más información: [incremento I1](docs/10-incremento-tablero-svg.md) y [guía de prueba](spikes/004/README.md).
