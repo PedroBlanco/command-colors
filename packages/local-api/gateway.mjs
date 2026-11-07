@@ -6,8 +6,10 @@ import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {browserConfig, cookieSession, sessionCookie, allowedBrowserRequest, validBrowserMutation} from './browser-session.mjs';
+import {startRevisionStream} from './revision-stream.mjs';
 
 const MAX_BODY = 8192;
+const MAX_REVISION_STREAMS = 16;
 const denied = (code, status = 403) => ({status, body: {code}});
 const HTML_FILE = fileURLToPath(new URL('./browser-ui.html',import.meta.url));
 const CLIENT_FILE = fileURLToPath(new URL('./browser-ui.mjs',import.meta.url));
@@ -60,9 +62,11 @@ function domainReply(result, successStatus = 200) {
  * production transport would require HTTPS and a separate full security review.
  * Legacy bearer mode (browser omitted) is retained only for earlier laboratory tests.
  */
-export function createAccessGateway({identity, invitations, getStore, browser = null} = {}) {
+export function createAccessGateway({identity, invitations, getStore, browser = null, revisionPollMs = 1000} = {}) {
   if (!identity || !invitations || typeof getStore !== 'function') throw new TypeError('Servicios requeridos');
+  if (!Number.isSafeInteger(revisionPollMs) || revisionPollMs < 20) throw new TypeError('INVALID_POLL_INTERVAL');
   const config = browser === null ? null : browserConfig(browser);
+  let revisionStreams = 0;
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
@@ -121,7 +125,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const result = invitations.rejectInvitation({sessionToken: token, invitationToken: body.invitationToken});
         return reply(res, ...Object.values(domainReply(result)));
       }
-      const matchRoute = /^\/api\/matches\/([0-9a-fA-F-]{36})(?:\/(invitations|commands|events))?$/.exec(route);
+      const matchRoute = /^\/api\/matches\/([0-9a-fA-F-]{36})(?:\/(invitations|commands|events|updates))?$/.exec(route);
       if (!matchRoute) return reply(res, 404, {code: 'NOT_FOUND'});
       const [, matchId, resource] = matchRoute;
       const lobby = invitations.getMatch({sessionToken: token, matchId});
@@ -140,6 +144,13 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const body = await jsonRequest(req);
         const result = invitations.issueInvitation({sessionToken: token, matchId, targetHandle: body.targetHandle});
         return reply(res, ...Object.values(domainReply(result, 201)));
+      }
+      if (req.method === 'GET' && resource === 'updates' && config) {
+        if (revisionStreams >= MAX_REVISION_STREAMS) return reply(res, 429, {code: 'TOO_MANY_STREAMS'});
+        revisionStreams++;
+        res.once('close', () => {revisionStreams--;});
+        startRevisionStream({res, token, matchId, identity, invitations, getStore, intervalMs: revisionPollMs});
+        return;
       }
       if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
       if (req.method === 'GET' && resource === 'events') {
