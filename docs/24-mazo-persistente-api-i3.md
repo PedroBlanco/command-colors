@@ -38,7 +38,7 @@ Archivos:
 - `packages/local-api/command-deck-http.test.mjs`;
 - adaptaciones de `packages/sqlite-store/sqlite.mjs` y `packages/local-api/gateway.mjs`.
 
-**Pruebas ejecutadas:** 21 del mazo puro + **12 del adaptador SQLite real**, todas superadas (**33/33**). Las 12 incluyen conservación, autorización interna, revisión, idempotencia semántica, rollback, dos conexiones, recuperación desde otro proceso y respuesta del defensor persistente.
+**Pruebas ejecutadas:** 21 del mazo puro + **17 del adaptador SQLite real**, todas superadas (**38/38**). Las 17 incluyen conservación, autorización interna, revisión, idempotencia semántica, rollback, dos conexiones, recuperación desde otro proceso y respuesta del defensor persistente.
 
 La suite HTTP contiene **cuatro casos de integración con servicios reales**, y su sintaxis Node.js se ha comprobado. **No se ha ejecutado todavía en este incremento** porque el entorno local de ensayo no disponía de todas las fuentes originales del backend; sus resultados no forman parte de las 33 pruebas superadas.
 
@@ -59,3 +59,5 @@ El diagnóstico y el script de PowerShell enumeran **21 suites** tras añadir la
 - Faltan comprobación de límites y seguridad HTTP de producción, versión de reglas, migraciones de escenarios, persistencia del motor definitivo y aceptación visual.
 
 Esta PR cumple el incremento **técnico** de persistencia, pero la issue CCW-012 seguirá abierta hasta completar el juego reglamentario, la seguridad y la verificación entre dos navegadores.
+
+La suite ampliada cubre asimismo: rollback de inicialización SQL, dos conexiones intentando inicializar la misma partida, rechazo de un snapshot privado con cartas duplicadas, firma idempotente distinta para órdenes distintas y rechazo de `pass_demo_turn` después de activar el mazo. Todos estos casos se ejecutaron en SQLite real de laboratorio.
