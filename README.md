@@ -4,6 +4,25 @@ Aplicación web no comercial de juegos por turnos para **dos jugadores humanos**
 
 **Estado:** desarrollo experimental. Hay prototipos locales de tablero, comunicaciones HTTP y almacenamiento; **no existe todavía un juego funcional, un servicio seguro para usuarios reales ni un motor de reglas completo**.
 
+## Primera prueba local en Windows 11 (rama `main`)
+
+El backend de laboratorio (cuentas ficticias, invitaciones, SQLite, copias y SSE) y la máquina de fases **sintética** ya están integrados en `main`. No existe todavía una partida reglamentaria jugable de *Ancients* ni un servicio seguro para Internet.
+
+Con Git, PowerShell y Node.js **22.16.0 o posterior compatible con `node:sqlite`**, desde una copia del repositorio:
+
+```powershell
+git fetch origin
+git switch main
+git pull --ff-only
+node scripts/check-browser-lab.mjs
+.\scripts\test-local.ps1
+node scripts/browser-lab.mjs
+```
+
+El servidor escucha **solo en `http://127.0.0.1:8788/`**. La primera vez crea dos usuarios ficticios (`alice` y `bob`) y muestra contraseñas aleatorias **una sola vez**. Usar dos perfiles de navegador distintos y nunca copiar credenciales o bases SQLite a GitHub. No usar WSL ni es necesario instalar un VPS o ejecutar Actions.
+
+El tablero SVG de la [PR #27](https://github.com/PedroBlanco/command-colors/pull/27) continúa **separado, pendiente de validación visual**. La [guía de primera validación](docs/18-guia-primera-validacion.md) explica cómo probarlo sin mezclar ramas. La batería local contempla ahora **18 suites**; en incrementos anteriores pasaron 99 pruebas de I2 y 15 del módulo sintético de fases por separado. **La batería conjunta de 18 suites y la interfaz visual deben verificarse en Windows.**
+
 ## Decisiones confirmadas
 
 - Navegadores de escritorio y móviles, partidas síncronas y asíncronas.
@@ -37,7 +56,7 @@ La rama principal se modifica tras revisión mediante PR. Las pruebas deben pode
 
 ## Laboratorio de integración I2
 
-La rama `feat/i2-integration-contracts` reúne, **sin fusionarlas en main**, las implementaciones experimentales de [persistencia (#28)](https://github.com/PedroBlanco/command-colors/pull/28), [identidad e invitaciones (#29)](https://github.com/PedroBlanco/command-colors/pull/29) y [API (#30)](https://github.com/PedroBlanco/command-colors/pull/30), y añade una composición de los **servicios reales**, junto con pruebas de flujo HTTP de dos jugadores.
+La [PR #31](https://github.com/PedroBlanco/command-colors/pull/31), ya fusionada en `main`, consolidó los contratos experimentales de persistencia (#28), identidad e invitaciones (#29) y API (#30), junto con las pruebas de integración HTTP. Las PR individuales #28–#30 se cerraron sin volver a fusionarlas para evitar duplicaciones.
 
 Ejecutar desde PowerShell, con Node.js 22 o posterior (sin WSL ni Actions):
 
@@ -45,7 +64,7 @@ Ejecutar desde PowerShell, con Node.js 22 o posterior (sin WSL ni Actions):
 .\scripts\test-local.ps1
 ```
 
-La [guía de integración](docs/14-prueba-integrada-local.md) explica el alcance y las limitaciones. La base de datos duradera se estudia en el siguiente incremento con SQLite **solo para desarrollo local**. Faltan base de datos y sesiones validadas para producción, login web y motor reglamentario. **No utilizar este laboratorio con jugadores ni en redes externas.**
+La [guía de integración](docs/14-prueba-integrada-local.md) explica el alcance y las limitaciones. La persistencia SQLite y las sesiones web de laboratorio ya están en `main`. Faltan una solución de producción, una revisión de seguridad y el motor reglamentario. **No utilizar este laboratorio con jugadores ni en redes externas.**
 
 ## Persistencia de laboratorio con SQLite (I2)
 
@@ -73,9 +92,9 @@ node scripts/sqlite-maintenance.mjs restore .\copias\prueba-copia.sqlite .\datos
 
 ## Sesiones de navegador (nuevo laboratorio I2)
 
-La rama `feat/i2-browser-sessions-lab` añade un modo **solo local** de acceso a partidas sintéticas por navegador con cookie `HttpOnly`, `SameSite=Strict` y comprobación de origen para las operaciones de escritura. En HTTP se activa expresamente un modo inseguro que solo admite `127.0.0.1`; **nunca se debe exponer a una red**.
+La versión integrada en `main` incorpora un modo **solo local** de acceso a partidas sintéticas por navegador con cookie `HttpOnly`, `SameSite=Strict` y comprobación de origen para las operaciones de escritura. En HTTP se activa expresamente un modo inseguro que solo admite `127.0.0.1`; **nunca se debe exponer a una red**.
 
-Con Node.js 22.16.0 o posterior compatible con `node:sqlite`, ejecutar desde PowerShell en esta rama:
+Con Node.js 22.16.0 o posterior compatible con `node:sqlite`, ejecutar desde PowerShell en `main`:
 
 ```powershell
 node --test packages/local-api/browser-session.test.mjs packages/local-api/browser-gateway.test.mjs
@@ -88,7 +107,7 @@ Esta interfaz mínima **no sustituye** a la del tablero SVG de la PR #27, pendie
 
 ## Primera validación guiada (laboratorio I2)
 
-La rama `test/i2-first-validation` contiene la [guía de aceptación](docs/18-guia-primera-validacion.md), un diagnóstico **de solo lectura** y una nueva prueba HTTP de dos usuarios contra SQLite real.
+La rama `main` contiene la [guía de aceptación](docs/18-guia-primera-validacion.md), un diagnóstico **de solo lectura** y una nueva prueba HTTP de dos usuarios contra SQLite real.
 
 En Windows 11, con Node.js 22.16.0 o posterior compatible:
 
@@ -102,15 +121,15 @@ El diagnóstico no modifica la base ni crea cuentas. El servidor experimental so
 
 ## Regresión integral del laboratorio I2
 
-La [revisión de regresión completa](docs/19-informe-regresion-integral-i2.md) ejecutó **93 pruebas automatizadas con 0 fallos**, usando Node.js 22.16.0 y la lista exacta de las 15 suites que ejecuta `scripts/test-local.ps1`. Incluye una corrección en el verificador de SQLite que impide registrar bases sin sus restricciones. Se compararon 32 archivos de código y pruebas mediante hashes Git contra los publicados en la rama.
+La [revisión de regresión completa](docs/19-informe-regresion-integral-i2.md) ejecutó **93 pruebas automatizadas con 0 fallos**, usando Node.js 22.16.0 y la lista de 15 suites disponible en aquel momento; el script actual incluye 18 suites tras incorporar SSE y fases sintéticas. Incluye una corrección en el verificador de SQLite que impide registrar bases sin sus restricciones. Se compararon 32 archivos de código y pruebas mediante hashes Git contra los publicados en la rama.
 
-**Importante:** el script PowerShell todavía debe ejecutarse en Windows, y la aceptación visual en navegador sigue pendiente; el entorno de prueba bloqueó la navegación con Chromium. Las PR continúan en borrador y no se ha modificado `main`.
+**Importante:** el script PowerShell todavía debe ejecutarse en Windows, y la aceptación visual en navegador sigue pendiente; el entorno de prueba bloqueó la navegación con Chromium. Las PR #31–#37 se fusionaron posteriormente en `main`; el informe enlazado documenta el estado de las pruebas en su fecha.
 
 ## Sincronización automática por revisiones (CCW-010)
 
 La nueva página de laboratorio se mantiene actualizada con **SSE** sin exponer cartas privadas. El servidor publica solo las revisiones de sala y partida; el cliente obtiene los datos autorizados mediante HTTP, con reconexión y deduplicación.
 
-Se añaden dos suites a la batería: **17 suites y 99 pruebas superadas** en Node.js 22.16.0. Instrucciones técnicas en [sincronización SSE privada](docs/20-sse-revisiones-privadas.md).
+Con la incorporación de SSE se superaron **99 pruebas de 17 suites** en Node.js 22.16.0; la suite sintética de fases superó otras 15 pruebas por separado. El script actual reúne 18 suites, todavía pendientes de ejecución conjunta en Windows. Instrucciones técnicas en [sincronización SSE privada](docs/20-sse-revisiones-privadas.md).
 
 ```powershell
 node --test packages/local-api/revision-stream.test.mjs packages/local-api/browser-ui.test.mjs
@@ -127,4 +146,4 @@ El paquete `packages/turn-phase/` contiene un **prototipo puro y sin reglas ofic
 node --test packages/turn-phase/phase.test.mjs
 ```
 
-Consultar [el contrato y sus limitaciones](docs/21-maquina-fases-sintetica.md). **No implementa cartas, movimientos ni combates reales, y no debe confundirse con una versión jugable de Ancients.** La rama es independiente del laboratorio web y del tablero pendientes de revisión.
+Consultar [el contrato y sus limitaciones](docs/21-maquina-fases-sintetica.md). **No implementa cartas, movimientos ni combates reales, y no debe confundirse con una versión jugable de Ancients.** El módulo ya está en `main`, pero continúa sin conectarse al estado reglamentario o al tablero SVG pendiente de revisión.
