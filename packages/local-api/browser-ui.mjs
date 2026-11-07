@@ -38,6 +38,16 @@ function renderDeck() {
     : 'El mazo de prueba aún no está inicializado';
 }
 
+function clearPrivateView() {
+  cached = null;
+  inspectionSequence++; // invalidate any GET that started under an earlier session
+  stateText(null);
+  el('lobby').textContent = 'Sin partida cargada';
+  el('invite-token').textContent = '—';
+  el('received').value = '';
+  el('match-id').value = '';
+  renderDeck();
+}
 function closeUpdates() {
   if (updates) updates.close();
   updates = null;
@@ -121,12 +131,12 @@ async function sendDeck(type, fields = {}) {
 el('login-form').addEventListener('submit',async(event) => {
   event.preventDefault();
   try {await api('POST','/api/session',{handle:el('handle').value,password:el('password').value}); closeUpdates();
-    el('password').value=''; await session(); message('Sesión iniciada');}
+    clearPrivateView(); el('password').value=''; await session(); message('Sesión iniciada');}
   catch(error){message(error.message);}
 });
-action('logout',async()=>{await api('DELETE','/api/session');closeUpdates();cached=null;renderDeck();await session();stateText(null);});
+action('logout',async()=>{closeUpdates();clearPrivateView();await api('DELETE','/api/session');await session();});
 action('create',async()=>{const result=await api('POST','/api/matches');el('match-id').value=result.matchId;await inspect();});
-el('match-id').addEventListener('input', () => {if (el('match-id').value.trim() !== updateMatchId) {closeUpdates();cached=null;renderDeck();}});
+el('match-id').addEventListener('input', () => {if (el('match-id').value.trim() !== updateMatchId) {closeUpdates();cached=null;inspectionSequence++;stateText(null);renderDeck();}});
 action('refresh',inspect);
 action('invite',async()=>{const id=el('match-id').value.trim();
   const data=await api('POST',`/api/matches/${id}/invitations`,{targetHandle:el('invitee').value});
