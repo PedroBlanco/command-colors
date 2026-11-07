@@ -174,6 +174,6 @@ node --test packages/local-api/command-deck-http.test.mjs
 .\scripts\test-local.ps1
 ```
 
-**39 pruebas del mazo y su adaptador SQLite superadas**. Las **4 pruebas HTTP completas**, añadidas al repositorio, tienen sintaxis comprobada, pero aún no se han ejecutado en este incremento con todas las fuentes del backend reunidas. El procedimiento general enumera **21 suites**, pendiente de regresión conjunta. Lee el [contrato de persistencia y rutas API](docs/24-mazo-persistente-api-i3.md).
+**39 pruebas del mazo y su adaptador SQLite superadas**. Las **4 pruebas HTTP originales ya han pasado** con SQLite y backend reales. Se añadieron **2 pruebas con cookies** (protección de origen, privacidad y fases) también superadas; las tres suites de SQLite y HTTP acumulan **24/24 pruebas en una ejecución conjunta**. El procedimiento general enumera **22 suites**, pendiente de regresión conjunta. Lee el [contrato de persistencia y rutas API](docs/24-mazo-persistente-api-i3.md).
 
 Se mantienen datos y comandos ficticios. **No** hay integración reglamentaria, cartas oficiales, interfaz de juego completa, seguridad de producción ni permisos de distribución de materiales. La PR #27 del tablero sigue pendiente de aceptación visual.
