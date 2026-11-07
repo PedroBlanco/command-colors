@@ -31,7 +31,8 @@ const tests = [
   'packages/order-validator/server-context.test.mjs',
   'packages/movement/movement.test.mjs',
   'packages/movement/server-policy.test.mjs',
-  'packages/command-deck/movement-sqlite.test.mjs'
+  'packages/command-deck/movement-sqlite.test.mjs',
+  'packages/local-api/movement-revision-sse.test.mjs'
 ];
 
 function nodeSupported() {
