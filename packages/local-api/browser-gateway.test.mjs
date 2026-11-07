@@ -64,6 +64,9 @@ test('serves only the public browser UI, with restrictive CSP',()=>harness(async
   assert.match(html.headers.get('content-security-policy'),/default-src 'none'/);
   const module=await call('GET','/browser-ui.mjs');
   assert.equal(module.status,200);assert.match(module.text,/same-origin/);
+  const controls=await call('GET','/deck-controls.mjs');
+  assert.equal(controls.status,200);assert.match(controls.text,/deckCommand/);
+  assert.match(controls.headers.get('content-type'),/javascript/);
   assert.equal((await call('GET','/packages/sqlite-store/sqlite.mjs')).status,401);
 }));
 
