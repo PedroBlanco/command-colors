@@ -47,3 +47,9 @@ Se añadió también una nueva prueba con dos sesiones/cookies al archivo `packa
 - CCW-014 y R-05 continúan abiertos hasta validar un reglamento concreto, sus excepciones y las pruebas en navegador.
 
 **Siguiente tarea:** verificar la suite HTTP/SQLite nueva y SSE con movimiento; ejecutar la regresión de 31 suites en Windows; después integrar las PR en orden, sin alterar la PR #27 hasta la prueba visual.
+
+## Comprobación SSE de movimientos — incremento I4
+
+El archivo `packages/local-api/movement-revision-sse.test.mjs` añade **4 pruebas de la función SSE real** `startRevisionStream` con contadores de revisión leídos de una base SQLite real; simula la identidad y membresía de dos participantes, sin abrir HTTP ni usar cookies de navegador. Comprueba la notificación de movimiento a ambos, que un rechazo no genera nuevos avisos, que una reconexión recibe la revisión actual y que la revocación de sesión cierra el flujo. Los frames contienen solo `lobbyRevision` y `gameRevision`, sin rutas, cartas ni manos. El archivo SSE publicado coincide en SHA con el ejecutado localmente (`30e374b5478fb1038c0e294bdadddfea6fedef43`).
+
+**Prueba real local:** 52/52 correctas combinando órdenes, movimiento, SQLite y SSE simulado con Node.js 22.16.0. **No equivale a una prueba HTTP/cookies/SSE completa.** Las pruebas HTTP de dos perfiles siguen pendientes; la regresión general enumera ahora **32 suites** y aún no se ha ejecutado conjuntamente en Windows. Ni esta verificación ni el incremento implementan reglas oficiales de *Ancients*.
