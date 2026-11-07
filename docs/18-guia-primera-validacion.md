@@ -85,3 +85,7 @@ Abrir `http://127.0.0.1:8787/`, seleccionar hexágonos con ratón y teclado, ace
 ## 7. Condiciones de salida
 
 La primera validación puede dar por verificadas **solo** la interfaz local y la sincronización de acciones ficticias. No cierra las issues #7, #8 ni #9, ni implica que el juego sea seguro para Internet. Antes de desplegar quedan pendientes HTTPS, protección contra abuso, cookies `Secure`, copias cifradas, migraciones, motor reglamentario y pruebas de aceptación completas.
+
+### Verificación adicional de la base de datos
+
+El diagnóstico y la regresión incluyen la nueva suite `packages/sqlite-store/schema-integrity.test.mjs`, que evita aceptar bases sintéticas con restricciones perdidas o con objetos SQL inesperados. La revisión local suma **38 pruebas ejecutadas y superadas** de los módulos disponibles (transporte web, SQLite integrado, mantenimiento, arranque y diagnóstico). Aún falta repetir las suites antiguas de geometría, servicio de demostración y contratos iniciales en el mismo entorno antes de declarar completada la batería total.
