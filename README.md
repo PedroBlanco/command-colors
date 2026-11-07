@@ -105,3 +105,16 @@ El diagnóstico no modifica la base ni crea cuentas. El servidor experimental so
 La [revisión de regresión completa](docs/19-informe-regresion-integral-i2.md) ejecutó **93 pruebas automatizadas con 0 fallos**, usando Node.js 22.16.0 y la lista exacta de las 15 suites que ejecuta `scripts/test-local.ps1`. Incluye una corrección en el verificador de SQLite que impide registrar bases sin sus restricciones. Se compararon 32 archivos de código y pruebas mediante hashes Git contra los publicados en la rama.
 
 **Importante:** el script PowerShell todavía debe ejecutarse en Windows, y la aceptación visual en navegador sigue pendiente; el entorno de prueba bloqueó la navegación con Chromium. Las PR continúan en borrador y no se ha modificado `main`.
+
+## Sincronización automática por revisiones (CCW-010)
+
+La nueva página de laboratorio se mantiene actualizada con **SSE** sin exponer cartas privadas. El servidor publica solo las revisiones de sala y partida; el cliente obtiene los datos autorizados mediante HTTP, con reconexión y deduplicación.
+
+Se añaden dos suites a la batería: **17 suites y 99 pruebas superadas** en Node.js 22.16.0. Instrucciones técnicas en [sincronización SSE privada](docs/20-sse-revisiones-privadas.md).
+
+```powershell
+node --test packages/local-api/revision-stream.test.mjs packages/local-api/browser-ui.test.mjs
+.\scripts\test-local.ps1
+```
+
+Este canal SSE usa sondeo de laboratorio, limitado a `127.0.0.1` y 16 conexiones. No hay sincronización interproceso ni servidor seguro de producción. La página de laboratorio sigue siendo **distinta** del tablero SVG de la PR #27; la validación visual en navegador permanece pendiente.
