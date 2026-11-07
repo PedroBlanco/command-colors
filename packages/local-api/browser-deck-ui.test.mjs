@@ -146,3 +146,30 @@ test('SSE refresh and logout never revive cards from a previous session',()=>wit
  assert.equal(c.element('deck-panel').hidden,true);
  assert.equal(c.element('state').textContent.includes('own_1'),false);
 }));
+
+test('switching browser identity clears cards, lobby and invitation token',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.element('invite-token').textContent='temporary-secret-invitation';
+ const previousFeed=c.sources[0];
+ c.element('handle').value='bob';
+ await c.element('login-form').dispatch('submit');
+ assert.equal(previousFeed.closed,true);
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('deck-initialize').disabled,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('lobby').textContent,'Sin partida cargada');
+}));
+
+test('switching match input clears old cards before fetching another lobby',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ const feed=c.sources[0];
+ c.element('match-id').value='invalid-new-match';
+ await c.element('match-id').dispatch('input');
+ assert.equal(feed.closed,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.equal(c.element('deck-panel').hidden,true);
+}));
