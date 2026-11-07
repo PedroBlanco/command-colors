@@ -207,3 +207,13 @@ node --test packages/dice-roller/dice.test.mjs
 ```
 
 **12/12 pruebas aisladas superadas** con Node.js 22.16.0; la batería local enumera **26 suites**, pendientes de ejecución conjunta en Windows. La [ficha técnica](docs/27-contrato-dados-sinteticos.md) detalla límites, trazabilidad y riesgos. **No hay resolución de combates ni integración HTTP** y las issues CCW-015/016 permanecen abiertas.
+
+## Contrato de órdenes sintéticas con unidades y sectores (CCW-013)
+
+Se añadió `packages/order-validator/`: contrato puro de validación de límite de órdenes, bando, pertenencia a sectores (incluidos hexágonos compartidos), fase y revisión. Usa perfiles de cartas y un inventario de unidades **suministrados por el servidor**, nunca por el navegador. Rechaza cartas desconocidas y comandos adulterados.
+
+```powershell
+node --test packages/order-validator/validator.test.mjs
+```
+
+**11/11 pruebas locales superadas** con Node.js 22.16.0; el script general contempla ahora **27 suites**, sin regresión conjunta en Windows todavía. No hay cartas oficiales, ni integración de esta validación con el HTTP/SQLite, ni órdenes reglamentarias jugables. Véase [contrato de órdenes sintéticas](docs/28-ordenes-sinteticas.md).
