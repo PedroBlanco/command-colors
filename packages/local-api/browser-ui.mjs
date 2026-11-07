@@ -1,10 +1,42 @@
-/** No official artwork, cards, map or legal moves. Minimal cookie-based browser smoke test. */
+/** Local-only browser lab; no licensed artwork, card texts or legal Ancients rules. */
+import {deckActions, deckCommand, deckSummary} from './deck-controls.mjs';
+
 const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
 const stateText = value => {el('state').textContent = JSON.stringify(value,null,2);};
 let cached = null;
 let updates = null, updateMatchId = null, lastNotice = null, inspectionSequence = 0;
 let pendingRefresh = false;
+
+function renderDeck() {
+  const isDeck = cached && typeof cached.phase === 'string';
+  const options = isDeck ? deckActions(cached) : [];
+  el('deck-panel').hidden = !isDeck;
+  el('deck-initialize').disabled = !cached || cached.you !== 'A' || cached.revision !== 0 || isDeck;
+  el('turn').disabled = Boolean(isDeck);
+  const select = el('deck-card');
+  const selected = select.value;
+  select.replaceChildren();
+  if (isDeck && Array.isArray(cached.yourHand)) {
+    for (const cardRef of cached.yourHand) {
+      const option = document.createElement('option');
+      option.value = cardRef;
+      option.textContent = cardRef;
+      select.appendChild(option);
+    }
+    if (cached.yourHand.includes(selected)) select.value = selected;
+  }
+  for (const [id,type] of [
+    ['deck-play','play_synthetic_card'],['deck-orders','assign_synthetic_orders'],
+    ['deck-undo','undo_synthetic_orders'],['deck-movement','finish_synthetic_movement'],
+    ['deck-ask-defense','ask_synthetic_defense'],['deck-stand','answer_synthetic_defense'],
+    ['deck-evade','answer_synthetic_defense'],['deck-combat','finish_synthetic_combat'],
+    ['deck-draw','acknowledge_synthetic_draw']
+  ]) el(id).disabled = !options.includes(type) || (id === 'deck-play' && select.value === '');
+  el('deck-status').textContent = isDeck
+    ? `Mazo de prueba · fase ${cached.phase} · turno ${cached.turn} · debe actuar ${cached.actingSide}`
+    : 'El mazo de prueba aún no está inicializado';
+}
 
 function closeUpdates() {
   if (updates) updates.close();
@@ -67,8 +99,9 @@ async function inspect() {
   subscribeTo(id);
   el('lobby').textContent=JSON.stringify({status:lobby.status,players:lobby.players},null,2);
   cached=lobby.state??null;
-  stateText(cached ? {tuBando:cached.you,turno:cached.turn,revision:cached.revision,
-    tuMano:cached.yourHand,cartasDelRival:cached.opponentCardCount,unidadesPublicas:cached.board}
+  renderDeck();
+  stateText(cached ? (deckSummary(cached) ?? {tuBando:cached.you,turno:cached.turn,revision:cached.revision,
+    tuMano:cached.yourHand,cartasDelRival:cached.opponentCardCount,unidadesPublicas:cached.board})
     : {estado:'Esperando segundo jugador'});
   return lobby;
 }
@@ -78,15 +111,22 @@ function action(id,callback) {
     catch(error){message(error.message);}
   });
 }
+async function sendDeck(type, fields = {}) {
+  if (!cached?.matchId) throw new Error('No hay partida activa');
+  const key = crypto.randomUUID().replaceAll('-','');
+  const request = deckCommand(cached,type,fields,key);
+  await api('POST',`/api/matches/${cached.matchId}/commands`,request);
+  await inspect();
+}
 el('login-form').addEventListener('submit',async(event) => {
   event.preventDefault();
   try {await api('POST','/api/session',{handle:el('handle').value,password:el('password').value}); closeUpdates();
     el('password').value=''; await session(); message('Sesión iniciada');}
   catch(error){message(error.message);}
 });
-action('logout',async()=>{await api('DELETE','/api/session');closeUpdates();cached=null;await session();stateText(null);});
+action('logout',async()=>{await api('DELETE','/api/session');closeUpdates();cached=null;renderDeck();await session();stateText(null);});
 action('create',async()=>{const result=await api('POST','/api/matches');el('match-id').value=result.matchId;await inspect();});
-el('match-id').addEventListener('input', () => {if (el('match-id').value.trim() !== updateMatchId) {closeUpdates();cached=null;}});
+el('match-id').addEventListener('input', () => {if (el('match-id').value.trim() !== updateMatchId) {closeUpdates();cached=null;renderDeck();}});
 action('refresh',inspect);
 action('invite',async()=>{const id=el('match-id').value.trim();
   const data=await api('POST',`/api/matches/${id}/invitations`,{targetHandle:el('invitee').value});
@@ -98,4 +138,20 @@ action('turn',async()=>{if(!cached)throw Error('No hay partida activa');
   await api('POST',`/api/matches/${cached.matchId}/commands`,{type:'pass_demo_turn',expectedRevision:cached.revision,
     idempotencyKey:crypto.randomUUID().replaceAll('-','')});await inspect();});
 action('events',async()=>{const id=el('match-id').value.trim();const events=await api('GET',`/api/matches/${id}/events`);stateText(events);});
+action('deck-initialize',async()=>{
+  if(!cached?.matchId || cached.you !== 'A' || cached.revision !== 0 || cached.phase)throw Error('INICIALIZACION_NO_DISPONIBLE');
+  await api('POST',`/api/matches/${cached.matchId}/deck/initialize`,{});await inspect();
+});
+action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));
+action('deck-orders',()=>sendDeck('assign_synthetic_orders',{
+  unitIds: el('deck-units').value.split(/[\s,]+/).filter(Boolean)
+}));
+action('deck-undo',()=>sendDeck('undo_synthetic_orders'));
+action('deck-movement',()=>sendDeck('finish_synthetic_movement'));
+action('deck-ask-defense',()=>sendDeck('ask_synthetic_defense',{targetUnit:el('deck-target').value.trim()}));
+action('deck-stand',()=>sendDeck('answer_synthetic_defense',{choice:'STAND'}));
+action('deck-evade',()=>sendDeck('answer_synthetic_defense',{choice:'EVADE'}));
+action('deck-combat',()=>sendDeck('finish_synthetic_combat'));
+action('deck-draw',()=>sendDeck('acknowledge_synthetic_draw'));
+renderDeck();
 await session();
