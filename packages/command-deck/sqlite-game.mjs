@@ -38,7 +38,8 @@ function project(row, matchId, actor) {
   assertCommandSnapshot(state.commandSession);
   if (row.game_revision !== state.commandSession.phaseState.revision) throw new Error('COMMAND_REVISION_MISMATCH');
   const view = projectCommandSession(state.commandSession, actor);
-  return {matchId, status: 'ACTIVE', board: structuredClone(state.board), ...view};
+  return {matchId, status: 'ACTIVE', board: structuredClone(state.board),
+    movedUnitIds: Array.isArray(state.movedUnitIds) ? [...state.movedUnitIds] : null, ...view};
 }
 
 function semanticCommand(request) {
