@@ -42,3 +42,9 @@ Se añadió en la rama de PR #48 el test `SSE: authenticated movement reaches bo
 4. No se han fijado reglas oficiales de Ancients, por lo que ni CCW-013 ni CCW-014 ni R-04/R-05 están cerrados.
 
 **Decisión de integración:** mantener PR #45–#48 pendientes hasta superar la regresión general y la validación necesaria. Se conserva `main` sin cambios por esta verificación.
+
+## Ajuste de controles tras movimiento — 151 pruebas (7/11/2026)
+
+La vista autorizada de una partida sintética comunica ahora la lista pública de identificadores `movedUnitIds` derivada **solo** de `matches.private_state`, sin revelar manos o mazo. Cuando ya se ha movido una unidad, la interfaz deja de ofrecer «Deshacer órdenes» y rechaza localmente el intento de mover esa misma unidad por segunda vez (`UNIDAD_YA_MOVIDA`). El servidor SQLite conserva de forma independiente la comprobación decisiva. La nueva prueba de controlador, las pruebas de botón en navegador simulado y las pruebas reales HTTP/cookies verifican el comportamiento, incluida la proyección del estado a ambos jugadores.
+
+Regresión conjunta sobre **16 suites** (geometría, fases, mazo, dados, órdenes, movimiento, SQLite, DOM simulado, HTTP/cookies y SSE): **151 pruebas ejecutadas, 151 PASS, 0 FAIL**, Node.js v22.16.0 en entorno aislado linux/x64, sin WSL ni GitHub Actions. Los cinco archivos modificados se contrastaron con los SHAs de los mismos archivos probados. Siguen pendientes **17 suites de las 33 generales** y la validación visual PC/móvil; todavía no procede fusionar las PR apiladas.
