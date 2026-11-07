@@ -191,3 +191,9 @@ node --test packages/local-api/deck-controls.test.mjs packages/local-api/browser
 **13/13 pruebas nuevas superadas**, más dos pruebas reproducidas de compatibilidad SSE en la ejecución local. La batería general comprende ahora **24 suites**; todavía no se ha probado íntegramente en Windows y ya se han ejecutado las seis pruebas HTTP+SQLite con cookies y Bearer de la PR #40. Consultar la [guía de aceptación del mazo](docs/25-interfaz-mazo-sintetico-i3.md).
 
 Esta interfaz no utiliza todavía el tablero SVG (PR #27), no implementa *Ancients* reglamentario y **no debe exponerse fuera de 127.0.0.1**.
+
+## Revisión SSE de mazo con dos sesiones reales
+
+Se añadió una suite de laboratorio que comprueba los avisos SSE en **dos sesiones HTTP autenticadas**, los cambios del mazo persistente, la reconexión y la revocación de cookies. **Ocho suites afectadas ejecutadas juntas: 49/49 pruebas superadas**, Node.js 22.16.0.
+
+La [guía de verificación](docs/26-sse-mazo-dos-sesiones.md) documenta el alcance y los límites; el script general y el diagnóstico enumeran ahora **25 suites**. La ejecución completa en PowerShell/Windows 11, el uso visual en dos perfiles y la PR #27 del tablero continúan pendientes. Ningún servicio está preparado para Internet.
