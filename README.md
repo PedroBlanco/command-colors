@@ -34,3 +34,16 @@ Diagramas PlantUML en diagrams/ y escenario de ejemplo **sintético** en scenari
 No incluir imágenes, cartas, mapas, PDF o transcripciones de materiales originales sin permiso aplicable. El uso no comercial y la posesión de juegos físicos no conceden por sí solos una licencia de redistribución. Proyecto independiente, no afiliado a GMT Games.
 
 La rama principal se modifica tras revisión mediante PR. Las pruebas deben poder ejecutarse localmente; no introducir dependencias de GitHub Actions hasta justificarlas.
+
+## Laboratorio de integración I2
+
+La rama `feat/i2-integration-contracts` reúne, **sin fusionarlas en main**, las implementaciones experimentales de [persistencia (#28)](https://github.com/PedroBlanco/command-colors/pull/28), [identidad e invitaciones (#29)](https://github.com/PedroBlanco/command-colors/pull/29) y [API (#30)](https://github.com/PedroBlanco/command-colors/pull/30), y añade una composición de los **servicios reales**, junto con pruebas de flujo HTTP de dos jugadores.
+
+Ejecutar desde PowerShell, con Node.js 22 o posterior (sin WSL ni Actions):
+
+```powershell
+.\scripts\test-local.ps1
+```
+
+La [guía de integración](docs/14-prueba-integrada-local.md) explica el alcance y las limitaciones. Los módulos de producción, el login web y la base de datos duradera no están implementados. **No utilizar este laboratorio con jugadores ni en redes externas.**
+
