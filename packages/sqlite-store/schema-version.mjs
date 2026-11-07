@@ -2,6 +2,43 @@
 export const CURRENT_SCHEMA_VERSION = 1;
 export const CCW_APPLICATION_ID = 0x43435742; // 'CCWB' (SQLite signed 32-bit application_id)
 
+/** Canonical DDL of the original six-table lab schema. Keep schema and validation together. */
+export const CCW_SCHEMA_SQL = `
+PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY, handle TEXT NOT NULL UNIQUE,
+  salt TEXT NOT NULL, password_hash TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token_digest TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES accounts(id),
+  expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS matches (
+  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
+  guest_id TEXT REFERENCES accounts(id), lobby_revision INTEGER NOT NULL DEFAULT 0,
+  game_revision INTEGER NOT NULL DEFAULT 0, private_state TEXT NOT NULL,
+  CHECK (guest_id IS NULL OR guest_id <> owner_id)
+);
+CREATE TABLE IF NOT EXISTS invitations (
+  id TEXT PRIMARY KEY, match_id TEXT NOT NULL REFERENCES matches(id),
+  token_digest TEXT NOT NULL UNIQUE, target_handle TEXT NOT NULL,
+  expires_at INTEGER NOT NULL, status TEXT NOT NULL
+    CHECK (status IN ('PENDING','REVOKED','ACCEPTED','REJECTED','EXPIRED'))
+);
+CREATE INDEX IF NOT EXISTS invitations_by_match ON invitations(match_id);
+CREATE TABLE IF NOT EXISTS game_events (
+  match_id TEXT NOT NULL REFERENCES matches(id), sequence INTEGER NOT NULL,
+  visibility TEXT NOT NULL, payload TEXT NOT NULL,
+  PRIMARY KEY (match_id, sequence)
+);
+CREATE TABLE IF NOT EXISTS game_commands (
+  match_id TEXT NOT NULL REFERENCES matches(id), actor TEXT NOT NULL,
+  idem_key TEXT NOT NULL, signature TEXT NOT NULL,
+  committed_revision INTEGER NOT NULL,
+  PRIMARY KEY (match_id, actor, idem_key)
+);
+`;
+
 const TABLE_COLUMNS = Object.freeze({
   accounts: ['id', 'handle', 'salt', 'password_hash'],
   sessions: ['token_digest', 'user_id', 'expires_at'],
@@ -36,6 +73,47 @@ export function inspectSchema(db, {allowLegacy = false} = {}) {
     const cols = info.map(x => x.name);
     if (cols.length !== fields.length || cols.some(name => !fields.includes(name))) {
       throw new Error(`DATABASE_COLUMNS_MISMATCH:${name}`);
+    }
+  }
+  // Table/column names alone do not establish a compatible schema. A database
+  // without PRIMARY KEY, UNIQUE, FOREIGN KEY or CHECK can appear identical to
+  // the prototype while silently losing the constraints used by the API.
+  // Compare the full versioned DDL, including all explicit indexes; do not
+  // accept extra triggers, views or indexes in a v1 database either.
+  const actualObjects = db.prepare(`SELECT type,name,sql FROM sqlite_schema
+    WHERE type IN ('table','index','trigger','view') AND name NOT LIKE 'sqlite_%'
+      AND sql IS NOT NULL`).all();
+  const expectedObjects = new Map(CCW_SCHEMA_SQL.split(';').map(part => part.trim())
+    .filter(part => /^CREATE\s+(TABLE|INDEX)\s+IF\s+NOT\s+EXISTS/i.test(part))
+    .map(sql => {
+      const [, type, name] = /^CREATE\s+(TABLE|INDEX)\s+IF\s+NOT\s+EXISTS\s+([a-z_][a-z0-9_]*)/i.exec(sql);
+      return [`${type.toLowerCase()}:${name}`, sql];
+    }));
+  // Strip formatting whitespace, but not whitespace or case inside SQL literals:
+  // CHECK(status IN ('PENDING',...)) is case-sensitive in SQLite.
+  function normalized(sql) {
+    const ddl = sql.replace(/\bIF\s+NOT\s+EXISTS\b/gi, '');
+    let output = '', quote = null;
+    for (let i = 0; i < ddl.length; i++) {
+      const ch = ddl[i];
+      if (quote) {
+        output += ch;
+        if (ch === quote) {
+          if (ddl[i + 1] === quote) output += ddl[++i];
+          else quote = null;
+        }
+      } else if (ch === "'" || ch === '"') {
+        quote = ch;
+        output += ch;
+      } else if (!/\s/.test(ch)) output += ch;
+    }
+    return output;
+  }
+  if (actualObjects.length !== expectedObjects.size) throw new Error('DATABASE_OBJECTS_MISMATCH');
+  for (const object of actualObjects) {
+    const expected = expectedObjects.get(`${object.type}:${object.name}`);
+    if (!expected || normalized(object.sql) !== normalized(expected)) {
+      throw new Error(`DATABASE_STRUCTURE_MISMATCH:${object.name}`);
     }
   }
   if (!allowLegacy && (version !== CURRENT_SCHEMA_VERSION || applicationId !== CCW_APPLICATION_ID)) {
