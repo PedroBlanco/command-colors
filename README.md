@@ -34,3 +34,13 @@ Diagramas PlantUML en diagrams/ y escenario de ejemplo **sintético** en scenari
 No incluir imágenes, cartas, mapas, PDF o transcripciones de materiales originales sin permiso aplicable. El uso no comercial y la posesión de juegos físicos no conceden por sí solos una licencia de redistribución. Proyecto independiente, no afiliado a GMT Games.
 
 La rama principal se modifica tras revisión mediante PR. Las pruebas deben poder ejecutarse localmente; no introducir dependencias de GitHub Actions hasta justificarlas.
+
+## Iteración 3 — Contrato sintético de fases del turno
+
+El paquete `packages/turn-phase/` contiene un **prototipo puro y sin reglas oficiales** que permite comprobar la secuencia de fases, la autorización del actor y las decisiones pendientes del defensor sin avanzar el turno del atacante. Incluye 15 pruebas locales:
+
+```powershell
+node --test packages/turn-phase/phase.test.mjs
+```
+
+Consultar [el contrato y sus limitaciones](docs/21-maquina-fases-sintetica.md). **No implementa cartas, movimientos ni combates reales, y no debe confundirse con una versión jugable de Ancients.** La rama es independiente del laboratorio web y del tablero pendientes de revisión.
