@@ -23,7 +23,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section><h2>Acceso</h2><form id="login-form"><label>Usuario<input id="handle" required autocomplete="username" placeholder="alice"></label><label>Contraseña de prueba<input id="password" type="password" required autocomplete="current-password"></label><button>Entrar</button></form><p id="current">Sin sesión</p><button id="logout">Cerrar sesión</button></section>
 <section><h2>Partida privada</h2><button id="create">Crear partida</button><label>Identificador de partida<input id="match-id" spellcheck="false"></label><button id="refresh">Consultar partida</button><pre id="lobby">Sin partida cargada</pre></section>
 <section><h2>Invitaciones</h2><label>Usuario al que invitar<input id="invitee" placeholder="bob"></label><button id="invite">Emitir invitación</button><p><strong>Token de invitación (copia y comparte solo con el destinatario):</strong></p><pre id="invite-token">—</pre><label>Token recibido<input id="received" spellcheck="false"></label><button id="accept">Aceptar</button><button id="reject">Rechazar</button></section>
-<section><h2>Estado privado</h2><button id="turn">Finalizar turno ficticio</button><button id="events">Consultar eventos públicos</button><pre id="state">Sin partida activa</pre></section>
+<section><h2>Estado privado</h2><p id="connection" role="status" aria-live="polite">Avisos en tiempo real desconectados</p><button id="turn">Finalizar turno ficticio</button><button id="events">Consultar eventos públicos</button><pre id="state">Sin partida activa</pre></section>
 </main>
 <script type="module" src="/browser-ui.mjs"></script>
 </body></html>

@@ -15,7 +15,9 @@ const tests = [
   'packages/local-api/browser-gateway.test.mjs',
   'packages/local-api/browser-sqlite-smoke.test.mjs',
   'scripts/check-browser-lab.test.mjs',
-  'scripts/browser-lab.launcher.test.mjs'
+  'scripts/browser-lab.launcher.test.mjs',
+  'packages/local-api/revision-stream.test.mjs',
+  'packages/local-api/browser-ui.test.mjs'
 ];
 
 function nodeSupported() {
