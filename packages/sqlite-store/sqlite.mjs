@@ -7,7 +7,7 @@ import {randomBytes, randomUUID, createHash, scrypt as callbackScrypt, timingSaf
 import {promisify} from 'node:util';
 import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
-import {initializeSchema} from './schema-version.mjs';
+import {initializeSchema, CCW_SCHEMA_SQL} from './schema-version.mjs';
 
 const scrypt = promisify(callbackScrypt);
 const KDF = Object.freeze({N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024});
@@ -25,41 +25,7 @@ function normalizeHandle(value) {
   return HANDLE.test(h) ? h : null;
 }
 
-const SCHEMA = `
-PRAGMA foreign_keys = ON;
-CREATE TABLE IF NOT EXISTS accounts (
-  id TEXT PRIMARY KEY, handle TEXT NOT NULL UNIQUE,
-  salt TEXT NOT NULL, password_hash TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS sessions (
-  token_digest TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES accounts(id),
-  expires_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS matches (
-  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
-  guest_id TEXT REFERENCES accounts(id), lobby_revision INTEGER NOT NULL DEFAULT 0,
-  game_revision INTEGER NOT NULL DEFAULT 0, private_state TEXT NOT NULL,
-  CHECK (guest_id IS NULL OR guest_id <> owner_id)
-);
-CREATE TABLE IF NOT EXISTS invitations (
-  id TEXT PRIMARY KEY, match_id TEXT NOT NULL REFERENCES matches(id),
-  token_digest TEXT NOT NULL UNIQUE, target_handle TEXT NOT NULL,
-  expires_at INTEGER NOT NULL, status TEXT NOT NULL
-    CHECK (status IN ('PENDING','REVOKED','ACCEPTED','REJECTED','EXPIRED'))
-);
-CREATE INDEX IF NOT EXISTS invitations_by_match ON invitations(match_id);
-CREATE TABLE IF NOT EXISTS game_events (
-  match_id TEXT NOT NULL REFERENCES matches(id), sequence INTEGER NOT NULL,
-  visibility TEXT NOT NULL, payload TEXT NOT NULL,
-  PRIMARY KEY (match_id, sequence)
-);
-CREATE TABLE IF NOT EXISTS game_commands (
-  match_id TEXT NOT NULL REFERENCES matches(id), actor TEXT NOT NULL,
-  idem_key TEXT NOT NULL, signature TEXT NOT NULL,
-  committed_revision INTEGER NOT NULL,
-  PRIMARY KEY (match_id, actor, idem_key)
-);
-`;
+
 
 function initialState(matchId) {
   return {
@@ -98,7 +64,7 @@ export function openSqliteComposition({file, clock = Date.now,
     db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=4000;');
     // Reject unknown/future versions before writing anything to this database.
     // Adopt metadata version 0 only when the former lab schema matches exactly.
-    initializeSchema(db, () => db.exec(SCHEMA));
+    initializeSchema(db, () => db.exec(CCW_SCHEMA_SQL));
     db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
   } catch (error) {
     db.close();
