@@ -35,6 +35,7 @@ El tablero SVG de la [PR #27](https://github.com/PedroBlanco/command-colors/pull
 
 ## Documentación
 
+- [Estado integrado y procedimiento de prueba en `main`](docs/22-estado-integracion-main.md)
 - [Requisitos](docs/01-requisitos.md)
 - [Modelo de dominio y estados](docs/02-dominio-y-estados.md)
 - [Arquitectura y decisiones](docs/03-arquitectura.md)
