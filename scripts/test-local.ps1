@@ -21,7 +21,8 @@ try {
     "scripts/check-browser-lab.test.mjs",
     "scripts/browser-lab.launcher.test.mjs",
     "packages/local-api/revision-stream.test.mjs",
-    "packages/local-api/browser-ui.test.mjs"
+    "packages/local-api/browser-ui.test.mjs",
+    "packages/turn-phase/phase.test.mjs"
   )
   & node --test @files
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
