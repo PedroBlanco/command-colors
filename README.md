@@ -70,3 +70,18 @@ node scripts/sqlite-maintenance.mjs restore .\copias\prueba-copia.sqlite .\datos
 ```
 
 **No utilizar con datos reales**, no exponer el laboratorio en la red ni considerar estas copias como respaldo de producción. La herramienta exige destinos inexistentes; la restauración requiere parada de la aplicación.
+
+## Sesiones de navegador (nuevo laboratorio I2)
+
+La rama `feat/i2-browser-sessions-lab` añade un modo **solo local** de acceso a partidas sintéticas por navegador con cookie `HttpOnly`, `SameSite=Strict` y comprobación de origen para las operaciones de escritura. En HTTP se activa expresamente un modo inseguro que solo admite `127.0.0.1`; **nunca se debe exponer a una red**.
+
+Con Node.js 22.16.0 o posterior compatible con `node:sqlite`, ejecutar desde PowerShell en esta rama:
+
+```powershell
+node --test packages/local-api/browser-session.test.mjs packages/local-api/browser-gateway.test.mjs
+node scripts/browser-lab.mjs
+```
+
+El primer arranque crea cuentas de prueba `alice` y `bob` con contraseñas aleatorias (mostradas una sola vez). Abrir `http://127.0.0.1:8788` en **dos perfiles de navegador diferentes** (normal/privado); las pestañas del mismo perfil comparten sesión. Consultar la [guía de uso y seguridad](docs/17-sesiones-navegador-laboratorio.md).
+
+Esta interfaz mínima **no sustituye** a la del tablero SVG de la PR #27, pendiente de validación. No incorpora reglas de movimiento ni datos oficiales.
