@@ -32,3 +32,7 @@ Requisitos y riesgos revisados, fuentes y ediciones localizadas (identificar caj
 ## Criterio de Ancients básico
 
 Matriz de reglas verificada; escenarios autorizados y contrastados; dos personas completan partidas por navegador PC/móvil, con recuperación, privacidad y rectificación. Copias/restauración probadas.
+
+## Verificación aislada del contrato de dados (I5, CCW-015/016)
+
+`node --test packages/dice-roller/dice.test.mjs` superó **12/12 pruebas** con Node.js 22.16.0: T-011 con inyección determinista, T-012 para caras/cantidades físicas inválidas y T-013 para equivalencia de resultados digitales y declarados. Esta prueba **no** cubre autorización HTTP, transacciones, decisión física del rival ni efectos de combate de Ancients. El script general contiene 26 suites; su regresión conjunta sigue pendiente.
