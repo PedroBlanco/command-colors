@@ -202,3 +202,49 @@ test('new Node process can read persisted revision and private hands without raw
   assert.equal(child.status,0,child.stderr);
   assert.deepEqual(JSON.parse(child.stdout.trim()),{revision:1,turn:'A',cardCount:1});
 }));
+
+test('initialization is atomic: failed SQL update leaves no private deck',()=>fixture(({inst})=>{
+  inst.db.exec("CREATE TRIGGER fail_setup BEFORE UPDATE ON matches BEGIN SELECT RAISE(ABORT, 'SETUP_IO_ERROR'); END;");
+  assert.throws(()=>inst.store.initialize('A'),/SETUP_IO_ERROR/);
+  assert.equal(hasCommandDeck(inst.getRow(MATCH)),false);
+  assert.equal(inst.getRow(MATCH).lobby_revision,0);
+  inst.db.exec('DROP TRIGGER fail_setup');
+  assert.equal(inst.store.initialize('A').status,201);
+}));
+
+test('two connections cannot initialize the same match twice',()=>fixture(({inst,connect})=>{
+  const another=connect();
+  assert.equal(inst.store.initialize('A').status,201);
+  assert.equal(another.store.initialize('A').code,'DECK_ALREADY_STARTED');
+  assert.equal(inst.getRow(MATCH).lobby_revision,1);
+}));
+
+test('corrupt persisted card instances are rejected before any projection',()=>fixture(({inst})=>{
+  inst.store.initialize('A');
+  const state=JSON.parse(inst.getRow(MATCH).private_state);
+  state.commandSession.hands.B[0]=state.commandSession.hands.A[0];
+  inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+  assert.throws(()=>inst.store.view('A'),/CARD_CONSERVATION_FAILED/);
+  assert.throws(()=>inst.store.dispatch(command('A','play_synthetic_card',0,{cardRef:state.commandSession.hands.A[0]})),/CARD_CONSERVATION_FAILED/);
+  assert.equal(inst.getRow(MATCH).game_revision,0);
+}));
+
+test('idempotency signature includes ordered unit IDs, not merely command type',()=>fixture(({inst})=>{
+  inst.store.initialize('A');
+  const card=inst.store.view('A').yourHand[0];
+  apply(inst.store,'A','play_synthetic_card',0,{cardRef:card});
+  const key='same_orders_key_0001';
+  const ok=inst.store.dispatch(command('A','assign_synthetic_orders',1,{unitIds:['alpha']},key));
+  assert.equal(ok.status,200);
+  const modified=inst.store.dispatch(command('A','assign_synthetic_orders',1,{unitIds:['beta']},key));
+  assert.equal(modified.code,'IDEMPOTENCY_KEY_REUSED');
+  assert.equal(inst.store.view('A').revision,2);
+}));
+
+test('unsupported legacy demo turn cannot bypass the deck phase reducer',()=>fixture(({inst})=>{
+  inst.store.initialize('A');
+  const response=inst.store.dispatch(command('A','pass_demo_turn',0));
+  assert.equal(response.status,400);
+  assert.equal(response.code,'INVALID_COMMAND');
+  assert.equal(inst.getRow(MATCH).game_revision,0);
+}));
