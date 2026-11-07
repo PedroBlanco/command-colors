@@ -223,3 +223,13 @@ node --test packages/order-validator/validator.test.mjs
 En el laboratorio local, el procesador de `assign_synthetic_orders` valida ahora dentro de la transacción SQLite las unidades seleccionadas frente al tablero privado persistido en el servidor y una política ficticia de cartas. Rechaza identificadores inexistentes, ajenos, duplicados, órdenes excesivas y acciones fuera de fase/revisión sin crear eventos ni avanzar el estado. Las peticiones web **no pueden** suministrar perfiles de cartas, sectores o unidades de confianza. En el ejemplo: `synthetic-a` es la unidad de A y `synthetic-b` la de B; máximo ficticio de dos unidades por orden y sectores artificiales que se solapan en columnas 4 y 8. **No son reglas de Ancients**.
 
 Las 6 pruebas nuevas del generador del contexto y 11 anteriores del validador pasaron juntas localmente con Node.js 22.16.0; la nueva prueba HTTP/SQLite del flujo completo está incluida en la suite existente **sin ejecución confirmada todavía**. El conjunto general incorpora ahora **28 suites**, aún sin regresión completa en Windows. Ver [incremento SQLite de órdenes](docs/29-ordenes-sqlite-transaccion.md).
+
+## Iteración 4 — validación de movimiento hexagonal sintético (CCW-014)
+
+`packages/movement/` añade un **reductor puro** para recorrer hexágonos contiguos del tablero 13×9, comprobar unidades ordenadas y propias, topes de movimiento por unidad (configuración ficticia), ocupación, celdas bloqueadas, turno/revisión y movimiento único por unidad. La entrada no puede alterar directamente el estado del servidor, y la salida contiene el tablero siguiente y un evento sin secretos. No son reglas oficiales ni movimientos jugables todavía.
+
+```powershell
+node --test packages/movement/movement.test.mjs
+```
+
+**17/17 pruebas de movimiento y 34/34 junto con las de validación de órdenes** ejecutadas correctamente con Node.js 22.16.0, sin WSL ni Actions. La batería total de la rama apilada enumera **29 suites**, pendiente de ejecución conjunta. Este módulo **no está conectado a SQLite/HTTP**. [Contrato y límites](docs/30-movimiento-sintetico-i4.md). Depende de la [PR #45](https://github.com/PedroBlanco/command-colors/pull/45), todavía en revisión.

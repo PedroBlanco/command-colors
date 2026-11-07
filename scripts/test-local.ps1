@@ -32,7 +32,8 @@ try {
     "packages/local-api/command-deck-sse.test.mjs",
     "packages/dice-roller/dice.test.mjs",
     "packages/order-validator/validator.test.mjs",
-    "packages/order-validator/server-context.test.mjs"
+    "packages/order-validator/server-context.test.mjs",
+    "packages/movement/movement.test.mjs"
   )
   & node --test @files
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
