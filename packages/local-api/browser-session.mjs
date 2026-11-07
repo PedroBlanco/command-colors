@@ -19,7 +19,7 @@ export function browserConfig(config) {
   } else if (url.protocol !== 'https:') {
     throw new TypeError('Secure browser cookies require HTTPS');
   }
-  return Object.freeze({origin: url.origin, insecureLoopback, cookieName: insecureLoopback ? DEV_COOKIE : SECURE_COOKIE});
+  return Object.freeze({origin: url.origin, insecureLoopback, cookieName: insecureLoopback ? DEV_COOKIE : SECURE_COOKIE, host: url.host});
 }
 
 export function cookieSession(cookieHeader, config) {
@@ -43,6 +43,9 @@ export function sessionCookie(token, config, {clear = false} = {}) {
 
 /** Browser CSRF: all state changes need exact same-origin Origin and a non-simple header. */
 export function allowedBrowserRequest(req, config) {
+  // Reject Host confusion and DNS rebinding before serving even read-only responses.
+  // This gateway is a direct listener; a future reverse proxy requires its own trusted-host design.
+  if (req.headers?.host !== config.host) return false;
   if (!config.insecureLoopback) return true;
   const peer = req.socket?.remoteAddress;
   return peer === '127.0.0.1' || peer === '::ffff:127.0.0.1';

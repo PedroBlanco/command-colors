@@ -48,8 +48,19 @@ test('CSRF rejects missing, foreign, or cross-site origin',()=>{
 
 test('loopback-only peer on insecure development mode',()=>{
   const conf=browserConfig({origin:'http://127.0.0.1:8788',insecureLoopback:true});
-  const req=(addr)=>({socket:{remoteAddress:addr}});
+  const req=(addr,host=conf.host)=>({headers:{host},socket:{remoteAddress:addr}});
   assert.equal(allowedBrowserRequest(req('127.0.0.1'),conf),true);
   assert.equal(allowedBrowserRequest(req('::ffff:127.0.0.1'),conf),true);
   assert.equal(allowedBrowserRequest(req('192.168.1.20'),conf),false);
+  assert.equal(allowedBrowserRequest(req('127.0.0.1','evil.example'),conf),false);
+  assert.equal(allowedBrowserRequest(req('127.0.0.1','localhost:8788'),conf),false);
+  assert.equal(allowedBrowserRequest(req('127.0.0.1','127.0.0.1:8999'),conf),false);
+  assert.equal(allowedBrowserRequest({socket:{remoteAddress:'127.0.0.1'}},conf),false);
+});
+
+test('secure mode also rejects mismatched Host headers before routing',()=>{
+  const conf=browserConfig({origin:'https://games.example.org'});
+  assert.equal(allowedBrowserRequest({headers:{host:'games.example.org'}},conf),true);
+  assert.equal(allowedBrowserRequest({headers:{host:'attacker.example.org'}},conf),false);
+  assert.equal(allowedBrowserRequest({headers:{host:'games.example.org:8443'}},conf),false);
 });

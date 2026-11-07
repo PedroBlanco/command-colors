@@ -46,3 +46,11 @@ Las pruebas crean bases y copias **sintéticas** en el directorio temporal de ca
 - El proyecto no ha adoptado SQLite como almacenamiento de producción. PostgreSQL sigue siendo alternativa pendiente de valoración; estas herramientas son específicas del laboratorio SQLite.
 - Mantener CCW-008 abierta: faltan migraciones y recuperación de la plataforma definitiva, respaldos seguros externos, pruebas de restauración de todo el servicio, gestión de sesiones e invitaciones reales y monitorización.
 - La PR #27 de la interfaz gráfica sigue a la espera de validación humana, según lo indicado por el propietario.
+
+## Verificación estructural estricta de la versión v1 (revisión de regresión)
+
+Durante la auditoría se detectó que una base con seis tablas de nombres y columnas correctos, pero **sin restricciones**, podía registrarse como esquema v1. Esa verificación era insuficiente para garantizar que las transacciones conservasen la integridad esperada.
+
+Se ha corregido centralizando el DDL canónico en `packages/sqlite-store/schema-version.mjs`. Al abrir una base, adoptar la estructura antigua o verificar un respaldo se comprueban ahora las definiciones completas de tablas e índices, incluidas claves primarias, relaciones, unicidad y expresiones `CHECK`. Se rechazan índices ausentes, vistas o disparadores no previstos y cambios semánticos en literales SQL. La comparación de texto SQL es **deliberadamente estricta** para este esquema v1 de laboratorio; cambios legítimos futuros requerirán una migración versionada y aprobada.
+
+Se añadieron cinco pruebas de regresión en `packages/sqlite-store/schema-integrity.test.mjs`. Una base incompatible **no se repara ni se migra automáticamente**: debe analizarse su origen y utilizarse una copia verificada o una migración específica. Esta comprobación mejora la integridad; no constituye autenticación criptográfica de una base manipulada por un atacante.
