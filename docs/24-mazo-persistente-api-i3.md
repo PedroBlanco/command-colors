@@ -40,15 +40,15 @@ Archivos:
 
 **Pruebas ejecutadas:** 21 del mazo puro + **18 del adaptador SQLite real**, todas superadas (**39/39**). Las 18 incluyen conservación, autorización interna, revisión, idempotencia semántica, rollback, dos conexiones, recuperación desde otro proceso y respuesta del defensor persistente.
 
-La suite HTTP contiene **cuatro casos de integración con servicios reales**, y su sintaxis Node.js se ha comprobado. **No se ha ejecutado todavía en este incremento** porque el entorno local de ensayo no disponía de todas las fuentes originales del backend; sus resultados no forman parte de las 33 pruebas superadas.
+Se reconstruyeron los módulos del backend mediante las fuentes publicadas y se verificaron sus hashes Git. Las **cuatro pruebas HTTP reales** pasaron con SQLite, sesiones, invitaciones y recuperación tras reinicio. Se añadieron **dos pruebas HTTP con cookies** que comprueban CSRF/origen, acceso A/B, privacidad, suplantación y un ciclo completo con decisión del defensor. Las tres suites de SQLite y HTTP se ejecutaron **juntas: 24/24 pruebas superadas, 0 fallos**. La suite pura del mazo había superado 21 pruebas por separado, sin atribuirlas a esta ejecución conjunta.
 
 ```powershell
 node --test packages/command-deck/deck.test.mjs packages/command-deck/sqlite-game.test.mjs
-node --test packages/local-api/command-deck-http.test.mjs
+node --test packages/local-api/command-deck-http.test.mjs packages/local-api/command-deck-cookie.test.mjs
 .\scripts\test-local.ps1
 ```
 
-El diagnóstico y el script de PowerShell enumeran **21 suites** tras añadir las dos nuevas. La batería completa, el navegador físico y el envoltorio PowerShell continúan pendientes de comprobación conjunta en Windows 11.
+El diagnóstico y el script de PowerShell enumeran **22 suites** tras añadir las dos nuevas. La batería completa, el navegador físico y el envoltorio PowerShell continúan pendientes de comprobación conjunta en Windows 11.
 
 ## Fronteras y tareas pendientes
 
@@ -63,3 +63,5 @@ Esta PR cumple el incremento **técnico** de persistencia, pero la issue CCW-012
 La suite ampliada cubre asimismo: rollback de inicialización SQL, dos conexiones intentando inicializar la misma partida, rechazo de un snapshot privado con cartas duplicadas, firma idempotente distinta para órdenes distintas y rechazo de `pass_demo_turn` después de activar el mazo. Todos estos casos se ejecutaron en SQLite real de laboratorio.
 
 Se añadió además una prueba de **aislamiento entre dos partidas** de la misma base de datos, comprobando revisiones, eventos y comandos separados; la regresión directa del mazo y SQLite suma 39 pruebas superadas.
+
+**Revisión 7-11-2026:** la integración HTTP está comprobada mediante Node.js 22.16.0. Se conserva pendiente la ejecución conjunta de las 22 suites de todo el repositorio y la validación visual en Windows; el laboratorio no está habilitado para Internet.
