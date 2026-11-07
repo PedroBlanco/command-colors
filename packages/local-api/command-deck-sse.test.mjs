@@ -105,3 +105,42 @@ test('SSE: logout revokes the existing stream and stale cookie cannot reconnect'
  const stale=await subscribe(id,b);
  assert.equal(stale.status,401);
 }));
+
+
+test('SSE: authenticated movement reaches both players with counters only; rejected move is silent',()=>lab(async({call,prepare,subscribe,store})=>{
+ const {id,a,b,c}=await prepare(),path=\`/api/matches/\${id}\`;
+ assert.equal((await subscribe(id,c)).status,404);
+ const sa=await subscribe(id,a),sb=await subscribe(id,b);
+ await sa.waitFor(e=>e.payload.gameRevision===0);
+ await sb.waitFor(e=>e.payload.gameRevision===0);
+ assert.equal((await call('POST',\`\${path}/deck/initialize\`,{cookie:a,body:{}})).status,201);
+ const first=(await call('GET',path,{cookie:a})).body.state;
+ const command=(cookie,type,rev,key,extra={})=>call('POST',\`\${path}/commands\`,{cookie,body:{type,expectedRevision:rev,idempotencyKey:key,...extra}});
+ assert.equal((await command(a,'play_synthetic_card',0,'sse_move_card_0001',{cardRef:first.yourHand[0]})).status,200);
+ assert.equal((await command(a,'assign_synthetic_orders',1,'sse_move_orders_01',{unitIds:['synthetic-a']})).status,200);
+ await sa.waitFor(e=>e.payload.gameRevision===2);
+ await sb.waitFor(e=>e.payload.gameRevision===2);
+ const before=sa.events.length;
+ assert.equal((await command(b,'move_synthetic_unit',2,'sse_move_enemy_001',{unitId:'synthetic-a',path:[{col:4,row:4}]})).status,403);
+ await new Promise(resolve=>setTimeout(resolve,100));
+ assert.equal(sa.events.length,before);
+ assert.equal((await command(a,'move_synthetic_unit',2,'sse_move_valid_001',{unitId:'synthetic-a',path:[{col:4,row:4}]})).status,200);
+ await sa.waitFor(e=>e.payload.gameRevision===3);
+ await sb.waitFor(e=>e.payload.gameRevision===3);
+ const viewA=(await call('GET',path,{cookie:a})).body.state;
+ const viewB=(await call('GET',path,{cookie:b})).body.state;
+ assert.equal(viewA.revision,3);assert.equal(viewB.revision,3);
+ assert.deepEqual(viewA.board[0],viewB.board[0]);assert.equal(viewB.board[0].col,4);
+ const secret=JSON.parse(store.unsafeTestDatabase().prepare('SELECT private_state FROM matches WHERE id=?').get(id).private_state).commandSession;
+ for(const watcher of [sa,sb])for(const frame of watcher.events){
+  assert.deepEqual(Object.keys(frame.payload).sort(),['gameRevision','lobbyRevision']);
+  for(const id of [...secret.hands.A,...secret.hands.B,...secret.drawPile])assert.equal(frame.raw.includes(id),false);
+  for(const word of ['UNIT_MOVED_SIMULATED','path','unitId','yourHand','synthetic_card_'])assert.equal(frame.raw.includes(word),false);
+ }
+ sb.stop();await sb.waitClosed();
+ const reconnected=await subscribe(id,b);
+ assert.equal((await reconnected.waitFor(e=>e.payload.gameRevision===3)).payload.gameRevision,3);
+ assert.equal((await call('DELETE','/api/session',{cookie:b})).status,200);
+ await reconnected.waitClosed();
+ assert.equal((await subscribe(id,b)).status,401);
+}));
