@@ -197,3 +197,13 @@ Esta interfaz no utiliza todavía el tablero SVG (PR #27), no implementa *Ancien
 Se añadió una suite de laboratorio que comprueba los avisos SSE en **dos sesiones HTTP autenticadas**, los cambios del mazo persistente, la reconexión y la revocación de cookies. **Ocho suites afectadas ejecutadas juntas: 49/49 pruebas superadas**, Node.js 22.16.0.
 
 La [guía de verificación](docs/26-sse-mazo-dos-sesiones.md) documenta el alcance y los límites; el script general y el diagnóstico enumeran ahora **25 suites**. La ejecución completa en PowerShell/Windows 11, el uso visual en dos perfiles y la PR #27 del tablero continúan pendientes. Ningún servicio está preparado para Internet.
+
+## Núcleo de dados digitales y físicos (CCW-015/016)
+
+Se ha añadido un **contrato técnico independiente**, sin reglas de combate, en `packages/dice-roller/`. Permite obtener resultados digitales mediante azar criptográfico del servidor o **registrar**, sin considerarlos verificados, los valores comunicados de dados físicos. El número de dados y las caras válidas deben proceder de un reglamento aprobado y no del cliente.
+
+```powershell
+node --test packages/dice-roller/dice.test.mjs
+```
+
+**12/12 pruebas aisladas superadas** con Node.js 22.16.0; la batería local enumera **26 suites**, pendientes de ejecución conjunta en Windows. La [ficha técnica](docs/27-contrato-dados-sinteticos.md) detalla límites, trazabilidad y riesgos. **No hay resolución de combates ni integración HTTP** y las issues CCW-015/016 permanecen abiertas.
