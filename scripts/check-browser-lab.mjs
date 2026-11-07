@@ -27,7 +27,8 @@ const tests = [
   'packages/local-api/browser-deck-ui.test.mjs',
   'packages/local-api/command-deck-sse.test.mjs',
   'packages/dice-roller/dice.test.mjs',
-  'packages/order-validator/validator.test.mjs'
+  'packages/order-validator/validator.test.mjs',
+  'packages/order-validator/server-context.test.mjs'
 ];
 
 function nodeSupported() {
