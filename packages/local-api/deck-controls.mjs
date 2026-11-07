@@ -21,7 +21,9 @@ export function deckActions(view) {
   const actions = {
     AWAIT_CARD: view.yourHand.length ? ['play_synthetic_card'] : [],
     ASSIGN_ORDERS: ['assign_synthetic_orders'],
-    MOVEMENT: ['move_synthetic_unit', 'undo_synthetic_orders', 'finish_synthetic_movement'],
+    MOVEMENT: ['move_synthetic_unit',
+      ...(Array.isArray(view.movedUnitIds) && view.movedUnitIds.length > 0 ? [] : ['undo_synthetic_orders']),
+      'finish_synthetic_movement'],
     COMBAT: ['ask_synthetic_defense', 'finish_synthetic_combat'],
     DRAW_CARD: ['acknowledge_synthetic_draw']
   };
@@ -54,6 +56,8 @@ export function deckCommand(view, type, data = {}, key) {
           !data.path.every(cell => cell && Number.isSafeInteger(cell.col) &&
             Number.isSafeInteger(cell.row) && cell.col >= 0 && cell.col <= 12 &&
             cell.row >= 0 && cell.row <= 8)) throw new Error('RUTA_INVALIDA');
+      if (Array.isArray(view.movedUnitIds) && view.movedUnitIds.includes(data.unitId))
+        throw new Error('UNIDAD_YA_MOVIDA');
       request.unitId = data.unitId;
       request.path = data.path.map(cell => ({col: cell.col, row: cell.row}));
       break;
@@ -96,6 +100,7 @@ export function deckSummary(view) {
     cartasEnMazo: view.drawPileCount, descarte: [...view.discardPile],
     cartaPublica: view.cardInPlay,
     decisionPendiente: view.pendingDecision ?? null,
-    unidadesPublicas: Array.isArray(view.board) ? structuredClone(view.board) : []
+    unidadesPublicas: Array.isArray(view.board) ? structuredClone(view.board) : [],
+    unidadesMovidas: Array.isArray(view.movedUnitIds) ? [...view.movedUnitIds] : []
   };
 }
