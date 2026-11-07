@@ -2,7 +2,7 @@
 
 **Estado:** laboratorio de pruebas con datos sintéticos. No es todavía el juego *Ancients*, no incorpora reglamento, cartas ni escenarios oficiales, y no se puede utilizar con jugadores reales por Internet.
 
-**Objetivo:** realizar en Windows 11 una primera validación reproducible sin VPS, WSL ni GitHub Actions, separando la interfaz de tablero SVG (#27) del acceso privado a partidas (PR de laboratorio #34 y siguientes).
+**Objetivo:** realizar en Windows 11 una primera validación reproducible sin VPS, WSL ni GitHub Actions, separando la interfaz del tablero SVG (PR #27, aún abierta) del acceso privado a partidas, que ya está integrado en `main`.
 
 ## 1. Preparación sin modificar datos
 
@@ -10,11 +10,12 @@ Instalar Node.js 22.16.0 o una versión compatible posterior con `node:sqlite` y
 
 ```powershell
 git fetch origin
-git switch test/i2-first-validation
+git switch main
+git pull --ff-only
 node scripts/check-browser-lab.mjs
 ```
 
-El diagnóstico **no crea ni modifica ninguna base de datos**. El lanzador comprueba que puede abrir el puerto **antes** de crear cuentas o ficheros SQLite: si el puerto está ocupado, termina sin generar una base incompleta. Comprueba versión de Node, existencia de suites, disponibilidad del puerto `127.0.0.1:8788` y si ya existe una base local de prueba. Si falta algún archivo, comprobar la rama activa; no mezclar los archivos de `main` con los del laboratorio apilado.
+El diagnóstico **no crea ni modifica ninguna base de datos**. El lanzador comprueba que puede abrir el puerto **antes** de crear cuentas o ficheros SQLite: si el puerto está ocupado, termina sin generar una base incompleta. Comprueba versión de Node, existencia de suites, disponibilidad del puerto `127.0.0.1:8788` y si ya existe una base local de prueba. Si falta algún archivo, comprobar que se ha actualizado `main` y que no hay cambios locales sin integrar.
 
 Para cambiar el puerto de forma temporal:
 
@@ -29,7 +30,7 @@ node scripts/check-browser-lab.mjs
 .\scripts\test-local.ps1
 ```
 
-La batería cubre geometría, servidor experimental, identidades, invitaciones, almacenamiento, API, SQLite, restauración, cookies, rechazo de orígenes y una prueba **HTTP con base SQLite real**. Además ejecuta una prueba que arranca el **lanzador real** en un proceso independiente, completa una partida ficticia entre dos cuentas, detiene el proceso, lo reinicia y comprueba que recupera los datos. Otra prueba confirma que un puerto ocupado no deja una base nueva inutilizable. Si alguna prueba falla, conservar el informe de PowerShell (sin compartir contraseñas ni tokens) y detener la validación manual.
+La batería de **18 suites** cubre geometría, servidor experimental, identidades, invitaciones, almacenamiento, API, SQLite, restauración, cookies, rechazo de orígenes, sincronización SSE, fases sintéticas y una prueba **HTTP con base SQLite real**. Además ejecuta una prueba que arranca el **lanzador real** en un proceso independiente, completa una partida ficticia entre dos cuentas, detiene el proceso, lo reinicia y comprueba que recupera los datos. Otra prueba confirma que un puerto ocupado no deja una base nueva inutilizable. Si alguna prueba falla, conservar el informe de PowerShell (sin compartir contraseñas ni tokens) y detener la validación manual.
 
 ## 3. Abrir el laboratorio
 
@@ -52,7 +53,7 @@ Abrir `http://127.0.0.1:8788/` en dos perfiles separados de navegador, por ejemp
 | A5 | `bob` pega el token y acepta | Sala `READY` con dos participantes |
 | A6 | Ambos consultan la misma partida | Cada uno ve su propia mano; del otro solo número de cartas |
 | A7 | `bob` intenta finalizar el primer turno ficticio | Es rechazado: inicialmente le toca a `alice` |
-| A8 | `alice` finaliza el turno y ambos actualizan | Incrementa revisión y pasa turno ficticio a `bob` |
+| A8 | `alice` finaliza el turno; comprobar la actualización SSE en ambos perfiles | Incrementa revisión y pasa turno ficticio a `bob`, sin transmitir cartas privadas por SSE |
 | A9 | Salir con Ctrl+C, volver a iniciar y consultar | Se conserva la partida, sesión (si no ha caducado) y revisión |
 | A10 | Cerrar sesión en perfil 2 e intentar consultar | Debe pedir autenticación y no revelar información privada |
 
@@ -88,4 +89,4 @@ La primera validación puede dar por verificadas **solo** la interfaz local y la
 
 ### Verificación adicional de la base de datos
 
-El diagnóstico y la regresión incluyen la nueva suite `packages/sqlite-store/schema-integrity.test.mjs`, que evita aceptar bases sintéticas con restricciones perdidas o con objetos SQL inesperados. La revisión integral posterior ha ejecutado **las 15 suites juntas: 93 pruebas superadas, 0 fallos**, incluida geometría, servidor de demostración y los contratos iniciales. Se cotejaron 32 archivos de código y pruebas mediante hashes Git. Consulta el [informe completo](19-informe-regresion-integral-i2.md). El script PowerShell aún debe comprobarse en Windows y no se ha superado una prueba visual en navegador.
+El diagnóstico y la regresión incluyen la nueva suite `packages/sqlite-store/schema-integrity.test.mjs`, que evita aceptar bases sintéticas con restricciones perdidas o con objetos SQL inesperados. La revisión integral histórica de I2 ejecutó **15 suites juntas: 93 pruebas superadas, 0 fallos**. Posteriormente, SSE elevó la batería a 17 suites (**99 pruebas superadas**) y el módulo de fases sintéticas superó **15 pruebas adicionales por separado**. Ahora el script reúne 18 suites, cuya ejecución conjunta en Windows aún está pendiente. Se cotejaron 32 archivos de código y pruebas mediante hashes Git. Consulta el [informe completo](19-informe-regresion-integral-i2.md). El script PowerShell aún debe comprobarse en Windows y no se ha superado una prueba visual en navegador.
