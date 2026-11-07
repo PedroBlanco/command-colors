@@ -106,7 +106,6 @@ test('SSE: logout revokes the existing stream and stale cookie cannot reconnect'
  assert.equal(stale.status,401);
 }));
 
-
 test('SSE: authenticated movement reaches both players with counters only; rejected move is silent',()=>lab(async({call,prepare,subscribe,store})=>{
  const {id,a,b,c}=await prepare(),path=`/api/matches/${id}`;
  assert.equal((await subscribe(id,c)).status,404);
