@@ -1,0 +1,8 @@
+# Datos de partidas locales: no incluir archivos con manos, sesiones o credenciales
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+.local-data/
