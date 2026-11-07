@@ -248,3 +248,22 @@ test('unsupported legacy demo turn cannot bypass the deck phase reducer',()=>fix
   assert.equal(response.code,'INVALID_COMMAND');
   assert.equal(inst.getRow(MATCH).game_revision,0);
 }));
+
+test('separate matches isolate revisions, public events and private command decks',()=>fixture(({inst})=>{
+  const otherId='223e4567-e89b-42d3-a456-426614174111';
+  const next={...initial(),matchId:otherId};
+  inst.db.prepare('INSERT INTO matches(id,owner_id,guest_id,private_state) VALUES (?,?,?,?)')
+    .run(otherId,'account_A','account_B',JSON.stringify(next));
+  const getRow=id=>inst.db.prepare('SELECT * FROM matches WHERE id=?').get(id);
+  const atomic=fn=>{inst.db.exec('BEGIN IMMEDIATE');try{const result=fn();inst.db.exec('COMMIT');return result;}catch(e){inst.db.exec('ROLLBACK');throw e;}};
+  const other=createSqliteCommandDeckStore({db:inst.db,matchId:otherId,getRow,atomic});
+  assert.equal(inst.store.initialize('A').status,201);
+  assert.equal(other.initialize('A').status,201);
+  const card=inst.store.view('A').yourHand[0];
+  apply(inst.store,'A','play_synthetic_card',0,{cardRef:card});
+  assert.equal(inst.store.view('A').revision,1);
+  assert.equal(other.view('A').revision,0);
+  assert.equal(inst.db.prepare('SELECT count(*) n FROM game_events WHERE match_id=?').get(otherId).n,0);
+  assert.equal(inst.db.prepare('SELECT count(*) n FROM game_commands WHERE match_id=?').get(otherId).n,0);
+  assert.equal(other.view('A').yourHand.length,2);
+}));
