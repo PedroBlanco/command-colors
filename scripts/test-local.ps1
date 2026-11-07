@@ -14,6 +14,7 @@ try {
     "packages/sqlite-store/sqlite.test.mjs",
     "packages/local-api/sqlite-compose.test.mjs",
     "packages/sqlite-store/lifecycle.test.mjs",
+    "packages/sqlite-store/schema-integrity.test.mjs",
     "packages/local-api/browser-session.test.mjs",
     "packages/local-api/browser-gateway.test.mjs",
     "packages/local-api/browser-sqlite-smoke.test.mjs",
