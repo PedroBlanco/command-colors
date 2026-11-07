@@ -8,6 +8,7 @@ import {promisify} from 'node:util';
 import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {initializeSchema, CCW_SCHEMA_SQL} from './schema-version.mjs';
+import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqlite-game.mjs';
 
 const scrypt = promisify(callbackScrypt);
 const KDF = Object.freeze({N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024});
@@ -202,16 +203,30 @@ export function openSqliteComposition({file, clock = Date.now,
       if (!row || row.guest_id === null) throw new Error('MATCH_NOT_READY');
       return row;
     }
+    const commandDeck = createSqliteCommandDeckStore({
+      db, matchId, atomic, getRow: id => getMatchRow.get(id)
+    });
     return {
-      view(actor) {return project(rowOrThrow(), actor);},
+      // Once the synthetic deck is initialized, the legacy fixture hands
+      // must never be returned to a player.
+      view(actor) {
+        const row = rowOrThrow();
+        return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+      },
+      initializeCommandDeck(actor) {
+        rowOrThrow();
+        return commandDeck.initialize(actor);
+      },
       publicEvents(actor) {
         if (!['A','B'].includes(actor)) return null;
         rowOrThrow();
         return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
           .all(matchId).map(x => decode(x.payload));
       },
-      async dispatch({actor,type,expectedRevision,idempotencyKey} = {}) {
+      async dispatch(request = {}) {
+        const {actor,type,expectedRevision,idempotencyKey} = request;
         if (!['A','B'].includes(actor)) return {status:403,code:'FORBIDDEN'};
+        if (hasCommandDeck(rowOrThrow())) return commandDeck.dispatch(request);
         if (type !== 'pass_demo_turn' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
         return atomic(() => {

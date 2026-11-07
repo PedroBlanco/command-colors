@@ -161,3 +161,19 @@ node --test packages/command-deck/deck.test.mjs
 **21/21 pruebas del módulo superadas localmente** con el reducer real de fases de `main`. El script y el diagnóstico contemplan ahora **19 suites**; no se ha ejecutado todavía su conjunto completo sobre Windows. Véanse el [contrato del mazo opaco](docs/23-mazo-mando-opaco-i3.md) y la [matriz de reglas](docs/04-matriz-reglas.md).
 
 **Limitaciones:** no incluye cartas oficiales, efectos, reglas de agotamiento, movimientos, combates ni persistencia de estas manos en la base de datos. No es una partida jugable y no debe exponerse por Internet.
+
+## Iteración 3 — Persistencia del mazo y API de laboratorio
+
+La rama `feat/i3-durable-command-deck-api` conecta el mazo **sintético** de CCW-012 con el estado privado de SQLite, las transacciones existentes y la API autenticada: el propietario de una sala `READY` puede inicializar un mazo de prueba y los dos participantes actúan por el endpoint de comandos, con el actor determinado exclusivamente por la sesión.
+
+El servidor conserva las manos y el orden oculto del mazo; `GET /api/matches/:uuid` proyecta únicamente la mano del jugador y la información pública. `game_revision`, eventos e idempotencia se confirman juntos, y sobreviven a un reinicio. El esquema SQLite v1 **no ha cambiado**.
+
+```powershell
+node --test packages/command-deck/deck.test.mjs packages/command-deck/sqlite-game.test.mjs
+node --test packages/local-api/command-deck-http.test.mjs
+.\scripts\test-local.ps1
+```
+
+**39 pruebas del mazo y su adaptador SQLite superadas**. Las **4 pruebas HTTP originales ya han pasado** con SQLite y backend reales. Se añadieron **2 pruebas con cookies** (protección de origen, privacidad y fases) también superadas; las tres suites de SQLite y HTTP acumulan **24/24 pruebas en una ejecución conjunta**. El procedimiento general enumera **22 suites**, pendiente de regresión conjunta. Lee el [contrato de persistencia y rutas API](docs/24-mazo-persistente-api-i3.md).
+
+Se mantienen datos y comandos ficticios. **No** hay integración reglamentaria, cartas oficiales, interfaz de juego completa, seguridad de producción ni permisos de distribución de materiales. La PR #27 del tablero sigue pendiente de aceptación visual.
