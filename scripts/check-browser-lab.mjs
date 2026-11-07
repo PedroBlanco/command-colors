@@ -32,7 +32,8 @@ const tests = [
   'packages/movement/movement.test.mjs',
   'packages/movement/server-policy.test.mjs',
   'packages/command-deck/movement-sqlite.test.mjs',
-  'packages/local-api/movement-revision-sse.test.mjs'
+  'packages/local-api/movement-revision-sse.test.mjs',
+  'packages/local-api/movement-controls.test.mjs'
 ];
 
 function nodeSupported() {
