@@ -29,7 +29,9 @@ const tests = [
   'packages/dice-roller/dice.test.mjs',
   'packages/order-validator/validator.test.mjs',
   'packages/order-validator/server-context.test.mjs',
-  'packages/movement/movement.test.mjs'
+  'packages/movement/movement.test.mjs',
+  'packages/movement/server-policy.test.mjs',
+  'packages/command-deck/movement-sqlite.test.mjs'
 ];
 
 function nodeSupported() {
