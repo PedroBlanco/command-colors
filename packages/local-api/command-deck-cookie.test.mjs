@@ -152,3 +152,43 @@ test('cookie/SQLite: server checks units and rejects forged orders without persi
  assert.equal(service.unsafeTestDatabase().prepare(
    'SELECT COUNT(*) AS n FROM game_events WHERE match_id=?').get(id).n,2);
 }));
+
+test('HTTP cookie/SQLite: both authorized players see a persisted move but cannot forge its actor',()=>withLab(async({service,call,prepare})=>{
+ const {id,alice,bob,carol}=await prepare(),path='/api/matches/'+id;
+ assert.equal((await call('POST',path+'/deck/initialize',{cookie:alice,body:{}})).status,201);
+ const init=(await call('GET',path,{cookie:alice})).data.state;
+ const send=(cookie,type,rev,key,fields={})=>call('POST',path+'/commands',{cookie,body:{
+  actor:'B', type, expectedRevision:rev, idempotencyKey:key, ...fields
+ }});
+ const played=await send(alice,'play_synthetic_card',0,'http_card_moving_01',{cardRef:init.yourHand[0]});
+ assert.equal(played.status,200);
+ const ordered=await send(alice,'assign_synthetic_orders',1,'http_orders_moving_01',{unitIds:['synthetic-a']});
+ assert.equal(ordered.status,200);
+ const refused=await send(bob,'move_synthetic_unit',2,'http_enemy_moving_01',{
+  unitId:'synthetic-a',path:[{col:4,row:4}]});
+ assert.equal(refused.status,403);
+ const forged=await send(alice,'move_synthetic_unit',2,'http_bad_moving_001',{
+  unitId:'synthetic-a',path:[{col:4,row:4},{col:4,row:5},{col:5,row:5}],
+  maxStepsByUnit:{'synthetic-a':100},blockedCells:[],board:[]});
+ assert.equal(forged.status,400);assert.equal(forged.data.code,'MOVEMENT_LIMIT_EXCEEDED');
+ const applied=await send(alice,'move_synthetic_unit',2,'http_valid_moving_01',{
+  unitId:'synthetic-a',path:[{col:4,row:4}]});
+ assert.equal(applied.status,200);assert.equal(applied.data.code,'APPLIED');
+ const own=(await call('GET',path,{cookie:alice})).data.state;
+ const opponent=(await call('GET',path,{cookie:bob})).data.state;
+ assert.equal(own.revision,3);assert.equal(opponent.revision,3);
+ assert.equal(own.board[0].col,4);assert.equal(opponent.board[0].col,4);
+ assert.equal(own.board[0].row,4);assert.equal(opponent.board[0].row,4);
+ assert.equal((await call('GET',path,{cookie:carol})).status,404);
+ const repeat=await send(alice,'move_synthetic_unit',2,'http_valid_moving_01',{
+  unitId:'synthetic-a',path:[{col:4,row:4}]});
+ assert.equal(repeat.status,200);assert.equal(repeat.data.code,'ALREADY_APPLIED');
+ const second=await send(alice,'move_synthetic_unit',3,'http_double_moving_1',{
+  unitId:'synthetic-a',path:[{col:5,row:4}]});
+ assert.equal(second.status,400);assert.equal(second.data.code,'UNIT_NOT_ELIGIBLE');
+ const undo=await send(alice,'undo_synthetic_orders',3,'http_undo_moving_01');
+ assert.equal(undo.status,409);assert.equal(undo.data.code,'UNDO_NOT_AVAILABLE_AFTER_MOVEMENT');
+ const sql=service.unsafeTestDatabase();
+ assert.equal(sql.prepare('SELECT game_revision FROM matches WHERE id=?').get(id).game_revision,3);
+ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM game_events WHERE match_id=?').get(id).n,3);
+}));
