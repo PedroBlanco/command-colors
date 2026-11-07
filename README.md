@@ -244,3 +244,9 @@ node --test packages/order-validator/*.test.mjs packages/movement/*.test.mjs pac
 ```
 
 **48/48 pruebas locales superadas** (incluidas 9 de SQLite real). La prueba HTTP de dos usuarios se ha añadido pero **todavía no está ejecutada**; el script general abarca **31 suites**, pendiente de regresión íntegra en Windows. Las vistas privadas del jugador y las actualizaciones SSE necesitan validación completa de navegador. Ver [contrato de movimiento persistente](docs/31-movimiento-sqlite-http-i4.md). Se mantienen en borrador las PR apiladas #45, #46 y la integración posterior. La PR #27 (tablero SVG) sigue pendiente de validación visual.
+
+## Comprobación SSE de movimientos — incremento I4
+
+El archivo `packages/local-api/movement-revision-sse.test.mjs` añade **4 pruebas de la función SSE real** `startRevisionStream` con contadores de revisión leídos de una base SQLite real; simula la identidad y membresía de dos participantes, sin abrir HTTP ni usar cookies de navegador. Comprueba la notificación de movimiento a ambos, que un rechazo no genera nuevos avisos, que una reconexión recibe la revisión actual y que la revocación de sesión cierra el flujo. Los frames contienen solo `lobbyRevision` y `gameRevision`, sin rutas, cartas ni manos. El archivo SSE publicado coincide en SHA con el ejecutado localmente (`30e374b5478fb1038c0e294bdadddfea6fedef43`).
+
+**Prueba real local:** 52/52 correctas combinando órdenes, movimiento, SQLite y SSE simulado con Node.js 22.16.0. **No equivale a una prueba HTTP/cookies/SSE completa.** Las pruebas HTTP de dos perfiles siguen pendientes; la regresión general enumera ahora **32 suites** y aún no se ha ejecutado conjuntamente en Windows. Ni esta verificación ni el incremento implementan reglas oficiales de *Ancients*.
