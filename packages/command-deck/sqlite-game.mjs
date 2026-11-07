@@ -7,12 +7,15 @@
 import {createCommandSession, assertCommandSnapshot, projectCommandSession, transitionCommandSession} from './deck.mjs';
 import {validateSyntheticOrderAssignment} from '../order-validator/validator.mjs';
 import {createServerSyntheticOrderContext} from '../order-validator/server-context.mjs';
+import {transitionSyntheticMovement} from '../movement/movement.mjs';
+import {createServerSyntheticMovementPolicy} from '../movement/server-policy.mjs';
 
 const KEY = /^[A-Za-z0-9_-]{8,80}$/;
 const TYPES = new Set([
   'play_synthetic_card', 'assign_synthetic_orders', 'undo_synthetic_orders',
   'finish_synthetic_movement', 'ask_synthetic_defense',
-  'answer_synthetic_defense', 'finish_synthetic_combat', 'acknowledge_synthetic_draw'
+  'answer_synthetic_defense', 'finish_synthetic_combat', 'acknowledge_synthetic_draw',
+  'move_synthetic_unit'
 ]);
 const SYNTHETIC_CARDS = Object.freeze(Array.from({length: 18}, (_, i) => `synthetic_card_${String(i + 1).padStart(2, '0')}`));
 const deny = (status, code) => ({status, code});
@@ -46,6 +49,7 @@ function semanticCommand(request) {
   if (type === 'assign_synthetic_orders') fields.unitIds = request.unitIds;
   if (type === 'ask_synthetic_defense') fields.targetUnit = request.targetUnit;
   if (type === 'answer_synthetic_defense') fields.choice = request.choice;
+  if (type === 'move_synthetic_unit') { fields.unitId = request.unitId; fields.path = request.path; }
   return {type, fields};
 }
 
@@ -68,6 +72,9 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
       // Server-owned scenario-independent placeholder: never trust card IDs/sizes from a browser.
       const session = createCommandSession({cardIds: SYNTHETIC_CARDS, handSizes: {A: 2, B: 3}});
       state.commandSession = session;
+      // This is an invented laboratory policy; never accept movement range from HTTP.
+      createServerSyntheticMovementPolicy(state.board);
+      state.movedUnitIds = [];
       db.prepare('UPDATE matches SET private_state=?, lobby_revision=lobby_revision+1 WHERE id=?')
         .run(JSON.stringify(state), matchId);
       const updated = {...row, private_state: JSON.stringify(state)};
@@ -112,14 +119,38 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
         }
         approvedCommand = checked.command;
       }
-      const result = transitionCommandSession(state.commandSession, approvedCommand);
+      // Once a unit has moved, undoing its orders is no longer nonrandom
+      // and reversible. No hidden move is erased by a later order edit.
+      if (semantic.type === 'undo_synthetic_orders' && state.movedUnitIds?.length > 0) {
+        return {status: 409, code: 'UNDO_NOT_AVAILABLE_AFTER_MOVEMENT', view: project(row, matchId, actor)};
+      }
+      let result;
+      if (semantic.type === 'move_synthetic_unit') {
+        // Older laboratory snapshots without tracking must fail closed.
+        if (!Array.isArray(state.movedUnitIds)) return deny(409, 'MOVEMENT_STATE_UNAVAILABLE');
+        result = transitionSyntheticMovement({
+          board: state.board, movedUnitIds: state.movedUnitIds,
+          phaseState: state.commandSession.phaseState
+        }, approvedCommand, createServerSyntheticMovementPolicy(state.board));
+        if (result.accepted) {
+          state.board = result.nextState.board;
+          state.movedUnitIds = result.nextState.movedUnitIds;
+          state.commandSession.phaseState = result.nextState.phaseState;
+          assertCommandSnapshot(state.commandSession);
+        }
+      } else {
+        result = transitionCommandSession(state.commandSession, approvedCommand);
+        if (result.accepted) {
+          state.commandSession = result.nextState;
+          if (semantic.type === 'acknowledge_synthetic_draw') state.movedUnitIds = [];
+        }
+      }
       if (!result.accepted) {
         const code = result.reason;
         return {status: code === 'NOT_ACTING_PLAYER' ? 403 : code === 'STALE_REVISION' ? 409 : 400,
           code, view: project(row, matchId, actor)};
       }
-      state.commandSession = result.nextState;
-      const revision = result.nextState.phaseState.revision;
+      const revision = state.commandSession.phaseState.revision;
       if (revision !== row.game_revision + 1 || result.events.length !== 1) throw new Error('COMMAND_SEQUENCE_INVALID');
       db.prepare('UPDATE matches SET game_revision=?, private_state=? WHERE id=? AND game_revision=?')
         .run(revision, JSON.stringify(state), matchId, row.game_revision);

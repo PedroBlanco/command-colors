@@ -12,7 +12,7 @@ test('diagnóstico es de solo lectura, no crea base ni directorios', async() => 
    assert.equal(result.ok,false);
    assert.ok(result.failures.some(x=>x.includes('Faltan')));
    assert.ok(result.warnings.some(x=>x.includes('No existe base')));
-   assert.equal(result.tests,29);
+   assert.equal(result.tests,32);
  } finally {await rm(root,{recursive:true,force:true});}
 });
 

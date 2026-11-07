@@ -233,3 +233,20 @@ node --test packages/movement/movement.test.mjs
 ```
 
 **17/17 pruebas de movimiento y 34/34 junto con las de validación de órdenes** ejecutadas correctamente con Node.js 22.16.0, sin WSL ni Actions. La batería total de la rama apilada enumera **29 suites**, pendiente de ejecución conjunta. Este módulo **no está conectado a SQLite/HTTP**. [Contrato y límites](docs/30-movimiento-sintetico-i4.md). Depende de la [PR #45](https://github.com/PedroBlanco/command-colors/pull/45), todavía en revisión.
+
+## I4 — Movimiento persistente (laboratorio, no reglamentario)
+
+En la rama de integración `feat/i4-sqlite-movement-events`, el comando `move_synthetic_unit` puede validar una ruta hexagonal y guardar el nuevo tablero, las unidades ya movidas, el evento público y la revisión **en una misma transacción SQLite**. La política se deriva del tablero del servidor: **dos pasos ficticios por unidad y ningún obstáculo de terreno**. No representa el reglamento oficial de *Ancients*. Se evita mover dos veces la misma unidad y se bloquea deshacer órdenes tras ejecutar un movimiento; cada turno nuevo reinicia el registro de unidades movidas.
+
+```powershell
+node --test packages/order-validator/*.test.mjs packages/movement/*.test.mjs packages/command-deck/movement-sqlite.test.mjs
+.\scripts\test-local.ps1
+```
+
+**48/48 pruebas locales superadas** (incluidas 9 de SQLite real). La prueba HTTP de dos usuarios se ha añadido pero **todavía no está ejecutada**; el script general abarca **31 suites**, pendiente de regresión íntegra en Windows. Las vistas privadas del jugador y las actualizaciones SSE necesitan validación completa de navegador. Ver [contrato de movimiento persistente](docs/31-movimiento-sqlite-http-i4.md). Se mantienen en borrador las PR apiladas #45, #46 y la integración posterior. La PR #27 (tablero SVG) sigue pendiente de validación visual.
+
+## Comprobación SSE de movimientos — incremento I4
+
+El archivo `packages/local-api/movement-revision-sse.test.mjs` añade **4 pruebas de la función SSE real** `startRevisionStream` con contadores de revisión leídos de una base SQLite real; simula la identidad y membresía de dos participantes, sin abrir HTTP ni usar cookies de navegador. Comprueba la notificación de movimiento a ambos, que un rechazo no genera nuevos avisos, que una reconexión recibe la revisión actual y que la revocación de sesión cierra el flujo. Los frames contienen solo `lobbyRevision` y `gameRevision`, sin rutas, cartas ni manos. El archivo SSE publicado coincide en SHA con el ejecutado localmente (`30e374b5478fb1038c0e294bdadddfea6fedef43`).
+
+**Prueba real local:** 52/52 correctas combinando órdenes, movimiento, SQLite y SSE simulado con Node.js 22.16.0. **No equivale a una prueba HTTP/cookies/SSE completa.** Las pruebas HTTP de dos perfiles siguen pendientes; la regresión general enumera ahora **32 suites** y aún no se ha ejecutado conjuntamente en Windows. Ni esta verificación ni el incremento implementan reglas oficiales de *Ancients*.

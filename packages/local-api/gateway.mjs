@@ -178,6 +178,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const result = await store.dispatch({actor, type: body.type,
           expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey,
           cardRef: body.cardRef, unitIds: body.unitIds,
+          unitId: body.unitId, path: body.path,
           targetUnit: body.targetUnit, choice: body.choice});
         if (result.view && result.view.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
