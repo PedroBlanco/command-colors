@@ -177,3 +177,17 @@ node --test packages/local-api/command-deck-http.test.mjs
 **39 pruebas del mazo y su adaptador SQLite superadas**. Las **4 pruebas HTTP completas**, añadidas al repositorio, tienen sintaxis comprobada, pero aún no se han ejecutado en este incremento con todas las fuentes del backend reunidas. El procedimiento general enumera **21 suites**, pendiente de regresión conjunta. Lee el [contrato de persistencia y rutas API](docs/24-mazo-persistente-api-i3.md).
 
 Se mantienen datos y comandos ficticios. **No** hay integración reglamentaria, cartas oficiales, interfaz de juego completa, seguridad de producción ni permisos de distribución de materiales. La PR #27 del tablero sigue pendiente de aceptación visual.
+
+## Iteración 3 — Controles del mazo sintético en navegador
+
+La nueva página de laboratorio añade un panel para inicializar un mazo **ficticio**, jugar una carta de la propia mano, asignar y deshacer órdenes sintéticas, avanzar las fases y registrar una decisión del defensor. El servidor sigue siendo la autoridad y obtiene el jugador de la sesión, **no del JSON del navegador**. Al cambiar de cuenta o partida se borra la vista privada anterior.
+
+Las pruebas añadidas a la batería son:
+
+```powershell
+node --test packages/local-api/deck-controls.test.mjs packages/local-api/browser-deck-ui.test.mjs
+```
+
+**13/13 pruebas nuevas superadas**, más dos pruebas reproducidas de compatibilidad SSE en la ejecución local. La batería general comprende ahora **23 suites**; todavía no se ha probado íntegramente en Windows ni se ha ejecutado la suite HTTP con SQLite pendiente de la PR #40. Consultar la [guía de aceptación del mazo](docs/25-interfaz-mazo-sintetico-i3.md).
+
+Esta interfaz no utiliza todavía el tablero SVG (PR #27), no implementa *Ancients* reglamentario y **no debe exponerse fuera de 127.0.0.1**.
