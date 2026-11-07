@@ -21,7 +21,9 @@ const tests = [
   'packages/turn-phase/phase.test.mjs',
   'packages/command-deck/deck.test.mjs',
   'packages/command-deck/sqlite-game.test.mjs',
-  'packages/local-api/command-deck-http.test.mjs'
+  'packages/local-api/command-deck-http.test.mjs',
+  'packages/local-api/deck-controls.test.mjs',
+  'packages/local-api/browser-deck-ui.test.mjs'
 ];
 
 function nodeSupported() {
