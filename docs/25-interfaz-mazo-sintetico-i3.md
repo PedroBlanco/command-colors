@@ -1,6 +1,6 @@
 # CCW-012 — Controles de cartas sintéticas en navegador (I3)
 
-**Estado:** propuesta experimental en PR #41, apilada sobre PR #40. **No es un juego de Ancients**. No contiene cartas, imágenes, escenarios ni reglas oficiales. El laboratorio web continúa limitado a `127.0.0.1`.
+**Estado:** propuesta experimental en PR #41, dependiente de PR #40 **ya fusionada en `main`**. **No es un juego de Ancients**. No contiene cartas, imágenes, escenarios ni reglas oficiales. El laboratorio web continúa limitado a `127.0.0.1`.
 
 ## Objetivo
 
@@ -17,7 +17,7 @@ Facilitar la **primera prueba con dos perfiles de navegador** del mazo sintétic
 
 ## Procedimiento previsto en Windows 11
 
-Desde una copia del repositorio, **solo cuando se hayan superado las pruebas HTTP pendientes de la PR #40**:
+Desde una copia del repositorio, tras superar las pruebas HTTP+SQLite de la PR #40:
 
 ```powershell
 git fetch origin
@@ -51,7 +51,7 @@ node --test packages/local-api/deck-controls.test.mjs packages/local-api/browser
 
 Los IDs utilizados por el nuevo JavaScript se cotejaron con los elementos del HTML publicado: **ninguno faltante**.
 
-**No ejecutado aún:** pruebas de gateway HTTP con SQLite real, batería completa de 23 suites, PowerShell en Windows, DOM de un navegador gráfico ni validación humana del tablero SVG de PR #27. La dependencia PR #40 permanece en borrador y **no debe fusionarse la PR #41 antes de resolver esas pruebas**.
+**Revisión 7-11-2026:** se ejecutaron conjuntamente **siete suites con 47/47 pruebas superadas**, 0 fallos: 18 de SQLite, 4 HTTP Bearer, 2 HTTP cookies, 8 de seguridad del gateway y rutas estáticas, 7 del modelo de controles, 6 DOM nuevos y 2 SSE regresión. Las fuentes ejecutadas se cotejaron por hash Git con los blobs de la rama. La PR #40 ya está fusionada; PR #41 fue actualizada incorporando las pruebas de cookies, conservando la cobertura acumulada. Sigue **pendiente** la ejecución de las 24 suites completas y del script PowerShell en Windows, el navegador gráfico y la validación humana del tablero SVG de PR #27.
 
 ## Limitaciones
 
