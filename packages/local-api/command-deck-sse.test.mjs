@@ -108,14 +108,14 @@ test('SSE: logout revokes the existing stream and stale cookie cannot reconnect'
 
 
 test('SSE: authenticated movement reaches both players with counters only; rejected move is silent',()=>lab(async({call,prepare,subscribe,store})=>{
- const {id,a,b,c}=await prepare(),path=\`/api/matches/\${id}\`;
+ const {id,a,b,c}=await prepare(),path=`/api/matches/${id}`;
  assert.equal((await subscribe(id,c)).status,404);
  const sa=await subscribe(id,a),sb=await subscribe(id,b);
  await sa.waitFor(e=>e.payload.gameRevision===0);
  await sb.waitFor(e=>e.payload.gameRevision===0);
- assert.equal((await call('POST',\`\${path}/deck/initialize\`,{cookie:a,body:{}})).status,201);
+ assert.equal((await call('POST',`${path}/deck/initialize`,{cookie:a,body:{}})).status,201);
  const first=(await call('GET',path,{cookie:a})).body.state;
- const command=(cookie,type,rev,key,extra={})=>call('POST',\`\${path}/commands\`,{cookie,body:{type,expectedRevision:rev,idempotencyKey:key,...extra}});
+ const command=(cookie,type,rev,key,extra={})=>call('POST',`${path}/commands`,{cookie,body:{type,expectedRevision:rev,idempotencyKey:key,...extra}});
  assert.equal((await command(a,'play_synthetic_card',0,'sse_move_card_0001',{cardRef:first.yourHand[0]})).status,200);
  assert.equal((await command(a,'assign_synthetic_orders',1,'sse_move_orders_01',{unitIds:['synthetic-a']})).status,200);
  await sa.waitFor(e=>e.payload.gameRevision===2);
