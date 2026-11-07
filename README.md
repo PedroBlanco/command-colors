@@ -2,7 +2,7 @@
 
 Aplicación web no comercial de juegos por turnos para **dos jugadores humanos**. Primero *Command & Colors: Ancients* básico; después *Napoleonics* básico y ampliaciones.
 
-**Estado:** iteración 0, definición y diseño. No existe todavía un motor de reglas, servidor, ni partida multijugador.
+**Estado:** desarrollo experimental. Hay prototipos locales de tablero, comunicaciones HTTP y almacenamiento; **no existe todavía un juego funcional, un servicio seguro para usuarios reales ni un motor de reglas completo**.
 
 ## Decisiones confirmadas
 
@@ -34,6 +34,90 @@ Diagramas PlantUML en diagrams/ y escenario de ejemplo **sintético** en scenari
 No incluir imágenes, cartas, mapas, PDF o transcripciones de materiales originales sin permiso aplicable. El uso no comercial y la posesión de juegos físicos no conceden por sí solos una licencia de redistribución. Proyecto independiente, no afiliado a GMT Games.
 
 La rama principal se modifica tras revisión mediante PR. Las pruebas deben poder ejecutarse localmente; no introducir dependencias de GitHub Actions hasta justificarlas.
+
+## Laboratorio de integración I2
+
+La rama `feat/i2-integration-contracts` reúne, **sin fusionarlas en main**, las implementaciones experimentales de [persistencia (#28)](https://github.com/PedroBlanco/command-colors/pull/28), [identidad e invitaciones (#29)](https://github.com/PedroBlanco/command-colors/pull/29) y [API (#30)](https://github.com/PedroBlanco/command-colors/pull/30), y añade una composición de los **servicios reales**, junto con pruebas de flujo HTTP de dos jugadores.
+
+Ejecutar desde PowerShell, con Node.js 22 o posterior (sin WSL ni Actions):
+
+```powershell
+.\scripts\test-local.ps1
+```
+
+La [guía de integración](docs/14-prueba-integrada-local.md) explica el alcance y las limitaciones. La base de datos duradera se estudia en el siguiente incremento con SQLite **solo para desarrollo local**. Faltan base de datos y sesiones validadas para producción, login web y motor reglamentario. **No utilizar este laboratorio con jugadores ni en redes externas.**
+
+## Persistencia de laboratorio con SQLite (I2)
+
+Se ha añadido una prueba de persistencia **en archivo SQLite real**, usando `node:sqlite` (experimental en Node.js 22.16.0). Conserva usuarios ficticios, sesiones, invitaciones, estado privado, eventos e idempotencia tras cerrar/reabrir la base de datos. Incluye pruebas con un proceso nuevo, concurrencia entre conexiones, rollback y tres flujos HTTP contra la base de datos.
+
+```powershell
+node --test packages/sqlite-store/sqlite.test.mjs packages/local-api/sqlite-compose.test.mjs
+```
+
+También se ejecutan desde `.\scripts\test-local.ps1`. Consulta [guía SQLite local](docs/15-sqlite-desarrollo-local.md). **No es un despliegue ni sustituye PostgreSQL como opción prevista.** No usar con partidas o datos reales; faltan HTTPS, cookies seguras, CSRF, límites de intentos, backups y migraciones.
+
+
+## Copia y restauración SQLite (solo laboratorio)
+
+La [guía de versión de esquema y copias](docs/16-versionado-copias-sqlite-local.md) introduce una marca de esquema v1, una copia coherente de SQLite en WAL y restauración verificada mediante integridad + SHA-256. La copia se publica en formato autónomo (sin archivos `-wal/-shm`). Para probarlo en Windows 11 con Node.js >=22.16.0:
+
+```powershell
+node --test packages/sqlite-store/lifecycle.test.mjs
+node scripts/sqlite-maintenance.mjs backup .\datos\prueba.sqlite .\copias\prueba-copia.sqlite
+node scripts/sqlite-maintenance.mjs verify .\copias\prueba-copia.sqlite
+node scripts/sqlite-maintenance.mjs restore .\copias\prueba-copia.sqlite .\datos\prueba-restaurada.sqlite
+```
+
+**No utilizar con datos reales**, no exponer el laboratorio en la red ni considerar estas copias como respaldo de producción. La herramienta exige destinos inexistentes; la restauración requiere parada de la aplicación.
+
+## Sesiones de navegador (nuevo laboratorio I2)
+
+La rama `feat/i2-browser-sessions-lab` añade un modo **solo local** de acceso a partidas sintéticas por navegador con cookie `HttpOnly`, `SameSite=Strict` y comprobación de origen para las operaciones de escritura. En HTTP se activa expresamente un modo inseguro que solo admite `127.0.0.1`; **nunca se debe exponer a una red**.
+
+Con Node.js 22.16.0 o posterior compatible con `node:sqlite`, ejecutar desde PowerShell en esta rama:
+
+```powershell
+node --test packages/local-api/browser-session.test.mjs packages/local-api/browser-gateway.test.mjs
+node scripts/browser-lab.mjs
+```
+
+El primer arranque crea cuentas de prueba `alice` y `bob` con contraseñas aleatorias (mostradas una sola vez). Abrir `http://127.0.0.1:8788` en **dos perfiles de navegador diferentes** (normal/privado); las pestañas del mismo perfil comparten sesión. Consultar la [guía de uso y seguridad](docs/17-sesiones-navegador-laboratorio.md).
+
+Esta interfaz mínima **no sustituye** a la del tablero SVG de la PR #27, pendiente de validación. No incorpora reglas de movimiento ni datos oficiales.
+
+## Primera validación guiada (laboratorio I2)
+
+La rama `test/i2-first-validation` contiene la [guía de aceptación](docs/18-guia-primera-validacion.md), un diagnóstico **de solo lectura** y una nueva prueba HTTP de dos usuarios contra SQLite real.
+
+En Windows 11, con Node.js 22.16.0 o posterior compatible:
+
+```powershell
+node scripts/check-browser-lab.mjs
+.\scripts\test-local.ps1
+node scripts/browser-lab.mjs
+```
+
+El diagnóstico no modifica la base ni crea cuentas. El servidor experimental solo escucha en `127.0.0.1:8788`. La [PR #27 del tablero](https://github.com/PedroBlanco/command-colors/pull/27) se comprueba **por separado**. La aplicación todavía no implementa las reglas de Ancients, ni está preparada para Internet.
+
+## Regresión integral del laboratorio I2
+
+La [revisión de regresión completa](docs/19-informe-regresion-integral-i2.md) ejecutó **93 pruebas automatizadas con 0 fallos**, usando Node.js 22.16.0 y la lista exacta de las 15 suites que ejecuta `scripts/test-local.ps1`. Incluye una corrección en el verificador de SQLite que impide registrar bases sin sus restricciones. Se compararon 32 archivos de código y pruebas mediante hashes Git contra los publicados en la rama.
+
+**Importante:** el script PowerShell todavía debe ejecutarse en Windows, y la aceptación visual en navegador sigue pendiente; el entorno de prueba bloqueó la navegación con Chromium. Las PR continúan en borrador y no se ha modificado `main`.
+
+## Sincronización automática por revisiones (CCW-010)
+
+La nueva página de laboratorio se mantiene actualizada con **SSE** sin exponer cartas privadas. El servidor publica solo las revisiones de sala y partida; el cliente obtiene los datos autorizados mediante HTTP, con reconexión y deduplicación.
+
+Se añaden dos suites a la batería: **17 suites y 99 pruebas superadas** en Node.js 22.16.0. Instrucciones técnicas en [sincronización SSE privada](docs/20-sse-revisiones-privadas.md).
+
+```powershell
+node --test packages/local-api/revision-stream.test.mjs packages/local-api/browser-ui.test.mjs
+.\scripts\test-local.ps1
+```
+
+Este canal SSE usa sondeo de laboratorio, limitado a `127.0.0.1` y 16 conexiones. No hay sincronización interproceso ni servidor seguro de producción. La página de laboratorio sigue siendo **distinta** del tablero SVG de la PR #27; la validación visual en navegador permanece pendiente.
 
 ## Iteración 3 — Contrato sintético de fases del turno
 
