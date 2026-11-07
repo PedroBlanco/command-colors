@@ -125,7 +125,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const result = invitations.rejectInvitation({sessionToken: token, invitationToken: body.invitationToken});
         return reply(res, ...Object.values(domainReply(result)));
       }
-      const matchRoute = /^\/api\/matches\/([0-9a-fA-F-]{36})(?:\/(invitations|commands|events|updates))?$/.exec(route);
+      const matchRoute = /^\/api\/matches\/([0-9a-fA-F-]{36})(?:\/(invitations|commands|events|updates|deck\/initialize))?$/.exec(route);
       if (!matchRoute) return reply(res, 404, {code: 'NOT_FOUND'});
       const [, matchId, resource] = matchRoute;
       const lobby = invitations.getMatch({sessionToken: token, matchId});
@@ -152,6 +152,17 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         startRevisionStream({res, token, matchId, identity, invitations, getStore, intervalMs: revisionPollMs});
         return;
       }
+      if (req.method === 'POST' && resource === 'deck/initialize') {
+        // No caller-controlled card list or scenario parameters: laboratory
+        // setup uses server-owned opaque fixtures only.
+        const body = await jsonRequest(req);
+        if (Object.keys(body).length !== 0) return reply(res, 400, {code: 'INVALID_SETUP'});
+        if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
+        const store = await getStore(matchId);
+        if (typeof store.initializeCommandDeck !== 'function') return reply(res, 404, {code: 'NOT_FOUND'});
+        const result = await store.initializeCommandDeck(actor);
+        return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
+      }
       if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
       if (req.method === 'GET' && resource === 'events') {
         const store = await getStore(matchId);
@@ -164,7 +175,9 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const store = await getStore(matchId);
         if (store.view(actor)?.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         const result = await store.dispatch({actor, type: body.type,
-          expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey});
+          expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey,
+          cardRef: body.cardRef, unitIds: body.unitIds,
+          targetUnit: body.targetUnit, choice: body.choice});
         if (result.view && result.view.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
       }
