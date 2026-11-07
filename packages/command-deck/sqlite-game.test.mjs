@@ -8,7 +8,8 @@ import {spawnSync} from 'node:child_process';
 import {createSqliteCommandDeckStore, hasCommandDeck} from './sqlite-game.mjs';
 
 const MATCH = '123e4567-e89b-42d3-a456-426614174000';
-const initial = () => ({schemaVersion:1,matchId:MATCH,status:'ACTIVE',turn:'A',board:[],
+const initial = () => ({schemaVersion:1,matchId:MATCH,status:'ACTIVE',turn:'A',board:[{id:'unit_1',side:'A',col:3,row:4},{id:'alpha',side:'A',col:4,row:4},
+    {id:'beta',side:'A',col:5,row:4}],
   hands:{A:['LEGACY_A_ONLY'],B:['LEGACY_B_ONLY']},deck:['LEGACY_FUTURE']});
 function open(file) {
   const db = new DatabaseSync(file);

@@ -217,3 +217,9 @@ node --test packages/order-validator/validator.test.mjs
 ```
 
 **11/11 pruebas locales superadas** con Node.js 22.16.0; el script general contempla ahora **27 suites**, sin regresión conjunta en Windows todavía. No hay cartas oficiales, ni integración de esta validación con el HTTP/SQLite, ni órdenes reglamentarias jugables. Véase [contrato de órdenes sintéticas](docs/28-ordenes-sinteticas.md).
+
+## SQLite/HTTP: comprobación real de órdenes sintéticas (CCW-013)
+
+En el laboratorio local, el procesador de `assign_synthetic_orders` valida ahora dentro de la transacción SQLite las unidades seleccionadas frente al tablero privado persistido en el servidor y una política ficticia de cartas. Rechaza identificadores inexistentes, ajenos, duplicados, órdenes excesivas y acciones fuera de fase/revisión sin crear eventos ni avanzar el estado. Las peticiones web **no pueden** suministrar perfiles de cartas, sectores o unidades de confianza. En el ejemplo: `synthetic-a` es la unidad de A y `synthetic-b` la de B; máximo ficticio de dos unidades por orden y sectores artificiales que se solapan en columnas 4 y 8. **No son reglas de Ancients**.
+
+Las 6 pruebas nuevas del generador del contexto y 11 anteriores del validador pasaron juntas localmente con Node.js 22.16.0; la nueva prueba HTTP/SQLite del flujo completo está incluida en la suite existente **sin ejecución confirmada todavía**. El conjunto general incorpora ahora **28 suites**, aún sin regresión completa en Windows. Ver [incremento SQLite de órdenes](docs/29-ordenes-sqlite-transaccion.md).

@@ -32,3 +32,7 @@ Las **11 pruebas aisladas** se ejecutaron en Node.js 22.16.0, con cero fallos, s
 5. El tablero SVG de la PR #27 necesita validación visual; no se modifica ni se integra desde este incremento.
 
 **Trazabilidad:** avance técnico preliminar de R-04 y CCW-013. No supone aceptación reglamentaria ni preparación para Internet.
+
+## Integración posterior en SQLite
+
+La [continuación de CCW-013](29-ordenes-sqlite-transaccion.md) conecta este validador al procesador transaccional de la API de laboratorio con datos sintéticos del servidor. La implementación anterior (aislada) sigue disponible para probar otros perfiles fiables; no son cartas ni sectores oficiales.
