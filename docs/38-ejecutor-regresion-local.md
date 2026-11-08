@@ -50,3 +50,25 @@ Los nombres de evidencias deben ser únicos: deliberadamente se rechaza la sobre
 **No se ha ejecutado la batería completa de 33 suites** en este incremento: siguen verificadas **26 de 33 suites** en ejecuciones anteriores, faltan las **siete** señaladas arriba. Tampoco se ha ejecutado el script completo en **Windows PowerShell** ni se ha validado visualmente el tablero SVG (PR #27).
 
 La PR #48 y las PR #45–#47 deben permanecer en borrador, sin fusionar a `main`, hasta superar las pruebas pendientes. No declarar este laboratorio un juego *Command & Colors: Ancients* completo ni publicarlo en Internet.
+
+## Endurecimiento del registro de evidencia (8 de noviembre de 2026)
+
+En la revisión siguiente se detectó que la comprobación inicial de rutas de `--log` era **lexical**: una carpeta intermedia que fuera un enlace simbólico a un directorio exterior al proyecto podía redirigir un registro TAP fuera de la raíz, contradiciendo la garantía documentada. Se añadió `validateLogFileTarget()` en `scripts/run-test-suite.mjs`, que resuelve físicamente el ancestro existente con `realpathSync` y rechaza el destino cuando queda fuera del árbol real del proyecto, además de conservar el rechazo de `..` y de rutas absolutas exteriores.
+
+Se añadió un caso de regresión a `scripts/check-browser-lab.test.mjs` que verifica la ruta segura, el rechazo de la ruta ascendente y del enlace simbólico exterior, y la **ausencia de creación** del registro en la carpeta exterior. En Windows, si el sistema no permite crear enlaces simbólicos, ese subcaso se marca como omitido en vez de fingir su éxito.
+
+**Verificación realizada** en entorno aislado Node.js **v22.16.0** (Linux x64), sin WSL, VPS ni Actions:
+
+```text
+node --check scripts/run-test-suite.mjs                   OK
+node --check scripts/check-browser-lab.mjs                OK
+node --check scripts/check-browser-lab.test.mjs           OK
+node --test scripts/check-browser-lab.test.mjs            9 PASS / 0 FAIL / 0 SKIP
+```
+
+Los tres archivos reconstituidos para esta ejecución coinciden **bit a bit mediante SHA Git** con los de la PR #48:
+- `scripts/run-test-suite.mjs`: `480b9dd1ae07715a15ae9c9175f8961b550d9207`.
+- `scripts/check-browser-lab.mjs`: `d4b230e8dd44bd311396eb6df53d313c38a372e9`.
+- `scripts/check-browser-lab.test.mjs`: `c79a7bc9363626f90cdff59b97f85d972a413d90`.
+
+**Estado pendiente inalterado:** siete suites de las 33 requieren todavía ejecución, después la regresión conjunta en Windows PowerShell y la aceptación visual del tablero SVG #27. La verificación de nueve casos del *ejecutor* no acredita las 33 suites del juego ni autoriza fusionar #45–#48.
