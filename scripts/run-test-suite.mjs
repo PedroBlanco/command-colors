@@ -1,12 +1,36 @@
 /** Local, read-only test orchestrator. Never runs GitHub Actions, WSL or a deployment. */
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {existsSync} from 'node:fs';
+import {existsSync, realpathSync} from 'node:fs';
 import {mkdir, writeFile} from 'node:fs/promises';
-import {dirname, isAbsolute, relative, resolve} from 'node:path';
+import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** Reject lexical escapes and existing parent symlinks outside the project. */
+export function validateLogFileTarget(rootDir, logFile) {
+  if (typeof logFile !== 'string' || !logFile.trim()) throw new TypeError('INVALID_LOG_FILE');
+  const root = resolve(rootDir);
+  const target = resolve(root, logFile);
+  const rel = relative(root, target);
+  if (rel === '' || rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) {
+    throw new TypeError('LOG_MUST_BE_INSIDE_PROJECT');
+  }
+  let parent = dirname(target);
+  while (!existsSync(parent)) {
+    const next = dirname(parent);
+    if (next === parent) throw new TypeError('LOG_MUST_BE_INSIDE_PROJECT');
+    parent = next;
+  }
+  const actualParent = realpathSync(parent);
+  const actualRoot = realpathSync(root);
+  const relParent = relative(actualRoot, actualParent);
+  if (relParent === '..' || relParent.startsWith('..' + sep) || isAbsolute(relParent)) {
+    throw new TypeError('LOG_MUST_BE_INSIDE_PROJECT');
+  }
+  return target;
+}
 
 /** Run exactly the files in a trusted manifest, without invoking a shell. */
 export async function runTestBatch({rootDir = ROOT, files, logFile = null,
@@ -17,12 +41,7 @@ export async function runTestBatch({rootDir = ROOT, files, logFile = null,
       new Set(files).size !== files.length) throw new TypeError('INVALID_TEST_MANIFEST');
   let saved = null;
   if (logFile !== null) {
-    if (typeof logFile !== 'string' || !logFile.trim()) throw new TypeError('INVALID_LOG_FILE');
-    saved = resolve(rootDir, logFile);
-    const rel = relative(resolve(rootDir), saved);
-    if (rel === '' || rel === '..' || rel.startsWith('../') || rel.startsWith('..\\') || isAbsolute(rel)) {
-      throw new TypeError('LOG_MUST_BE_INSIDE_PROJECT');
-    }
+    saved = validateLogFileTarget(rootDir, logFile);
     if (existsSync(saved)) throw Object.assign(new Error('LOG_ALREADY_EXISTS'), {code:'EEXIST'});
   }
   const missing = files.filter(file => !existsSync(resolve(rootDir, file)));
