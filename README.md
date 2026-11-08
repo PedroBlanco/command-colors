@@ -268,3 +268,14 @@ Después de la publicación inicial se han ejecutado las suites **originales del
 La vista autorizada de una partida sintética comunica ahora la lista pública de identificadores `movedUnitIds` derivada **solo** de `matches.private_state`, sin revelar manos o mazo. Cuando ya se ha movido una unidad, la interfaz deja de ofrecer «Deshacer órdenes» y rechaza localmente el intento de mover esa misma unidad por segunda vez (`UNIDAD_YA_MOVIDA`). El servidor SQLite conserva de forma independiente la comprobación decisiva. La nueva prueba de controlador, las pruebas de botón en navegador simulado y las pruebas reales HTTP/cookies verifican el comportamiento, incluida la proyección del estado a ambos jugadores.
 
 Regresión conjunta sobre **16 suites** (geometría, fases, mazo, dados, órdenes, movimiento, SQLite, DOM simulado, HTTP/cookies y SSE): **151 pruebas ejecutadas, 151 PASS, 0 FAIL**, Node.js v22.16.0 en entorno aislado linux/x64, sin WSL ni GitHub Actions. Los cinco archivos modificados se contrastaron con los SHAs de los mismos archivos probados. Siguen pendientes **17 suites de las 33 generales** y la validación visual PC/móvil; todavía no procede fusionar las PR apiladas.
+
+## Regresión local reproducible (Windows 11, sin WSL)
+
+Las **33 suites** de pruebas se declaran una única vez en `scripts/check-browser-lab.mjs`. `scripts/test-local.ps1` invoca ahora el ejecutor Node.js `scripts/run-test-suite.mjs`, con código de salida propagado, selección opcional de suites y generación no sobrescribible de evidencias TAP y SHA-256.
+
+```powershell
+node .\scripts\run-test-suite.mjs --list
+.\scripts\test-local.ps1 -Log '.local-data\regression\completa-20261108.tap'
+```
+
+El ejecutor y su integración con el preflight superaron **8/8 pruebas**, también desde su CLI, con Node.js v22.16.0. **La regresión integral todavía no está ejecutada:** se conservan **26 de 33 suites verificadas**, las otras siete pendientes y la revisión visual en PC/móvil. Ver [procedimiento de pruebas y evidencia](docs/38-ejecutor-regresion-local.md). No implica permiso de despliegue ni de fusionar las PR apiladas.
