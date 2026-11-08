@@ -72,3 +72,5 @@ Los tres archivos reconstituidos para esta ejecución coinciden **bit a bit medi
 - `scripts/check-browser-lab.test.mjs`: `c79a7bc9363626f90cdff59b97f85d972a413d90`.
 
 **Estado pendiente inalterado:** siete suites de las 33 requieren todavía ejecución, después la regresión conjunta en Windows PowerShell y la aceptación visual del tablero SVG #27. La verificación de nueve casos del *ejecutor* no acredita las 33 suites del juego ni autoriza fusionar #45–#48.
+
+**Reejecución por el propio orquestador:** `node scripts/run-test-suite.mjs --only=scripts/check-browser-lab.test.mjs --log=.local-data/regression/runner-symlink-20261108.tap` terminó en **9 PASS / 0 FAIL / exit 0** y escribió evidencia no sobrescribible con SHA-256 `e4de8acbb08c440c2eb55ed7f7e1e90f766f93c802f084aecf9f0b73af575a85` (la ruta pertenece al entorno aislado de comprobación, no está publicada en GitHub). Se conservaron los SHA Git ya citados de los tres archivos originales. Esto sigue siendo solo **una suite**, no la regresión integral.
