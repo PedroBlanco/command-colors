@@ -5,7 +5,7 @@ import {resolve, dirname, join} from 'node:path';
 import {createServer} from 'node:net';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const tests = [
+export const LOCAL_TEST_FILES = Object.freeze([
   'packages/hex-grid/hex.test.mjs', 'spikes/004/server.test.mjs',
   'packages/access-control/access.test.mjs', 'packages/match-store/store.test.mjs',
   'packages/local-api/gateway.test.mjs', 'packages/local-api/compose.test.mjs',
@@ -34,7 +34,8 @@ const tests = [
   'packages/command-deck/movement-sqlite.test.mjs',
   'packages/local-api/movement-revision-sse.test.mjs',
   'packages/local-api/movement-controls.test.mjs'
-];
+]);
+const tests = LOCAL_TEST_FILES;
 
 function nodeSupported() {
   const [major, minor] = process.versions.node.split('.').map(Number);
