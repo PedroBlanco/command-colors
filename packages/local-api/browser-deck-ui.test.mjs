@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const MATCH='123e4567-e89b-42d3-a456-426614174000';
+const MATCH_B='123e4567-e89b-42d3-a456-426614174001';
 let serial=0;
 async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
  const original={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,EventSource:globalThis.EventSource};
@@ -40,8 +41,11 @@ async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
    else if(path===`/api/matches/${MATCH}`&&state.login&&state.denyLobby){
      status=404;response={code:'NOT_FOUND'};
    }
-   else if(path===`/api/matches/${MATCH}`&&state.login){
-     const view={matchId:MATCH,you:'A',turn:state.turn,revision:state.revision,yourHand:[...state.handA],
+   else if(path===`/api/invitations/accept`&&options.method==='POST'){
+     status=200;response={matchId:MATCH_B};
+   }
+   else if((path===`/api/matches/${MATCH}`||path===`/api/matches/${MATCH_B}`)&&state.login){
+     const view={matchId:path.endsWith(MATCH_B)?MATCH_B:MATCH,you:'A',turn:state.turn,revision:state.revision,yourHand:[...state.handA],
        opponentCardCount:state.handB.length,board:structuredClone(state.board),movedUnitIds:[...state.movedUnitIds]};
      if(state.initialized)Object.assign(view,{phase:state.phase,actingSide:state.turn,drawPileCount:13,
        discardPile:[...state.discard],cardInPlay:state.inPlay,pendingDecision:null});
@@ -330,4 +334,30 @@ test('a revoked match purges board and invitation state on refresh',()=>withBrow
  assert.equal(c.element('invite-token').textContent,'—');
  assert.equal(c.element('state').textContent.includes('own_1'),false);
  assert.match(c.element('message').textContent,/partida ya no están disponibles/);
+}));
+
+
+test('accepting an invitation programmatically replaces old tokens and private match',()=>withBrowser(async c=>{
+ await loginReady(c);
+ c.element('invite-token').textContent='OLD_MATCH_INVITE_TOKEN';
+ c.element('received').value='NEW_MATCH_INVITE_TOKEN';
+ await c.element('accept').dispatch('click');
+ assert.equal(c.element('match-id').value,MATCH_B);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('received').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.match(c.element('lobby').textContent,/READY/);
+}));
+
+test('creating a match from a different context clears its former invitation',()=>withBrowser(async c=>{
+ await loginReady(c);
+ c.element('match-id').value=MATCH_B;
+ await c.element('refresh').dispatch('click');
+ c.element('invite-token').textContent='OTHER_MATCH_PRIVATE_TOKEN';
+ c.element('received').value='OTHER_MATCH_RECEIVED_TOKEN';
+ await c.element('create').dispatch('click');
+ assert.equal(c.element('match-id').value,MATCH);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('received').value,'');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
 }));
