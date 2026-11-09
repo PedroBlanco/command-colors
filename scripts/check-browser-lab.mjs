@@ -33,7 +33,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/movement/server-policy.test.mjs',
   'packages/command-deck/movement-sqlite.test.mjs',
   'packages/local-api/movement-revision-sse.test.mjs',
-  'packages/local-api/movement-controls.test.mjs'
+  'packages/local-api/movement-controls.test.mjs',
+  'packages/local-api/hex-selection.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
