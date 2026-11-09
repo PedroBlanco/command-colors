@@ -294,6 +294,9 @@ action('invite',async()=>{
   if(!await confirmCurrentSession(ticket,id))return false;
   const data=await api('POST',`/api/matches/${id}/invitations`,{targetHandle:el('invitee').value});
   if(!privateScope.isCurrent(ticket,id) || el('match-id').value.trim()!==id)return false;
+  // A cookie might change in a second tab while the token POST is pending.
+  // Never display a secret response until identity has been rechecked.
+  if(!await confirmCurrentSession(ticket,id))return false;
   el('invite-token').textContent=data.token;
 });
 action('accept',async()=>{
@@ -330,6 +333,9 @@ action('events',async()=>{
   if(!await confirmCurrentSession(ticket,id))return false;
   const events=await api('GET',`/api/matches/${id}/events`);
   if(!privateScope.isCurrent(ticket,id) || el('match-id').value.trim()!==id)return false;
+  // Event contents are not accepted from a request whose cookie identity
+  // may have changed while its HTTP response was in flight.
+  if(!await confirmCurrentSession(ticket,id))return false;
   stateText(events);
 });
 action('deck-initialize',async()=>{
