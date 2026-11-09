@@ -44,17 +44,30 @@ function renderDeck() {
   movementBoard?.setView(cached);
 }
 
-function clearPrivateView() {
-  signedInHandle = null;
-  privateScope.reset();
+function clearMatchPresentation() {
   cached = null;
-  inspectionSequence++; // invalidate any GET that started under an earlier session
   stateText(null);
   el('lobby').textContent = 'Sin partida cargada';
   el('invite-token').textContent = '—';
   el('received').value = '';
-  el('match-id').value = '';
   renderDeck();
+}
+function clearPrivateView() {
+  signedInHandle = null;
+  privateScope.reset();
+  inspectionSequence++; // invalidate GETs started under an earlier session
+  clearMatchPresentation();
+  el('match-id').value = '';
+}
+function selectActiveMatch(id) {
+  // Programmatic navigation (create/accept) must clear private tokens too,
+  // not just edits from the match-id input event.
+  if (privateScope.capture().matchId !== id) {
+    closeUpdates();
+    inspectionSequence++;
+    clearMatchPresentation();
+  }
+  privateScope.selectMatch(id);
 }
 function closeUpdates() {
   if (updates) updates.close();
@@ -141,10 +154,10 @@ async function session() {
   }
 }
 async function inspect() {
-  const sequence = ++inspectionSequence;
   const id = el('match-id').value.trim();
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw Error('Introduce el identificador de partida');
-  privateScope.selectMatch(id);
+  selectActiveMatch(id);
+  const sequence = ++inspectionSequence;
   const ticket = privateScope.capture();
   let lobby;
   try {
@@ -225,18 +238,15 @@ action('create',async()=>{
   const result=await api('POST','/api/matches');
   if(!privateScope.isCurrent(ticket))return false;
   el('match-id').value=result.matchId;
-  privateScope.selectMatch(result.matchId);
+  selectActiveMatch(result.matchId);
   const nextTicket=privateScope.capture();
   await inspect();
   return privateScope.isCurrent(nextTicket,result.matchId);
 });
 el('match-id').addEventListener('input', () => {
   if (el('match-id').value.trim() !== updateMatchId) {
-    privateScope.reset();closeUpdates();cached=null;inspectionSequence++;
-    el('invite-token').textContent='—';
-    el('received').value='';
-    el('lobby').textContent='Sin partida cargada';
-    stateText(null);renderDeck();
+    privateScope.reset();closeUpdates();inspectionSequence++;
+    clearMatchPresentation();
   }
 });
 action('refresh',inspect);
@@ -252,7 +262,7 @@ action('accept',async()=>{
   const data=await api('POST','/api/invitations/accept',{invitationToken:el('received').value.trim()});
   if(!privateScope.isCurrent(ticket))return false;
   el('match-id').value=data.matchId;
-  privateScope.selectMatch(data.matchId);
+  selectActiveMatch(data.matchId);
   const nextTicket=privateScope.capture();
   await inspect();
   return privateScope.isCurrent(nextTicket,data.matchId);
