@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 const MATCH='123e4567-e89b-42d3-a456-426614174000';
 let serial=0;
-async function withBrowser(run, {onMoveCommand=null}={}) {
+async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
  const original={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,EventSource:globalThis.EventSource};
  const elements=new Map(), handlers=new Map(), requests=[], sources=[];
  function element(id) {
@@ -43,6 +43,10 @@ async function withBrowser(run, {onMoveCommand=null}={}) {
        discardPile:[...state.discard],cardInPlay:state.inPlay,pendingDecision:null});
      status=200;response={status:state.lobby,players:[{side:'A',handle:'alice'},{side:'B',handle:'bob'}],
        ...(state.lobby==='READY'?{state:view}:{})};
+   }
+   else if(path===`/api/matches/${MATCH}/invitations`&&options.method==='POST'){
+     if(onInvite) await onInvite();
+     status=201;response={token:'test-secret-invitation'};
    }
    else if(path===`/api/matches/${MATCH}/deck/initialize`&&options.method==='POST'){
      if(state.lobby==='READY'&&!state.initialized&&Object.keys(data).length===0){state.initialized=true;status=201;response={code:'DECK_INITIALIZED'}}
@@ -256,4 +260,24 @@ test('late movement success after logout never restores the former private board
    assert.equal(c.element('deck-panel').hidden,true);
    assert.equal(c.element('state').textContent.includes('own_1'),false);
  },{onMoveCommand:async()=>{enter();await gate}});
+});
+
+
+test('late invitation response is discarded after switching match',()=>{
+ let enter,release;
+ const entered=new Promise(resolve=>enter=resolve);
+ const gate=new Promise(resolve=>release=resolve);
+ return withBrowser(async c=>{
+   await loginReady(c);
+   c.element('invitee').value='bob';
+   const pending=c.element('invite').dispatch('click');
+   await entered;
+   c.element('match-id').value='123e4567-e89b-42d3-a456-426614174001';
+   await c.element('match-id').dispatch('input');
+   c.element('message').textContent='MATCH_CHANGED';
+   release();
+   await pending;
+   assert.equal(c.element('invite-token').textContent,'');
+   assert.equal(c.element('message').textContent,'MATCH_CHANGED');
+ },{onInvite:async()=>{enter();await gate}});
 });
