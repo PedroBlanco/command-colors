@@ -20,7 +20,7 @@ async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
  const document={hidden:false,getElementById:element,createElement(type){return {type,value:'',textContent:''}},
    addEventListener(type,fn){handlers.set(type,fn)},async dispatch(type){await handlers.get(type)?.()}};
  const window={addEventListener(type,fn){handlers.set(type,fn)}};
- const state={login:false,handle:'alice',denyLobby:false,lobby:'INVITING',initialized:false,phase:'AWAIT_CARD',revision:0,
+ const state={login:false,handle:'alice',denyLobby:false,sessionUnavailable:false,lobby:'INVITING',initialized:false,phase:'AWAIT_CARD',revision:0,
    handA:['own_1','own_2'],handB:['other_1','other_2','other_3'],discard:[],inPlay:null,turn:'A',
    board:[{id:'unit_a',side:'A',col:3,row:4},{id:'unit_b',side:'B',col:9,row:4}],movedUnitIds:[]};
  class FakeEventSource {
@@ -35,6 +35,7 @@ async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
    let code='NOT_FOUND',status=404,response={code};
    if(path==='/api/session'&&options.method==='POST'){state.login=true;state.handle=data.handle;status=200;response={ok:true}}
    else if(path==='/api/session'&&options.method==='DELETE'){state.login=false;status=200;response={ok:true}}
+   else if(path==='/api/session'&&state.login&&state.sessionUnavailable){status=503;response={code:'SERVICE_UNAVAILABLE'}}
    else if(path==='/api/session'&&state.login){status=200;response={authenticated:true,handle:state.handle}}
    else if(path==='/api/session'){status=401;response={code:'UNAUTHENTICATED'}}
    else if(path==='/api/matches'&&options.method==='POST'){status=201;response={matchId:MATCH}}
@@ -387,4 +388,16 @@ test('a 200 response with another side must never reveal that hand',()=>withBrow
  assert.equal(c.element('deck-panel').hidden,true);
  assert.equal(c.element('state').textContent.includes('own_1'),false);
  assert.match(c.element('message').textContent,/no corresponde a la sesión vigente/);
+}));
+
+
+test('a temporary session check failure hides cached private information',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.state.sessionUnavailable=true;
+ await c.element('refresh').dispatch('click');
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.match(c.element('message').textContent,/No se puede verificar la identidad/);
 }));
