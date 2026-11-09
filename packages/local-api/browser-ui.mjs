@@ -189,7 +189,15 @@ action('create',async()=>{
   await inspect();
   return privateScope.isCurrent(nextTicket,result.matchId);
 });
-el('match-id').addEventListener('input', () => {if (el('match-id').value.trim() !== updateMatchId) {privateScope.reset();closeUpdates();cached=null;inspectionSequence++;stateText(null);renderDeck();}});
+el('match-id').addEventListener('input', () => {
+  if (el('match-id').value.trim() !== updateMatchId) {
+    privateScope.reset();closeUpdates();cached=null;inspectionSequence++;
+    el('invite-token').textContent='—';
+    el('received').value='';
+    el('lobby').textContent='Sin partida cargada';
+    stateText(null);renderDeck();
+  }
+});
 action('refresh',inspect);
 action('invite',async()=>{
   const id=el('match-id').value.trim(),ticket=privateScope.capture();
