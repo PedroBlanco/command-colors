@@ -54,3 +54,13 @@ Comando reproducible en Windows PowerShell, cuando se disponga de entorno de pru
 node --test packages/local-api/revision-refresh.test.mjs
 .\scripts\test-local.ps1 -Log '.local-data\regression\completa-38-suites.tap'
 ```
+
+## Corrección adicional: pestaña ocultada durante la revalidación (9/11/2026)
+
+Había una carrera de `visibilitychange`: un primer evento de **mostrar** comenzaba `GET /api/session`; si otro evento **ocultaba** la pestaña antes de resolverse ese GET, el primer callback reanudaba el coordinador SSE aunque `document.hidden` ya fuese `true`. Esto podía activar inspecciones privadas con la pestaña oculta.
+
+- `browser-ui.mjs` vuelve a comprobar `document.hidden` **después** de `await session()` y **antes** de llamar a `revisionRefresh.setPaused(false)`.
+- `browser-ui.test.mjs` añade una regresión con la respuesta de sesión deliberadamente retenida: el aviso queda pendiente durante la ocultación, no se inicia ningún GET privado y se recupera **una sola vez** tras una nueva comprobación con la pestaña visible.
+- Se reprodujo el fallo con el handler original ejecutado directamente en V8: `observedPaused=false` pese a `document.hidden=true`. El handler corregido mantuvo `paused=true` y retomó normalmente al mostrarse.
+- Se ejecutaron los **cinco casos** de `browser-ui.test.mjs` (incluido el nuevo) sobre los módulos publicados de esta rama, con adaptador de imports y DOM/fetch simulados en V8: **5/5 correctos**. **No es `node --test`, una prueba HTTP real ni una prueba de navegador**.
+- La batería sigue incluyendo **38 suites**; el nuevo caso amplía una suite ya existente, no constituye una suite adicional. La fusión continúa bloqueada por las comprobaciones pendientes.
