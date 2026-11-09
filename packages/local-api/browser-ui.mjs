@@ -2,6 +2,7 @@
 import {deckActions, deckCommand, deckSummary, parseSyntheticMovementPath} from './deck-controls.mjs';
 import {createMovementBoard} from './movement-board-ui.mjs';
 import {createPrivateViewScope} from './private-view-scope.mjs';
+import {privateProjectionMatches} from './private-projection.mjs';
 
 const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
@@ -159,6 +160,10 @@ async function inspect() {
   selectActiveMatch(id);
   const sequence = ++inspectionSequence;
   const ticket = privateScope.capture();
+  // Recheck the session before processing SSE or another private snapshot.
+  // Another tab may have logged in with a different cookie while we were open.
+  if (!await session() || !privateScope.isCurrent(ticket,id) ||
+      sequence !== inspectionSequence || el('match-id').value.trim() !== id) return false;
   let lobby;
   try {
     lobby=await api('GET',`/api/matches/${id}`);
@@ -173,6 +178,13 @@ async function inspect() {
     throw error;
   }
   if (!privateScope.isCurrent(ticket,id) || sequence !== inspectionSequence || el('match-id').value.trim() !== id) return false;
+  if (!privateProjectionMatches(lobby,signedInHandle,id)) {
+    // Refuse to render a side that does not belong to the verified account,
+    // including a 200 response after an inter-tab cookie transition.
+    closeUpdates();clearPrivateView();
+    message('La respuesta de partida no corresponde a la sesión vigente.');
+    return false;
+  }
   subscribeTo(id);
   el('lobby').textContent=JSON.stringify({status:lobby.status,players:lobby.players},null,2);
   cached=lobby.state??null;
@@ -201,6 +213,10 @@ async function sendDeck(type, fields = {}, retryKey = null) {
     throw new Error('PARTIDA_DESACTUALIZADA');
   const key = retryKey ?? crypto.randomUUID().replaceAll('-','');
   const request = deckCommand(cached,type,fields,key);
+  // A command cannot rely only on a cached client-side actor. Validate the
+  // current cookie identity before issuing this mutation.
+  if (!await session() || !privateScope.isCurrent(ticket,matchId) ||
+      el('match-id').value.trim() !== matchId) return false;
   try {
     await api('POST',`/api/matches/${matchId}/commands`,request);
   } catch (error) {
@@ -221,8 +237,7 @@ el('login-form').addEventListener('submit',async(event) => {
     await api('POST','/api/session',{handle:el('handle').value,password:el('password').value});
     if (!privateScope.isCurrent(ticket)) return;
     el('password').value='';
-    await session();
-    if (privateScope.isCurrent(ticket)) message('Sesión iniciada');
+    if (await session() && privateScope.isCurrent(ticket)) message('Sesión iniciada');
   } catch(error){if(privateScope.isCurrent(ticket)) message(error.message);}
 });
 action('logout',async()=>{
