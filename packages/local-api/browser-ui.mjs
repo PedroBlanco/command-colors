@@ -1,11 +1,13 @@
 /** Local-only browser lab; no licensed artwork, card texts or legal Ancients rules. */
 import {deckActions, deckCommand, deckSummary, parseSyntheticMovementPath} from './deck-controls.mjs';
 import {createMovementBoard} from './movement-board-ui.mjs';
+import {createPrivateViewScope} from './private-view-scope.mjs';
 
 const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
 const stateText = value => {el('state').textContent = JSON.stringify(value,null,2);};
 let cached = null;
+const privateScope = createPrivateViewScope();
 let movementBoard = null;
 let updates = null, updateMatchId = null, lastNotice = null, inspectionSequence = 0;
 let pendingRefresh = false;
@@ -42,6 +44,7 @@ function renderDeck() {
 }
 
 function clearPrivateView() {
+  privateScope.reset();
   cached = null;
   inspectionSequence++; // invalidate any GET that started under an earlier session
   stateText(null);
@@ -107,8 +110,10 @@ async function inspect() {
   const sequence = ++inspectionSequence;
   const id = el('match-id').value.trim();
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw Error('Introduce el identificador de partida');
+  privateScope.selectMatch(id);
+  const ticket = privateScope.capture();
   const lobby=await api('GET',`/api/matches/${id}`);
-  if (sequence !== inspectionSequence || el('match-id').value.trim() !== id) return lobby;
+  if (!privateScope.isCurrent(ticket,id) || sequence !== inspectionSequence || el('match-id').value.trim() !== id) return lobby;
   subscribeTo(id);
   el('lobby').textContent=JSON.stringify({status:lobby.status,players:lobby.players},null,2);
   cached=lobby.state??null;
@@ -120,26 +125,45 @@ async function inspect() {
 }
 function action(id,callback) {
   el(id).addEventListener('click',async() => {
-    try { await callback(); message('Operación realizada'); }
+    try { const outcome = await callback(); if (outcome !== false) message('Operación realizada'); }
     catch(error){message(error.message);}
   });
 }
 async function sendDeck(type, fields = {}, retryKey = null) {
   if (!cached?.matchId) throw new Error('No hay partida activa');
+  const matchId = cached.matchId;
+  const ticket = privateScope.capture();
+  if (!privateScope.isCurrent(ticket,matchId) || el('match-id').value.trim() !== matchId)
+    throw new Error('PARTIDA_DESACTUALIZADA');
   const key = retryKey ?? crypto.randomUUID().replaceAll('-','');
   const request = deckCommand(cached,type,fields,key);
-  await api('POST',`/api/matches/${cached.matchId}/commands`,request);
+  try {
+    await api('POST',`/api/matches/${matchId}/commands`,request);
+  } catch (error) {
+    // An old failure cannot overwrite a new account's status message.
+    if (!privateScope.isCurrent(ticket,matchId) || el('match-id').value.trim() !== matchId) return false;
+    throw error;
+  }
+  if (!privateScope.isCurrent(ticket,matchId) || el('match-id').value.trim() !== matchId) return false;
   await inspect();
+  return privateScope.isCurrent(ticket,matchId);
 }
 el('login-form').addEventListener('submit',async(event) => {
   event.preventDefault();
-  try {await api('POST','/api/session',{handle:el('handle').value,password:el('password').value}); closeUpdates();
-    clearPrivateView(); el('password').value=''; await session(); message('Sesión iniciada');}
-  catch(error){message(error.message);}
+  // Invalidate all old GET/POST responses as soon as identity changes.
+  closeUpdates(); clearPrivateView();
+  const ticket = privateScope.capture();
+  try {
+    await api('POST','/api/session',{handle:el('handle').value,password:el('password').value});
+    if (!privateScope.isCurrent(ticket)) return;
+    el('password').value='';
+    await session();
+    if (privateScope.isCurrent(ticket)) message('Sesión iniciada');
+  } catch(error){if(privateScope.isCurrent(ticket)) message(error.message);}
 });
 action('logout',async()=>{closeUpdates();clearPrivateView();await api('DELETE','/api/session');await session();});
 action('create',async()=>{const result=await api('POST','/api/matches');el('match-id').value=result.matchId;await inspect();});
-el('match-id').addEventListener('input', () => {if (el('match-id').value.trim() !== updateMatchId) {closeUpdates();cached=null;inspectionSequence++;stateText(null);renderDeck();}});
+el('match-id').addEventListener('input', () => {if (el('match-id').value.trim() !== updateMatchId) {privateScope.reset();closeUpdates();cached=null;inspectionSequence++;stateText(null);renderDeck();}});
 action('refresh',inspect);
 action('invite',async()=>{const id=el('match-id').value.trim();
   const data=await api('POST',`/api/matches/${id}/invitations`,{targetHandle:el('invitee').value});
@@ -177,8 +201,8 @@ movementBoard = createMovementBoard({
   cancelButton: el('board-cancel'),
   confirmButton: el('board-confirm'),
   onConfirm: async (fields, idempotencyKey) => {
-    await sendDeck('move_synthetic_unit', fields, idempotencyKey);
-    message('Movimiento sintético confirmado por el servidor');
+    if (await sendDeck('move_synthetic_unit', fields, idempotencyKey))
+      message('Movimiento sintético confirmado por el servidor');
   },
   onError: error => message(error.message)
 });
