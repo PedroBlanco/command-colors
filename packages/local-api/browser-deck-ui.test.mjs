@@ -401,3 +401,42 @@ test('a temporary session check failure hides cached private information',()=>wi
  assert.equal(c.element('state').textContent.includes('own_1'),false);
  assert.match(c.element('message').textContent,/No se puede verificar la identidad/);
 }));
+
+
+test('late SSE callbacks from a closed feed cannot revive connection or fetch private state',()=>withBrowser(async c=>{
+ await loginReady(c);
+ const old=c.sources[0];
+ assert.equal(old.closed,false);
+ c.element('match-id').value=MATCH_B;
+ await c.element('match-id').dispatch('input');
+ assert.equal(old.closed,true);
+ const count=c.requests.length;
+ old.onopen?.();
+ old.onerror?.();
+ old.emit({lobbyRevision:3,gameRevision:3});
+ old.listeners.get('revision')?.({data:'malformed JSON'});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(c.requests.length,count);
+ assert.equal(c.element('connection').textContent,'Avisos en tiempo real desconectados');
+ assert.equal(c.element('lobby').textContent,'Sin partida cargada');
+ assert.equal(c.element('message').textContent.includes('interpretar el aviso'),false);
+}));
+
+test('old SSE callbacks do not interfere with the newly subscribed match',()=>withBrowser(async c=>{
+ await loginReady(c);
+ const old=c.sources[0];
+ c.element('match-id').value=MATCH_B;
+ await c.element('match-id').dispatch('input');
+ await c.element('refresh').dispatch('click');
+ const fresh=c.sources.at(-1);
+ assert.equal(old.closed,true);
+ assert.equal(fresh.closed,false);
+ assert.equal(fresh.url,`/api/matches/${MATCH_B}/updates`);
+ fresh.onopen?.();
+ const before=c.requests.length;
+ old.onerror?.();
+ old.emit({lobbyRevision:7,gameRevision:7});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(c.requests.length,before);
+ assert.equal(c.element('connection').textContent,'Avisos de partida conectados');
+}));
