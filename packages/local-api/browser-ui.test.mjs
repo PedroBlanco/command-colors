@@ -90,3 +90,43 @@ test('browser UI: cambio de partida y pestaña oculta cierran o posponen avisos'
   assert.equal(feed.closed,true);
   assert.equal(ctx.element('connection').textContent,'Avisos en tiempo real desconectados');
 }));
+
+
+test('late callbacks from a closed SSE feed cannot affect a new login to the same match',()=>withBrowser(async ctx=>{
+  await ctx.element('login-form').dispatch('submit');
+  await ctx.element('create').dispatch('click');
+  const stale=ctx.feeds[0];
+  await ctx.element('logout').dispatch('click');
+  assert.equal(stale.closed,true);
+  await ctx.element('login-form').dispatch('submit');
+  await ctx.element('create').dispatch('click');
+  const current=ctx.feeds.at(-1);
+  assert.notEqual(stale,current);
+  const reads=()=>ctx.requests.filter(x=>x.path===`/api/matches/${MATCH}`).length;
+  const before=reads();
+  stale.emit({lobbyRevision:77,gameRevision:77});
+  await nextTurn();
+  assert.equal(reads(),before);
+  current.emit({lobbyRevision:1,gameRevision:0});
+  await nextTurn();
+  assert.equal(reads(),before+1);
+}));
+
+test('multiple SSE notices while hidden coalesce into one refreshed projection',()=>withBrowser(async ctx=>{
+  await ctx.element('login-form').dispatch('submit');
+  await ctx.element('create').dispatch('click');
+  const feed=ctx.feeds[0];
+  const reads=()=>ctx.requests.filter(x=>x.path===`/api/matches/${MATCH}`).length;
+  const before=reads();
+  ctx.document.hidden=true;
+  await ctx.document.dispatch('visibilitychange');
+  feed.emit({lobbyRevision:1,gameRevision:0});
+  feed.emit({lobbyRevision:1,gameRevision:1});
+  feed.emit({lobbyRevision:1,gameRevision:1});
+  await nextTurn();
+  assert.equal(reads(),before);
+  ctx.document.hidden=false;
+  await ctx.document.dispatch('visibilitychange');
+  await nextTurn();
+  assert.equal(reads(),before+1);
+}));
