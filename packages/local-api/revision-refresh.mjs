@@ -50,6 +50,9 @@ export function createRevisionRefresh({inspect, onError = () => {},
   }
   function retry() {
     failures = Math.min(failures + 1, 5);
+    // A request may fail after the tab was hidden. Keep the revision queued,
+    // but do not arm a retry while paused: showing the tab must retry now.
+    if (paused) return;
     const ms = retryMs * (2 ** (failures - 1));
     timer = schedule(() => {timer = null; pump();}, ms);
   }
