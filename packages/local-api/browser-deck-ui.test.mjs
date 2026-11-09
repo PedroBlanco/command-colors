@@ -45,11 +45,12 @@ async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
      status=200;response={matchId:MATCH_B};
    }
    else if((path===`/api/matches/${MATCH}`||path===`/api/matches/${MATCH_B}`)&&state.login){
-     const view={matchId:path.endsWith(MATCH_B)?MATCH_B:MATCH,you:'A',turn:state.turn,revision:state.revision,yourHand:[...state.handA],
+     const view={matchId:path.endsWith(MATCH_B)?MATCH_B:MATCH,you:state.forceSide??'A',turn:state.turn,revision:state.revision,yourHand:[...state.handA],
        opponentCardCount:state.handB.length,board:structuredClone(state.board),movedUnitIds:[...state.movedUnitIds]};
      if(state.initialized)Object.assign(view,{phase:state.phase,actingSide:state.turn,drawPileCount:13,
        discardPile:[...state.discard],cardInPlay:state.inPlay,pendingDecision:null});
-     status=200;response={status:state.lobby,players:[{side:'A',handle:'alice'},{side:'B',handle:'bob'}],
+     status=200;response={matchId:view.matchId,status:state.lobby,
+       players:state.lobby==='READY'?[{side:'A',handle:'alice'},{side:'B',handle:'bob'}]:[{side:'A',handle:'alice'}],
        ...(state.lobby==='READY'?{state:view}:{})};
    }
    else if(path===`/api/matches/${MATCH}/invitations`&&options.method==='POST'){
@@ -360,4 +361,30 @@ test('creating a match from a different context clears its former invitation',()
  assert.equal(c.element('invite-token').textContent,'—');
  assert.equal(c.element('received').value,'');
  assert.equal(c.element('state').textContent.includes('own_1'),true);
+}));
+
+
+test('a visible tab rejects SSE private state after the cookie switches to another player',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ const feed=c.sources[0];
+ c.state.handle='bob';
+ feed.emit({lobbyRevision:2,gameRevision:5});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.equal(feed.closed,true);
+ assert.match(c.element('message').textContent,/cambiado la identidad/);
+}));
+
+test('a 200 response with another side must never reveal that hand',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.state.forceSide='B';
+ await c.element('refresh').dispatch('click');
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.match(c.element('message').textContent,/no corresponde a la sesión vigente/);
 }));
