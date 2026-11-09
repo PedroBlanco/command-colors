@@ -111,3 +111,27 @@ test('invalid configuration fails closed',()=>{
     assert.throws(()=>createRevisionRefresh(options),/INVALID_REVISION_REFRESH_OPTIONS/);
   }
 });
+
+test('hiding while an in-flight inspection returns false defers without a timer',async()=>{
+  const wait=deferred(),time=clock(),seen=[];
+  const inbox=createRevisionRefresh({inspect:()=>{seen.push('GET');return seen.length===1?wait.promise:true;},schedule:time.schedule,cancel:time.cancel});
+  inbox.notice('4:1');await flush();
+  inbox.setPaused(true);wait.resolve(false);await flush();
+  assert.equal(time.timers.size,0,'hidden tab must not start a delayed retry');
+  assert.equal(seen.length,1);
+  inbox.setPaused(false);await flush();
+  assert.equal(seen.length,2,'visible tab retries queued revision immediately');
+  assert.equal(inbox.notice('4:1'),false);
+});
+
+test('hiding while an in-flight inspection rejects preserves revision without hidden retries',async()=>{
+  const wait=deferred(),time=clock(),seen=[],errors=[];
+  const inbox=createRevisionRefresh({inspect:()=>{seen.push('GET');return seen.length===1?wait.promise:true;},schedule:time.schedule,cancel:time.cancel,onError:e=>errors.push(e.message)});
+  inbox.notice('4:2');await flush();
+  inbox.setPaused(true);wait.reject(new Error('HTTP_503'));await flush();
+  assert.deepEqual(errors,['HTTP_503']);
+  assert.equal(time.timers.size,0);
+  inbox.setPaused(false);await flush();
+  assert.equal(seen.length,2);
+  assert.equal(inbox.notice('4:2'),false);
+});
