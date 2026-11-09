@@ -87,12 +87,18 @@ function subscribeTo(matchId) {
   if (updates && updateMatchId === matchId) return;
   closeUpdates();
   updateMatchId = matchId;
-  updates = new EventSource(`/api/matches/${matchId}/updates`);
+  const stream = new EventSource(`/api/matches/${matchId}/updates`);
+  updates = stream;
   el('connection').textContent = 'Conectando avisos de partida…';
-  updates.onopen = () => {el('connection').textContent = 'Avisos de partida conectados';};
-  updates.onerror = () => {el('connection').textContent = 'Reconectando avisos de partida…';};
-  updates.addEventListener('revision', event => {
-    if (el('match-id').value.trim() !== matchId) return;
+  stream.onopen = () => {
+    if (updates === stream) el('connection').textContent = 'Avisos de partida conectados';
+  };
+  stream.onerror = () => {
+    if (updates === stream) el('connection').textContent = 'Reconectando avisos de partida…';
+  };
+  stream.addEventListener('revision', event => {
+    // Ignore callbacks queued before logout or a match / identity switch.
+    if (updates !== stream || el('match-id').value.trim() !== matchId) return;
     try {
       const {lobbyRevision, gameRevision} = JSON.parse(event.data);
       if (!Number.isSafeInteger(lobbyRevision) || !(gameRevision === null || Number.isSafeInteger(gameRevision))) return;
