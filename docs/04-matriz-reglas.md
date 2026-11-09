@@ -115,4 +115,10 @@ Contrato técnico de privacidad: cambio de cuenta/partida → `private-view-scop
 
 ## Sincronización de revisiones SSE con reintentos (I4, PR #52)
 
-Trazabilidad técnica: aviso SSE de contadores → `revision-refresh.notice()` → obtención de proyección autenticada → reconocimiento **solo tras GET exitoso**; fallo o resultado descartado → reintento acotado. Se cubren duplicados, desorden, pestañas ocultas, SSE cerrado, cambios de cuenta y partida. **12/12 pruebas Node nativas** de coordinador y **22/22 callbacks V8 simulados** de interfaz; aún sin batería HTTP global. No implementa movimiento reglamentario ni reemplaza la autorización del servidor. [Especificación](42-reintentos-sse-i4.md).
+Trazabilidad técnica: aviso SSE de contadores → `revision-refresh.notice()` → obtención de proyección autenticada → reconocimiento **solo tras GET exitoso**; fallo o resultado descartado → reintento acotado. Se cubren duplicados, desorden, pestañas ocultas, SSE cerrado, cambios de cuenta y partida. **14/14 pruebas Node nativas** de coordinador y **28/28 callbacks V8 simulados** de interfaz; aún sin batería HTTP global. No implementa movimiento reglamentario ni reemplaza la autorización del servidor. [Especificación](42-reintentos-sse-i4.md).
+
+## Primer perfil real de distancias y combate tras movimiento (I4, PR #53)
+
+**R-05: avance parcial, NO completada.** Se incorpora una tabla inmutable y un evaluador puro para 13 tipos de unidades del juego básico de *Ancients* (3.ª edición, 2009). La regla determina únicamente el límite **ordinario** de hexágonos recorridos y si el movimiento permite combate, lo excluye o exige comprobar una carga de guerreros. **No declara ninguna ruta legal**: `needsFullLegalityCheck: true` se aplica siempre y los casos de cartas especiales pueden superar límites ordinarios. Líderes, terreno, ocupación, órdenes, escenarios y sincronización con el servidor siguen pendientes.
+
+Ver [documento de trazabilidad](43-perfiles-movimiento-ancients-base.md), módulo `packages/ancients-rules/movement-profile.mjs` y suite `movement-profile.test.mjs`. Verificación **17/17 pruebas nativas Node.js 22.16.0**, SHAs Git contrastados. Se mantienen las PR #45–#53 sin fusionar hasta regresión integral de **39 suites**, HTTP/SSE y validación visual.
