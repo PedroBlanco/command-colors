@@ -18,8 +18,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 #current{font-weight:700}#message{min-height:2em}
 
 /* Tablero táctico del laboratorio autenticado, sin recursos oficiales. */
-#movement-viewport{width:100%;overflow:hidden;border:1px solid #a4b5b0;border-radius:8px;background:#e7e8de;touch-action:manipulation}
-#movement-board{display:block;width:100%;max-width:100%;height:auto;aspect-ratio:510 / 430}
+#movement-viewport{width:100%;overflow:hidden;border:1px solid #a4b5b0;border-radius:8px;background:#e7e8de;overflow-x:auto;touch-action:auto}
+#movement-board{display:block;width:100%;min-width:510px;height:auto;aspect-ratio:510 / 430}
 .hex-shape{stroke:#859b91;stroke-width:1.3;fill:#e9ede6}
 .hex-target:nth-child(even) .hex-shape{fill:#e0e6df}
 .hex-target.hex-origin .hex-shape{fill:#f5cc74;stroke:#986f23;stroke-width:3}
