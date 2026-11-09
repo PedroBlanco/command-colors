@@ -102,6 +102,9 @@ function subscribeTo(matchId) {
     try {
       const {lobbyRevision, gameRevision} = JSON.parse(event.data);
       if (!Number.isSafeInteger(lobbyRevision) || !(gameRevision === null || Number.isSafeInteger(gameRevision))) return;
+      // The event can arrive just before visibilitychange is dispatched.
+      // Never launch a private GET from a hidden tab merely for a notice.
+      if (document.hidden) revisionRefresh.setPaused(true);
       // A revision is acknowledged only after inspect() really succeeds.
       // Failed HTTP requests remain pending for bounded automatic retry.
       revisionRefresh.notice(`${lobbyRevision}:${gameRevision}`);
