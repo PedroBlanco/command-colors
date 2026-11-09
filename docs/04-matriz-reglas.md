@@ -98,3 +98,9 @@ Después de la publicación inicial se han ejecutado las suites **originales del
 El módulo puro `packages/local-api/hex-selection.mjs` puede construir un borrador de ruta a partir de la **vista autorizada** del jugador. Comprueba sector de información (unidad propia no movida), fase y actor, revisión, adyacencia geométrica *odd-q*, ocupación pública, celdas repetidas, límite técnico de 32 pasos y deshacer local. No aplica aún los rangos oficiales por unidad ni las restricciones de terreno: el **servidor** conserva toda la autoridad sobre la orden.
 
 **Trazabilidad técnica:** CCW-014 → geometría `hex-grid` + disponibilidad `deckActions` → `hex-selection.test.mjs` (11 pruebas locales correctas, SHA Git verificados) → futura entrada SVG y comando `move_synthetic_unit` de #48. **R-05 continúa sin implementar según reglamento oficial**. Ver [documento I4](39-ruta-seleccion-hexagono-i4.md). Esta rama registra **34 suites**; no se ha ejecutado su conjunto completo.
+
+## I4 — tablero autenticado y trazabilidad de movimiento sintético (PR #50)
+
+**CCW-014 (tecnología de interacción, no R-05 reglamentaria):** `hex-grid` → `hex-selection` → `movement-board-ui` → `deckCommand` → `gateway` → reductor transaccional del servidor. El tablero SVG de 117 hexágonos solo muestra unidades públicas; permite crear/corregir borradores, confirmar con clave idempotente y descartar ante revisión SSE. **19 pruebas de los dos nuevos módulos superadas**, además de prueba HTTP de recursos permitidos *añadida pero aún no ejecutada*. La batería general incorpora **35 suites**.
+
+**Regla R-05 continúa pendiente**: movimientos por tipo de unidad, líderes, terreno, exclusiones y excepciones oficiales todavía no se han contrastado con la edición de referencia. Ver [nota técnica I4](40-tablero-svg-autenticado-i4.md).
