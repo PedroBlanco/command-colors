@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 const MATCH='123e4567-e89b-42d3-a456-426614174000';
 let serial=0;
-async function withBrowser(run) {
+async function withBrowser(run, {onMoveCommand=null}={}) {
  const original={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,EventSource:globalThis.EventSource};
  const elements=new Map(), handlers=new Map(), requests=[], sources=[];
  function element(id) {
@@ -49,6 +49,7 @@ async function withBrowser(run) {
      else{status=409;response={code:'NOT_AVAILABLE'}}
    }
    else if(path===`/api/matches/${MATCH}/commands`&&options.method==='POST'){
+     if(data?.type==='move_synthetic_unit' && onMoveCommand) await onMoveCommand();
      if(!state.initialized || data.expectedRevision!==state.revision){status=409;response={code:'STALE_REVISION'}}
      else{
        const next={
@@ -203,3 +204,56 @@ test('manual movement button sends sanitized own-unit path after order assignmen
  assert.equal(c.requests.length,before);
  assert.equal(c.element('message').textContent,'RUTA_INVALIDA');
 }));
+
+
+test('late movement success after switching match never refreshes or overwrites the new view',()=>{
+ let enter,release;
+ const entered=new Promise(resolve=>enter=resolve);
+ const gate=new Promise(resolve=>release=resolve);
+ return withBrowser(async c=>{
+   await loginReady(c);
+   await c.element('deck-initialize').dispatch('click');
+   await c.element('deck-play').dispatch('click');
+   c.element('deck-units').value='unit_a';
+   await c.element('deck-orders').dispatch('click');
+   c.element('deck-move-unit').value='unit_a';
+   c.element('deck-move-path').value='4,4';
+   const pending=c.element('deck-move').dispatch('click');
+   await entered;
+   c.element('match-id').value='123e4567-e89b-42d3-a456-426614174001';
+   await c.element('match-id').dispatch('input');
+   c.element('message').textContent='NEW_SESSION_MESSAGE';
+   const previousReads=c.requests.filter(x=>x.path===`/api/matches/${MATCH}`).length;
+   release();
+   await pending;
+   assert.equal(c.element('message').textContent,'NEW_SESSION_MESSAGE');
+   assert.equal(c.element('state').textContent,'null');
+   assert.equal(c.element('deck-panel').hidden,true);
+   assert.equal(c.requests.filter(x=>x.path===`/api/matches/${MATCH}`).length,previousReads);
+ },{onMoveCommand:async()=>{enter();await gate}});
+});
+
+test('late movement success after logout never restores the former private board',()=>{
+ let enter,release;
+ const entered=new Promise(resolve=>enter=resolve);
+ const gate=new Promise(resolve=>release=resolve);
+ return withBrowser(async c=>{
+   await loginReady(c);
+   await c.element('deck-initialize').dispatch('click');
+   await c.element('deck-play').dispatch('click');
+   c.element('deck-units').value='unit_a';
+   await c.element('deck-orders').dispatch('click');
+   c.element('deck-move-unit').value='unit_a';
+   c.element('deck-move-path').value='4,4';
+   const pending=c.element('deck-move').dispatch('click');
+   await entered;
+   await c.element('logout').dispatch('click');
+   c.element('message').textContent='LOGGED_OUT_MESSAGE';
+   release();
+   await pending;
+   assert.equal(c.element('message').textContent,'LOGGED_OUT_MESSAGE');
+   assert.equal(c.element('match-id').value,'');
+   assert.equal(c.element('deck-panel').hidden,true);
+   assert.equal(c.element('state').textContent.includes('own_1'),false);
+ },{onMoveCommand:async()=>{enter();await gate}});
+});
