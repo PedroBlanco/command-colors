@@ -7,6 +7,7 @@ const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
 const stateText = value => {el('state').textContent = JSON.stringify(value,null,2);};
 let cached = null;
+let signedInHandle = null;
 const privateScope = createPrivateViewScope();
 let movementBoard = null;
 let updates = null, updateMatchId = null, lastNotice = null, inspectionSequence = 0;
@@ -44,6 +45,7 @@ function renderDeck() {
 }
 
 function clearPrivateView() {
+  signedInHandle = null;
   privateScope.reset();
   cached = null;
   inspectionSequence++; // invalidate any GET that started under an earlier session
@@ -84,8 +86,12 @@ function subscribeTo(matchId) {
     } catch {message('No se ha podido interpretar el aviso de revisión');}
   });
 }
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && pendingRefresh) {
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden) return;
+  // Cookies can change when another tab logs in as a different player.
+  // Revalidate before revealing an old hand or processing deferred SSE.
+  if (!await session()) return;
+  if (pendingRefresh) {
     pendingRefresh = false;
     inspect().catch(error => message(error.message));
   }
@@ -106,9 +112,32 @@ async function session() {
   const ticket=privateScope.capture();
   try {
     const data=await api('GET','/api/session');
-    if(privateScope.isCurrent(ticket))el('current').textContent = `Conectado: ${data.handle}`;
-  } catch {
-    if(privateScope.isCurrent(ticket))el('current').textContent='Sin sesión';
+    if (!privateScope.isCurrent(ticket)) return false;
+    if (!data || typeof data.handle !== 'string' || !data.handle.trim()) {
+      closeUpdates();clearPrivateView();
+      el('current').textContent='Sin sesión';
+      return false;
+    }
+    if (signedInHandle && signedInHandle !== data.handle) {
+      closeUpdates();clearPrivateView();
+      signedInHandle=data.handle;
+      el('current').textContent=`Conectado: ${data.handle}`;
+      message('Ha cambiado la identidad de la sesión. Vuelve a abrir la partida.');
+      return false;
+    }
+    signedInHandle=data.handle;
+    el('current').textContent=`Conectado: ${data.handle}`;
+    return true;
+  } catch (error) {
+    if (!privateScope.isCurrent(ticket)) return false;
+    if (/^401:/.test(error.message)) {
+      closeUpdates();clearPrivateView();
+      el('current').textContent='Sin sesión';
+      message('La sesión ha caducado o se ha cerrado.');
+    } else {
+      el('current').textContent='No se ha podido verificar la sesión';
+    }
+    return false;
   }
 }
 async function inspect() {
@@ -117,7 +146,19 @@ async function inspect() {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw Error('Introduce el identificador de partida');
   privateScope.selectMatch(id);
   const ticket = privateScope.capture();
-  const lobby=await api('GET',`/api/matches/${id}`);
+  let lobby;
+  try {
+    lobby=await api('GET',`/api/matches/${id}`);
+  } catch(error) {
+    if (!privateScope.isCurrent(ticket,id) || sequence !== inspectionSequence || el('match-id').value.trim() !== id) return false;
+    if (/^(401|403|404):/.test(error.message)) {
+      closeUpdates();clearPrivateView();
+      if (/^401:/.test(error.message)) el('current').textContent='Sin sesión';
+      message('La sesión o la partida ya no están disponibles.');
+      return false;
+    }
+    throw error;
+  }
   if (!privateScope.isCurrent(ticket,id) || sequence !== inspectionSequence || el('match-id').value.trim() !== id) return false;
   subscribeTo(id);
   el('lobby').textContent=JSON.stringify({status:lobby.status,players:lobby.players},null,2);
