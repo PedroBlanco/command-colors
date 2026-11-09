@@ -104,3 +104,19 @@ El control de identidad que ya protegía `sendDeck()` y la inspección SSE no se
 - Se han añadido tres tests a `browser-deck-ui.test.mjs`: cookie cambiada antes de inicializar el mazo, antes de invitar/pasar turno y antes de consultar eventos/crear otra partida. Cuando se detecta el cambio de identidad, la reentrada exige **nuevo inicio de sesión explícito**, tal como ya hace la interfaz.
 - **Ejecución simulada:** 26/26 casos superados en V8 aislado, usando el código publicado de los módulos, con adaptadores de imports y DOM/fetch falsos (`browser-deck-ui.test.mjs` 21 casos y `browser-ui.test.mjs` 5). SHA Git: módulo `fb52922800dca2bf44282eb8a162133f8473a51b`, pruebas de mazo/interfaz `a14860467269135b2eb31cdecfa9a58647a3cbff`, pruebas de interfaz básica `c2875abbb5d024faf2aa7b4ac766663a7faa42ab`. **No es Node.js nativo ni HTTP/SSE real**.
 - Límites: hay una ventana inevitable entre comprobar la cookie y enviar la petición, por lo que **no debe eliminarse la autorización del lado del servidor**. Las 38 suites y las pruebas de dos sesiones reales continúan pendientes, igual que la aceptación visual en PC/móvil. Ninguna regla oficial de *Ancients* ha sido añadida.
+
+## Corrección: respuestas tardías de invitaciones y eventos (9/11/2026)
+
+Se reprodujo una carrera adicional que afectaba a respuestas ya iniciadas cuando **otra pestaña cambia la cookie**. Antes del ajuste, si la sesión era válida al empezar una petición, el cliente podía mostrar después el token de invitación o la lista de eventos, aunque el usuario actual ya fuese otro; el cambio de ámbito local no había ocurrido porque no se había disparado una inspección/visibilidad.
+
+- `browser-ui.mjs` comprueba de nuevo `GET /api/session` **después** del POST que crea una invitación o del GET de eventos y **antes** de mostrar su contenido. Si la cuenta cambió, se cierra SSE y se borra el contexto privado, sin revelar respuestas tardías.
+- En `browser-deck-ui.test.mjs`, dos pruebas retienen respuestas HTTP simuladas y cambian la cuenta mientras siguen pendientes. **Antes** de corregir: fallaban ambas, mostrando `test-secret-invitation` o `SYNTHETIC_PRIVATE_TEST_DATA`. **Después**: no se muestra ningún dato tardío.
+- Regresión conjunta simulada: **28/28 callbacks de pruebas correctos** (23 de `browser-deck-ui.test.mjs`, 5 de `browser-ui.test.mjs`). Ejecutada en V8 aislado con módulos exactos del repositorio, adaptadores de imports y dobles de DOM/fetch; **no es ejecución nativa de `node --test`, HTTP/SSE real ni navegador físico**.
+- SHA Git contrastados: `browser-ui.mjs` `8ee281e9e5aabea974389f613969b38c87374366`, `browser-deck-ui.test.mjs` `54581dd47d9e217181759b8bc132a1cbad2f49d8`, `browser-ui.test.mjs` `c2875abbb5d024faf2aa7b4ac766663a7faa42ab`.
+- La autorización e identidad de jugador en cada ruta siguen controladas por el servidor; esta validación del cliente no puede garantizar que la cookie no cambie **de nuevo** después del segundo GET.
+
+## Auditoría estática del manifiesto de pruebas
+
+Se cotejó el árbol completo de GitHub de la rama con la lista fija `LOCAL_TEST_FILES` de `scripts/check-browser-lab.mjs`: **38 archivos `*.test.mjs` presentes, 38 registrados, cero ausentes, cero duplicados y cero sin registrar**. También se comprobó en `gateway.mjs` que los módulos del tablero y control de identidad/revisiones continúan dentro de la lista cerrada de rutas públicas del laboratorio. Estas comprobaciones son **estáticas** y no sustituyen ni la ejecución de la batería integral ni pruebas HTTP reales.
+
+La PR #52 permanece en borrador; no fusionar la cadena #45–#52 ni exponer el laboratorio en Internet antes de completar regresión integral y validación de permisos.
