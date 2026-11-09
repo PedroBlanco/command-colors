@@ -19,7 +19,7 @@ async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
  const document={hidden:false,getElementById:element,createElement(type){return {type,value:'',textContent:''}},
    addEventListener(type,fn){handlers.set(type,fn)},async dispatch(type){await handlers.get(type)?.()}};
  const window={addEventListener(type,fn){handlers.set(type,fn)}};
- const state={login:false,handle:'alice',lobby:'INVITING',initialized:false,phase:'AWAIT_CARD',revision:0,
+ const state={login:false,handle:'alice',denyLobby:false,lobby:'INVITING',initialized:false,phase:'AWAIT_CARD',revision:0,
    handA:['own_1','own_2'],handB:['other_1','other_2','other_3'],discard:[],inPlay:null,turn:'A',
    board:[{id:'unit_a',side:'A',col:3,row:4},{id:'unit_b',side:'B',col:9,row:4}],movedUnitIds:[]};
  class FakeEventSource {
@@ -37,6 +37,9 @@ async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
    else if(path==='/api/session'&&state.login){status=200;response={authenticated:true,handle:state.handle}}
    else if(path==='/api/session'){status=401;response={code:'UNAUTHENTICATED'}}
    else if(path==='/api/matches'&&options.method==='POST'){status=201;response={matchId:MATCH}}
+   else if(path===`/api/matches/${MATCH}`&&state.login&&state.denyLobby){
+     status=404;response={code:'NOT_FOUND'};
+   }
    else if(path===`/api/matches/${MATCH}`&&state.login){
      const view={matchId:MATCH,you:'A',turn:state.turn,revision:state.revision,yourHand:[...state.handA],
        opponentCardCount:state.handB.length,board:structuredClone(state.board),movedUnitIds:[...state.movedUnitIds]};
@@ -313,4 +316,18 @@ test('visibility revalidation removes previous hand after another tab changes ac
  assert.equal(c.element('deck-panel').hidden,true);
  assert.equal(c.element('state').textContent.includes('own_1'),false);
  assert.match(c.element('message').textContent,/cambiado la identidad/);
+}));
+
+
+test('a revoked match purges board and invitation state on refresh',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.element('invite-token').textContent='STALE_INVITATION';
+ c.state.denyLobby=true;
+ await c.element('refresh').dispatch('click');
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.match(c.element('message').textContent,/partida ya no están disponibles/);
 }));
