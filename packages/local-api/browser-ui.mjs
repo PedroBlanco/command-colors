@@ -117,7 +117,9 @@ document.addEventListener('visibilitychange', async () => {
     return;
   }
   // Confirm the current cookie identity before resuming deferred notices.
-  if (!await session()) return;
+  if (!await session() || document.hidden) return;
+  // A second visibilitychange may hide the tab while the session GET awaits.
+  // Never unpause based on a stale visible event.
   revisionRefresh.setPaused(false);
 });
 window.addEventListener('beforeunload', closeUpdates);
