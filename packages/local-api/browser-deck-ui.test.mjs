@@ -277,7 +277,7 @@ test('late invitation response is discarded after switching match',()=>{
    c.element('message').textContent='MATCH_CHANGED';
    release();
    await pending;
-   assert.equal(c.element('invite-token').textContent,'');
+   assert.equal(c.element('invite-token').textContent,'—');
    assert.equal(c.element('message').textContent,'MATCH_CHANGED');
  },{onInvite:async()=>{enter();await gate}});
 });
