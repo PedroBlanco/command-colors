@@ -279,3 +279,15 @@ node .\scripts\run-test-suite.mjs --list
 ```
 
 El ejecutor y su integración con el preflight superaron **8/8 pruebas**, también desde su CLI, con Node.js v22.16.0. **La regresión integral todavía no está ejecutada:** se conservan **26 de 33 suites verificadas**, las otras siete pendientes y la revisión visual en PC/móvil. Ver [procedimiento de pruebas y evidencia](docs/38-ejecutor-regresion-local.md). No implica permiso de despliegue ni de fusionar las PR apiladas.
+
+
+## Preparación de selección de rutas sobre tablero SVG (PR #49)
+
+La rama `feat/i4-svg-movement-path-draft` añade el contrato puro `packages/local-api/hex-selection.mjs`: empezar con una unidad propia, encadenar hexágonos vecinos no ocupados, deshacer pasos **solo en el cliente** y descartar un borrador si la revisión del servidor cambia. El resultado saneado `{unitId, path}` se entrega al flujo de `deckCommand` ya existente, sin suplantar al servidor.
+
+```powershell
+node --test packages/local-api/hex-selection.test.mjs
+.\\scripts\\test-local.ps1
+```
+
+El nuevo módulo superó **11/11 pruebas** en Node.js 22.16.0 y los dos archivos publicados coinciden por SHA Git con los probados. El manifiesto contiene **34 suites** en esta rama; **no se ha ejecutado la regresión conjunta** ni las siete suites previamente pendientes. El tablero SVG #27 aún no está integrado, y la selección gráfica no es utilizable desde el navegador por el momento. [Detalles y limitaciones](docs/39-ruta-seleccion-hexagono-i4.md). R-05 sigue sin reglas oficiales implementadas; PR #49 y sus predecesoras permanecen en borrador.
