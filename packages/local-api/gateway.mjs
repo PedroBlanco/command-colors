@@ -14,6 +14,17 @@ const denied = (code, status = 403) => ({status, body: {code}});
 const HTML_FILE = fileURLToPath(new URL('./browser-ui.html',import.meta.url));
 const CLIENT_FILE = fileURLToPath(new URL('./browser-ui.mjs',import.meta.url));
 const DECK_CONTROLS_FILE = fileURLToPath(new URL('./deck-controls.mjs',import.meta.url));
+const HEX_SELECTION_FILE = fileURLToPath(new URL('./hex-selection.mjs',import.meta.url));
+const MOVEMENT_BOARD_FILE = fileURLToPath(new URL('./movement-board-ui.mjs',import.meta.url));
+const HEX_GRID_FILE = fileURLToPath(new URL('../hex-grid/hex.mjs',import.meta.url));
+// Exact same-origin allowlist: never serve arbitrary repository paths.
+const BROWSER_ASSETS = new Map([
+  ['/browser-ui.mjs', CLIENT_FILE],
+  ['/deck-controls.mjs', DECK_CONTROLS_FILE],
+  ['/hex-selection.mjs', HEX_SELECTION_FILE],
+  ['/movement-board-ui.mjs', MOVEMENT_BOARD_FILE],
+  ['/hex-grid/hex.mjs', HEX_GRID_FILE]
+]);
 
 async function jsonRequest(req) {
   if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
@@ -77,7 +88,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         return reply(res, 403, {code:'ORIGIN_REJECTED'});
       }
       if (url.search) return reply(res, 400, {code: 'QUERY_NOT_SUPPORTED'});
-      if (config && req.method === 'GET' && (route === '/' || route === '/browser-ui.mjs' || route === '/deck-controls.mjs')) {
+      if (config && req.method === 'GET' && (route === '/' || BROWSER_ASSETS.has(route))) {
         const html = route === '/';
         res.writeHead(200, {
           'content-type': html ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8',
@@ -85,7 +96,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
           'referrer-policy':'no-referrer','x-frame-options':'DENY',
           'content-security-policy':"default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         });
-        res.end(await readFile(html ? HTML_FILE : route === '/browser-ui.mjs' ? CLIENT_FILE : DECK_CONTROLS_FILE));
+        res.end(await readFile(html ? HTML_FILE : BROWSER_ASSETS.get(route)));
         return;
       }
       if (req.method === 'GET' && route === '/health') return reply(res, 200, {ok: true});
