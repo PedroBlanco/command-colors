@@ -7,12 +7,15 @@ class Node {
     this.listeners=new Map();this.classes=new Set();this.textContent='';this.disabled=false;
     this.classList={add:x=>this.classes.add(x),remove:x=>this.classes.delete(x)};}
   setAttribute(name,value){this.attrs[name]=value;}
+  getAttribute(name){return this.attrs[name]??null;}
+  contains(other){return this===other||this.children.some(child=>child.contains?.(other));}
+  focus(){this.ownerDocument.activeElement=this;}
   append(...children){this.children.push(...children);}
   replaceChildren(...children){this.children=[...children];}
   addEventListener(name,fn){this.listeners.set(name,fn);}
   dispatch(name,details={}){return this.listeners.get(name)?.({key:'',preventDefault(){},...details});}
 }
-function fixture(){const doc={createElementNS:(_ns,tag)=>new Node(doc,tag)};
+function fixture(){const doc={activeElement:null,createElementNS:(_ns,tag)=>new Node(doc,tag)};
   const svg=new Node(doc,'svg'),status=new Node(doc,'p'),undoButton=new Node(doc,'button'),
    cancelButton=new Node(doc,'button'),confirmButton=new Node(doc,'button');
   return {svg,status,undoButton,cancelButton,confirmButton};}
@@ -126,4 +129,50 @@ test('renderer rejects duplicate ids, occupied cells, out-of-bounds, and invalid
    [{id:'x',side:'A',col:13,row:4}],
    [{id:'x',side:'Z',col:3,row:4}]
  ])assert.throws(()=>renderMovementBoard(svg,board,null,()=>{}),/INVALID_MOVEMENT_BOARD_VIEW/);
+});
+
+test('single Tab stop, arrow navigation and persistent focus across SVG redraws',()=>{
+ const {svg,controller}=setup();
+ const all=()=>svg.children[0].children;
+ assert.equal(all().filter(x=>x.attrs.tabindex==='0').length,1);
+ cell(svg,0,0).focus();
+ for(let i=0;i<3;i++){
+   const current=svg.ownerDocument.activeElement;
+   let prevented=false;current.dispatch('keydown',{key:'ArrowRight',preventDefault(){prevented=true}});
+   assert.equal(prevented,true);
+ }
+ for(let i=0;i<4;i++)svg.ownerDocument.activeElement.dispatch('keydown',{key:'ArrowDown'});
+ const unit=svg.ownerDocument.activeElement;
+ assert.equal(unit.attrs['data-col'],3);assert.equal(unit.attrs['data-row'],4);
+ assert.equal(controller.getDraft(),null);
+ unit.dispatch('keydown',{key:'Enter'});
+ assert.equal(controller.getDraft().unitId,'synthetic-a');
+ assert.equal(svg.ownerDocument.activeElement,cell(svg,3,4));
+ svg.ownerDocument.activeElement.dispatch('keydown',{key:'ArrowRight'});
+ assert.equal(svg.ownerDocument.activeElement,cell(svg,4,4));
+ svg.ownerDocument.activeElement.dispatch('keydown',{key:' '});
+ assert.deepEqual(controller.getDraft().path,[{col:4,row:4}]);
+ assert.equal(svg.ownerDocument.activeElement,cell(svg,4,4));
+ assert.equal(all().filter(x=>x.attrs.tabindex==='0').length,1);
+});
+
+test('same-revision changed occupancy or origin fail closed instead of retaining stale routes',()=>{
+ const {svg,controller,confirmButton}=setup();
+ cell(svg,3,4).dispatch('click');cell(svg,4,4).dispatch('click');
+ assert.equal(confirmButton.disabled,false);
+ const changed=view();changed.board[2]={...changed.board[2],col:4,row:4};
+ controller.setView(changed);
+ assert.equal(controller.getDraft(),null);
+ assert.equal(confirmButton.disabled,true);
+ controller.setView(view());cell(svg,3,4).dispatch('click');
+ const moved=view();moved.board[0]={...moved.board[0],col:2,row:4};
+ controller.setView(moved);
+ assert.equal(controller.getDraft(),null);
+});
+
+test('board redraw never steals focus from external controls',()=>{
+ const {svg,controller,confirmButton}=setup();
+ confirmButton.focus();
+ controller.setView({...view(),revision:8});
+ assert.equal(svg.ownerDocument.activeElement,confirmButton);
 });
