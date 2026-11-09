@@ -16,6 +16,22 @@ select{display:block;width:100%;min-height:42px;border:1px solid #a4b5b0;border-
 code{overflow-wrap:anywhere}.notice{padding:12px;background:#fff0cb;border-radius:7px}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius:7px;padding:9px;min-height:45px}
 #current{font-weight:700}#message{min-height:2em}
+
+/* Tablero táctico del laboratorio autenticado, sin recursos oficiales. */
+#movement-viewport{width:100%;overflow:hidden;border:1px solid #a4b5b0;border-radius:8px;background:#e7e8de;touch-action:manipulation}
+#movement-board{display:block;width:100%;max-width:100%;height:auto;aspect-ratio:510 / 430}
+.hex-shape{stroke:#859b91;stroke-width:1.3;fill:#e9ede6}
+.hex-target:nth-child(even) .hex-shape{fill:#e0e6df}
+.hex-target.hex-origin .hex-shape{fill:#f5cc74;stroke:#986f23;stroke-width:3}
+.hex-target.hex-route .hex-shape{fill:#c7d8a3;stroke:#557c31;stroke-width:3}
+.hex-target:focus-visible .hex-shape{stroke:#243b88;stroke-width:4}
+.hex-target{cursor:pointer}
+.unit-a{fill:#2d607b;stroke:white;stroke-width:2}
+.unit-b{fill:#a34d43;stroke:white;stroke-width:2}
+.unit-label{fill:white;font-weight:700;font-size:13px}
+.route-number{fill:#27421c;font-weight:700;font-size:13px}
+#movement-status{min-height:2em}
+@media(max-width:470px){#movement-section{grid-column:1/-1;padding:8px}}
 </style></head>
 <body>
 <header><h1>Command & Colors Web — laboratorio</h1><p>Sesiones de navegador y partidas sintéticas. No hay reglas oficiales ni juego completo.</p></header>
@@ -48,6 +64,19 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <button id="deck-stand" disabled>Defender: STAND</button><button id="deck-evade" disabled>Defender: EVADE</button>
 <button id="deck-combat" disabled>Terminar combate</button><button id="deck-draw" disabled>Robar carta y terminar turno</button>
 </div></section>
+
+<section id="movement-section" aria-labelledby="movement-title">
+<h2 id="movement-title">Tablero hexagonal de laboratorio (13 × 9)</h2>
+<p>Selecciona una unidad propia y toca los hexágonos vecinos para trazar el movimiento.
+Puedes usar también Tabulador y Entrar. La ruta solo se envía cuando la confirmas.</p>
+<div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
+  role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
+<p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>
+<button type="button" id="board-undo" disabled>Deshacer último paso</button>
+<button type="button" id="board-cancel" disabled>Cancelar ruta</button>
+<button type="button" id="board-confirm" disabled>Confirmar movimiento</button>
+<p class="notice">Sin reglas oficiales: el servidor valida unidades ordenadas, recorrido y límites de la partida.</p>
+</section>
 </main>
 <script type="module" src="/browser-ui.mjs"></script>
 </body></html>
