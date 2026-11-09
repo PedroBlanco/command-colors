@@ -112,3 +112,7 @@ El contrato técnico de geometría, fases, órdenes, movimientos, mazo y selecci
 ## Protección de ámbito de navegador (CCW-014; PR #51)
 
 Contrato técnico de privacidad: cambio de cuenta/partida → `private-view-scope.reset/selectMatch` → invalidación de respuestas HTTP anteriores → bloqueo de presentación de eventos, movimientos y tokens desactualizados. Los módulos `private-view-scope` y `private-projection` tienen 20 casos ejecutados mediante Node.js 22.16.0 (20 correctos); la interfaz simulada dispone de 20 callbacks comprobados en V8 (20 correctos). Se rechazan vistas del bando incorrecto y se revalida la sesión antes de inspeccionar o enviar órdenes. No se ha ejecutado aún la batería HTTP real. No implementa reglas oficiales R-04/R-05 ni demuestra seguridad para Internet. Véase [documentación](41-aislamiento-respuestas-navegador-i4.md).
+
+## Sincronización de revisiones SSE con reintentos (I4, PR #52)
+
+Trazabilidad técnica: aviso SSE de contadores → `revision-refresh.notice()` → obtención de proyección autenticada → reconocimiento **solo tras GET exitoso**; fallo o resultado descartado → reintento acotado. Se cubren duplicados, desorden, pestañas ocultas, SSE cerrado, cambios de cuenta y partida. **12/12 pruebas Node nativas** de coordinador y **22/22 callbacks V8 simulados** de interfaz; aún sin batería HTTP global. No implementa movimiento reglamentario ni reemplaza la autorización del servidor. [Especificación](42-reintentos-sse-i4.md).
