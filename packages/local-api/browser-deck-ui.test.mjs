@@ -447,3 +447,46 @@ test('changed cookie blocks new match creation and private event reads',()=>with
  assert.equal(c.requests.filter(r=>r.path==='/api/matches' && r.method==='POST').length,before);
  assert.equal(c.element('match-id').value,'');
 }));
+
+test('late invitation token is not revealed after a same-match cookie change',()=>{
+ let enter,release;
+ const entered=new Promise(done=>enter=done),gate=new Promise(done=>release=done);
+ return withBrowser(async c=>{
+   await loginReady(c);
+   c.element('invitee').value='bob';
+   const waiting=c.element('invite').dispatch('click');
+   await entered;
+   c.state.handle='bob';
+   release();
+   await waiting;
+   assert.equal(c.element('invite-token').textContent,'—');
+   assert.equal(c.element('state').textContent,'null');
+   assert.equal(c.element('match-id').value,'');
+ },{onInvite:async()=>{enter();await gate;}});
+});
+
+test('late event response is not rendered after the shared cookie changes',()=>withBrowser(async c=>{
+ await loginReady(c);
+ const originalFetch=globalThis.fetch;
+ let enter,release;
+ const entered=new Promise(done=>enter=done),gate=new Promise(done=>release=done);
+ globalThis.fetch=async(path,options={})=>{
+   if(path===`/api/matches/${MATCH}/events`){
+     enter();await gate;
+     return {ok:true,status:200,json:async()=>[{event:'SYNTHETIC_PRIVATE_TEST_DATA'}]};
+   }
+   return originalFetch(path,options);
+ };
+ try{
+   const waiting=c.element('events').dispatch('click');
+   await entered;
+   c.state.handle='bob';
+   release();
+   await waiting;
+   assert.equal(c.element('state').textContent,'null');
+   assert.equal(c.element('match-id').value,'');
+ } finally {
+   globalThis.fetch=originalFetch;
+   release?.();
+ }
+}));
