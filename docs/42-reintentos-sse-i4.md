@@ -64,3 +64,14 @@ Había una carrera de `visibilitychange`: un primer evento de **mostrar** comenz
 - Se reprodujo el fallo con el handler original ejecutado directamente en V8: `observedPaused=false` pese a `document.hidden=true`. El handler corregido mantuvo `paused=true` y retomó normalmente al mostrarse.
 - Se ejecutaron los **cinco casos** de `browser-ui.test.mjs` (incluido el nuevo) sobre los módulos publicados de esta rama, con adaptador de imports y DOM/fetch simulados en V8: **5/5 correctos**. **No es `node --test`, una prueba HTTP real ni una prueba de navegador**.
 - La batería sigue incluyendo **38 suites**; el nuevo caso amplía una suite ya existente, no constituye una suite adicional. La fusión continúa bloqueada por las comprobaciones pendientes.
+
+## Corrección adicional: fallo en vuelo al ocultar la pestaña (9/11/2026)
+
+Se reprodujo otra carrera con el módulo publicado `revision-refresh.mjs`: después de iniciar una inspección, el navegador podía pasar a segundo plano y la petición terminar con `false` o excepción. Antes de la corrección, `retry()` **programaba un temporizador mientras la cola estaba pausada**; al volver a mostrar la pestaña, `setPaused(false)` no relanzaba inmediatamente la inspección porque ese temporizador permanecía activo.
+
+La corrección conserva la revisión pendiente y el contador de fallos, pero **no arma un temporizador mientras `paused` sea verdadero**. Tras confirmar sesión y reanudar, `pump()` vuelve a inspeccionar inmediatamente. No se ha modificado el servidor, la autorización ni los mensajes SSE.
+
+- Incidencia original reproducida sobre el objeto Git previo `ce6083adc64696052a4634be216ccce2db3adb71`: había **1 temporizador activo** pese a estar oculta la pestaña y **no** se producía un reintento inmediato al reanudar.
+- Añadidas dos regresiones a `revision-refresh.test.mjs`: inspección en vuelo que devuelve `false`, e inspección en vuelo rechazada con error HTTP.
+- **14/14 casos del módulo (12 anteriores + 2 nuevos)** ejecutados correctamente en V8 aislado sobre el código corregido y la fuente de pruebas; **no equivalen a la ejecución nativa de `node --test` ni a HTTP/SSE real**.
+- Continúan **38 suites** en el manifiesto; las dos pruebas nuevas se añaden a una suite existente. No se acredita regresión integral, revisión visual ni seguridad de producción.
