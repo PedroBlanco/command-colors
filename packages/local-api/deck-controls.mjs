@@ -21,7 +21,9 @@ export function deckActions(view) {
   const actions = {
     AWAIT_CARD: view.yourHand.length ? ['play_synthetic_card'] : [],
     ASSIGN_ORDERS: ['assign_synthetic_orders'],
-    MOVEMENT: ['undo_synthetic_orders', 'finish_synthetic_movement'],
+    MOVEMENT: ['move_synthetic_unit',
+      ...(Array.isArray(view.movedUnitIds) && view.movedUnitIds.length > 0 ? [] : ['undo_synthetic_orders']),
+      'finish_synthetic_movement'],
     COMBAT: ['ask_synthetic_defense', 'finish_synthetic_combat'],
     DRAW_CARD: ['acknowledge_synthetic_draw']
   };
@@ -44,6 +46,21 @@ export function deckCommand(view, type, data = {}, key) {
           new Set(data.unitIds).size !== data.unitIds.length) throw new Error('ORDENES_INVALIDAS');
       request.unitIds = [...data.unitIds];
       break;
+    case 'move_synthetic_unit':
+      if (typeof data.unitId !== 'string' || !IDENTIFIER.test(data.unitId) ||
+          !Array.isArray(view.board) ||
+          !view.board.some(unit => unit?.id === data.unitId && unit.side === view.you)) {
+        throw new Error('UNIDAD_NO_PROPIA');
+      }
+      if (!Array.isArray(data.path) || data.path.length < 1 || data.path.length > 32 ||
+          !data.path.every(cell => cell && Number.isSafeInteger(cell.col) &&
+            Number.isSafeInteger(cell.row) && cell.col >= 0 && cell.col <= 12 &&
+            cell.row >= 0 && cell.row <= 8)) throw new Error('RUTA_INVALIDA');
+      if (Array.isArray(view.movedUnitIds) && view.movedUnitIds.includes(data.unitId))
+        throw new Error('UNIDAD_YA_MOVIDA');
+      request.unitId = data.unitId;
+      request.path = data.path.map(cell => ({col: cell.col, row: cell.row}));
+      break;
     case 'ask_synthetic_defense':
       if (typeof data.targetUnit !== 'string' || !IDENTIFIER.test(data.targetUnit)) throw new Error('OBJETIVO_INVALIDO');
       request.targetUnit = data.targetUnit;
@@ -55,6 +72,20 @@ export function deckCommand(view, type, data = {}, key) {
       break;
   }
   return request;
+}
+
+/** Parse explicit odd-q coordinates from a manual browser-only control. */
+export function parseSyntheticMovementPath(input) {
+  if (typeof input !== 'string' || input.trim() === '') throw new Error('RUTA_INVALIDA');
+  const parts = input.split(';');
+  if (parts.length < 1 || parts.length > 32) throw new Error('RUTA_INVALIDA');
+  return parts.map(part => {
+    const match = /^\s*(\d{1,2})\s*,\s*(\d{1,2})\s*$/.exec(part);
+    if (!match) throw new Error('RUTA_INVALIDA');
+    const col = Number(match[1]), row = Number(match[2]);
+    if (col > 12 || row > 8) throw new Error('RUTA_INVALIDA');
+    return {col, row};
+  });
 }
 
 /** Only public/own information is presented; never accept a full server snapshot. */
@@ -69,6 +100,7 @@ export function deckSummary(view) {
     cartasEnMazo: view.drawPileCount, descarte: [...view.discardPile],
     cartaPublica: view.cardInPlay,
     decisionPendiente: view.pendingDecision ?? null,
-    unidadesPublicas: Array.isArray(view.board) ? structuredClone(view.board) : []
+    unidadesPublicas: Array.isArray(view.board) ? structuredClone(view.board) : [],
+    unidadesMovidas: Array.isArray(view.movedUnitIds) ? [...view.movedUnitIds] : []
   };
 }

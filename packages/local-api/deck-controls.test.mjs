@@ -11,7 +11,7 @@ test('only acting player receives options in every phase',()=>{
   const base=baseline();
   assert.deepEqual(deckActions(base),['play_synthetic_card']);
   assert.deepEqual(deckActions({...base,phase:'ASSIGN_ORDERS'}),['assign_synthetic_orders']);
-  assert.deepEqual(deckActions({...base,phase:'MOVEMENT'}),['undo_synthetic_orders','finish_synthetic_movement']);
+  assert.deepEqual(deckActions({...base,phase:'MOVEMENT'}),['move_synthetic_unit','undo_synthetic_orders','finish_synthetic_movement']);
   assert.deepEqual(deckActions({...base,phase:'COMBAT'}),['ask_synthetic_defense','finish_synthetic_combat']);
   assert.deepEqual(deckActions({...base,phase:'DRAW_CARD'}),['acknowledge_synthetic_draw']);
   assert.deepEqual(deckActions({...base,you:'B'}),[]);

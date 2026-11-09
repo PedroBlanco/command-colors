@@ -179,6 +179,8 @@ test('HTTP cookie/SQLite: both authorized players see a persisted move but canno
  assert.equal(own.revision,3);assert.equal(opponent.revision,3);
  assert.equal(own.board[0].col,4);assert.equal(opponent.board[0].col,4);
  assert.equal(own.board[0].row,4);assert.equal(opponent.board[0].row,4);
+ assert.deepEqual(own.movedUnitIds,['synthetic-a']);
+ assert.deepEqual(opponent.movedUnitIds,['synthetic-a']);
  assert.equal((await call('GET',path,{cookie:carol})).status,404);
  const repeat=await send(alice,'move_synthetic_unit',2,'http_valid_moving_01',{
   unitId:'synthetic-a',path:[{col:4,row:4}]});

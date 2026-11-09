@@ -1,5 +1,5 @@
 /** Local-only browser lab; no licensed artwork, card texts or legal Ancients rules. */
-import {deckActions, deckCommand, deckSummary} from './deck-controls.mjs';
+import {deckActions, deckCommand, deckSummary, parseSyntheticMovementPath} from './deck-controls.mjs';
 
 const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
@@ -28,7 +28,7 @@ function renderDeck() {
   }
   for (const [id,type] of [
     ['deck-play','play_synthetic_card'],['deck-orders','assign_synthetic_orders'],
-    ['deck-undo','undo_synthetic_orders'],['deck-movement','finish_synthetic_movement'],
+    ['deck-undo','undo_synthetic_orders'],['deck-move','move_synthetic_unit'],['deck-movement','finish_synthetic_movement'],
     ['deck-ask-defense','ask_synthetic_defense'],['deck-stand','answer_synthetic_defense'],
     ['deck-evade','answer_synthetic_defense'],['deck-combat','finish_synthetic_combat'],
     ['deck-draw','acknowledge_synthetic_draw']
@@ -157,6 +157,10 @@ action('deck-orders',()=>sendDeck('assign_synthetic_orders',{
   unitIds: el('deck-units').value.split(/[\s,]+/).filter(Boolean)
 }));
 action('deck-undo',()=>sendDeck('undo_synthetic_orders'));
+action('deck-move',()=>sendDeck('move_synthetic_unit',{
+  unitId: el('deck-move-unit').value.trim(),
+  path: parseSyntheticMovementPath(el('deck-move-path').value)
+}));
 action('deck-movement',()=>sendDeck('finish_synthetic_movement'));
 action('deck-ask-defense',()=>sendDeck('ask_synthetic_defense',{targetUnit:el('deck-target').value.trim()}));
 action('deck-stand',()=>sendDeck('answer_synthetic_defense',{choice:'STAND'}));

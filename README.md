@@ -250,3 +250,32 @@ node --test packages/order-validator/*.test.mjs packages/movement/*.test.mjs pac
 El archivo `packages/local-api/movement-revision-sse.test.mjs` añade **4 pruebas de la función SSE real** `startRevisionStream` con contadores de revisión leídos de una base SQLite real; simula la identidad y membresía de dos participantes, sin abrir HTTP ni usar cookies de navegador. Comprueba la notificación de movimiento a ambos, que un rechazo no genera nuevos avisos, que una reconexión recibe la revisión actual y que la revocación de sesión cierra el flujo. Los frames contienen solo `lobbyRevision` y `gameRevision`, sin rutas, cartas ni manos. El archivo SSE publicado coincide en SHA con el ejecutado localmente (`30e374b5478fb1038c0e294bdadddfea6fedef43`).
 
 **Prueba real local:** 52/52 correctas combinando órdenes, movimiento, SQLite y SSE simulado con Node.js 22.16.0. **No equivale a una prueba HTTP/cookies/SSE completa.** Las pruebas HTTP de dos perfiles siguen pendientes; la regresión general enumera ahora **32 suites** y aún no se ha ejecutado conjuntamente en Windows. Ni esta verificación ni el incremento implementan reglas oficiales de *Ancients*.
+
+## Movimiento manual por navegador (CCW-014, laboratorio)
+
+La interfaz de la rama experimental permite introducir una unidad propia y una ruta por hexágonos en el formato `columna,fila; columna,fila`, por ejemplo `synthetic-a` y `4,4`. El botón de movimiento solo se habilita en la fase `MOVEMENT` del jugador activo. El cliente valida el formato y genera un comando mínimo `move_synthetic_unit` con `expectedRevision` y clave idempotente; el servidor sigue siendo la **única autoridad** sobre órdenes previas, ocupación, distancias, movimientos repetidos y persistencia.
+
+**Pruebas ejecutadas localmente en Node.js 22.16.0:** 64/64 correctas entre validadores, SQLite, SSE simulado y controles de navegador (5 casos nuevos). El test de interacción simulada de botón se añadió a `browser-deck-ui.test.mjs`, pero **no está ejecutado en esta revisión**; la validación visual PC/móvil también sigue pendiente. La batería general enumera ahora **33 suites**. No es todavía el tablero SVG de la PR #27 ni una implementación del reglamento oficial. [Detalles](docs/32-movimiento-manual-interfaz.md).
+
+## Verificación integrada HTTP/cookies y SSE (7 de noviembre de 2026)
+
+Después de la publicación inicial se han ejecutado las suites **originales del repositorio** `command-deck-cookie.test.mjs` (4/4), `command-deck-sse.test.mjs` (ahora 3/3) y `browser-deck-ui.test.mjs` (7/7), con los módulos de pasarela HTTP, sesiones y SQLite publicados y cotejados por sus hashes Git. La tercera prueba SSE, incorporada a esta rama, realiza **un movimiento real por HTTP con dos conexiones SSE autenticadas**: ambas reciben la revisión 3, un comando rechazado no produce aviso, la reconexión parte de la revisión vigente y el cierre de sesión revoca el flujo. Los mensajes SSE solo contienen `lobbyRevision` y `gameRevision`, sin cartas o rutas.
+
+**Evidencia ejecutada:** `node --test` sobre nueve suites de órdenes, movimiento, SQLite, interfaz simulada, cookies y SSE: **78/78 correctas, 0 fallos**, Node.js 22.16.0. Test SSE publicado con SHA `bd1cc3298329ba926e014ad26b77a5560a523239` idéntico al ejecutado. Queda pendiente la batería completa de **33 suites**, con pruebas de otras áreas del proyecto, y la validación visual real en Windows PC/móvil. No se emplearon WSL, VPS ni GitHub Actions. El laboratorio no debe publicarse en Internet.
+
+## Ajuste de controles tras movimiento — 151 pruebas (7/11/2026)
+
+La vista autorizada de una partida sintética comunica ahora la lista pública de identificadores `movedUnitIds` derivada **solo** de `matches.private_state`, sin revelar manos o mazo. Cuando ya se ha movido una unidad, la interfaz deja de ofrecer «Deshacer órdenes» y rechaza localmente el intento de mover esa misma unidad por segunda vez (`UNIDAD_YA_MOVIDA`). El servidor SQLite conserva de forma independiente la comprobación decisiva. La nueva prueba de controlador, las pruebas de botón en navegador simulado y las pruebas reales HTTP/cookies verifican el comportamiento, incluida la proyección del estado a ambos jugadores.
+
+Regresión conjunta sobre **16 suites** (geometría, fases, mazo, dados, órdenes, movimiento, SQLite, DOM simulado, HTTP/cookies y SSE): **151 pruebas ejecutadas, 151 PASS, 0 FAIL**, Node.js v22.16.0 en entorno aislado linux/x64, sin WSL ni GitHub Actions. Los cinco archivos modificados se contrastaron con los SHAs de los mismos archivos probados. Siguen pendientes **17 suites de las 33 generales** y la validación visual PC/móvil; todavía no procede fusionar las PR apiladas.
+
+## Regresión local reproducible (Windows 11, sin WSL)
+
+Las **33 suites** de pruebas se declaran una única vez en `scripts/check-browser-lab.mjs`. `scripts/test-local.ps1` invoca ahora el ejecutor Node.js `scripts/run-test-suite.mjs`, con código de salida propagado, selección opcional de suites y generación no sobrescribible de evidencias TAP y SHA-256.
+
+```powershell
+node .\scripts\run-test-suite.mjs --list
+.\scripts\test-local.ps1 -Log '.local-data\regression\completa-20261108.tap'
+```
+
+El ejecutor y su integración con el preflight superaron **8/8 pruebas**, también desde su CLI, con Node.js v22.16.0. **La regresión integral todavía no está ejecutada:** se conservan **26 de 33 suites verificadas**, las otras siete pendientes y la revisión visual en PC/móvil. Ver [procedimiento de pruebas y evidencia](docs/38-ejecutor-regresion-local.md). No implica permiso de despliegue ni de fusionar las PR apiladas.
