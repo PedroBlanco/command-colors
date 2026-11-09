@@ -173,15 +173,20 @@ test('switching browser identity clears cards, lobby and invitation token',()=>w
  assert.equal(c.element('lobby').textContent,'Sin partida cargada');
 }));
 
-test('switching match input clears old cards before fetching another lobby',()=>withBrowser(async c=>{
+test('switching match input clears old cards and invitation secrets before the next lobby',()=>withBrowser(async c=>{
  await loginReady(c);await c.element('deck-initialize').dispatch('click');
  assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.element('invite-token').textContent='OLD_MATCH_INVITATION_SECRET';
+ c.element('received').value='RECEIVED_SECRET';
  const feed=c.sources[0];
  c.element('match-id').value='invalid-new-match';
  await c.element('match-id').dispatch('input');
  assert.equal(feed.closed,true);
  assert.equal(c.element('state').textContent.includes('own_1'),false);
  assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('received').value,'');
+ assert.equal(c.element('lobby').textContent,'Sin partida cargada');
 }));
 
 test('manual movement button sends sanitized own-unit path after order assignment',()=>withBrowser(async c=>{
