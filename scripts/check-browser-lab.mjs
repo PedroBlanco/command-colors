@@ -36,7 +36,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/local-api/movement-controls.test.mjs',
   'packages/local-api/hex-selection.test.mjs',
   'packages/local-api/movement-board-ui.test.mjs',
-  'packages/local-api/private-view-scope.test.mjs'
+  'packages/local-api/private-view-scope.test.mjs',
+  'packages/local-api/private-projection.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
