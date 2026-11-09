@@ -103,8 +103,13 @@ async function api(method,path,data) {
   return result;
 }
 async function session() {
-  try {const data=await api('GET','/api/session');el('current').textContent = `Conectado: ${data.handle}`;}
-  catch {el('current').textContent='Sin sesión';}
+  const ticket=privateScope.capture();
+  try {
+    const data=await api('GET','/api/session');
+    if(privateScope.isCurrent(ticket))el('current').textContent = `Conectado: ${data.handle}`;
+  } catch {
+    if(privateScope.isCurrent(ticket))el('current').textContent='Sin sesión';
+  }
 }
 async function inspect() {
   const sequence = ++inspectionSequence;
@@ -113,7 +118,7 @@ async function inspect() {
   privateScope.selectMatch(id);
   const ticket = privateScope.capture();
   const lobby=await api('GET',`/api/matches/${id}`);
-  if (!privateScope.isCurrent(ticket,id) || sequence !== inspectionSequence || el('match-id').value.trim() !== id) return lobby;
+  if (!privateScope.isCurrent(ticket,id) || sequence !== inspectionSequence || el('match-id').value.trim() !== id) return false;
   subscribeTo(id);
   el('lobby').textContent=JSON.stringify({status:lobby.status,players:lobby.players},null,2);
   cached=lobby.state??null;
@@ -161,23 +166,69 @@ el('login-form').addEventListener('submit',async(event) => {
     if (privateScope.isCurrent(ticket)) message('Sesión iniciada');
   } catch(error){if(privateScope.isCurrent(ticket)) message(error.message);}
 });
-action('logout',async()=>{closeUpdates();clearPrivateView();await api('DELETE','/api/session');await session();});
-action('create',async()=>{const result=await api('POST','/api/matches');el('match-id').value=result.matchId;await inspect();});
+action('logout',async()=>{
+  closeUpdates();clearPrivateView();
+  const ticket=privateScope.capture();
+  await api('DELETE','/api/session');
+  if(!privateScope.isCurrent(ticket))return false;
+  await session();
+  return privateScope.isCurrent(ticket);
+});
+action('create',async()=>{
+  const ticket=privateScope.capture();
+  const result=await api('POST','/api/matches');
+  if(!privateScope.isCurrent(ticket))return false;
+  el('match-id').value=result.matchId;
+  await inspect();
+  return privateScope.isCurrent(privateScope.capture(),result.matchId);
+});
 el('match-id').addEventListener('input', () => {if (el('match-id').value.trim() !== updateMatchId) {privateScope.reset();closeUpdates();cached=null;inspectionSequence++;stateText(null);renderDeck();}});
 action('refresh',inspect);
-action('invite',async()=>{const id=el('match-id').value.trim();
+action('invite',async()=>{
+  const id=el('match-id').value.trim(),ticket=privateScope.capture();
+  if(!privateScope.isCurrent(ticket,id))throw Error('PARTIDA_DESACTUALIZADA');
   const data=await api('POST',`/api/matches/${id}/invitations`,{targetHandle:el('invitee').value});
-  el('invite-token').textContent=data.token;});
-action('accept',async()=>{const data=await api('POST','/api/invitations/accept',{invitationToken:el('received').value.trim()});
-  el('match-id').value=data.matchId;await inspect();});
-action('reject',async()=>{await api('POST','/api/invitations/reject',{invitationToken:el('received').value.trim()});});
-action('turn',async()=>{if(!cached)throw Error('No hay partida activa');
-  await api('POST',`/api/matches/${cached.matchId}/commands`,{type:'pass_demo_turn',expectedRevision:cached.revision,
-    idempotencyKey:crypto.randomUUID().replaceAll('-','')});await inspect();});
-action('events',async()=>{const id=el('match-id').value.trim();const events=await api('GET',`/api/matches/${id}/events`);stateText(events);});
+  if(!privateScope.isCurrent(ticket,id) || el('match-id').value.trim()!==id)return false;
+  el('invite-token').textContent=data.token;
+});
+action('accept',async()=>{
+  const ticket=privateScope.capture();
+  const data=await api('POST','/api/invitations/accept',{invitationToken:el('received').value.trim()});
+  if(!privateScope.isCurrent(ticket))return false;
+  el('match-id').value=data.matchId;
+  await inspect();
+  return privateScope.isCurrent(privateScope.capture(),data.matchId);
+});
+action('reject',async()=>{
+  const ticket=privateScope.capture();
+  await api('POST','/api/invitations/reject',{invitationToken:el('received').value.trim()});
+  return privateScope.isCurrent(ticket);
+});
+action('turn',async()=>{
+  if(!cached?.matchId)throw Error('No hay partida activa');
+  const matchId=cached.matchId,ticket=privateScope.capture();
+  if(!privateScope.isCurrent(ticket,matchId))throw Error('PARTIDA_DESACTUALIZADA');
+  await api('POST',`/api/matches/${matchId}/commands`,{type:'pass_demo_turn',expectedRevision:cached.revision,
+    idempotencyKey:crypto.randomUUID().replaceAll('-','')});
+  if(!privateScope.isCurrent(ticket,matchId))return false;
+  await inspect();
+  return privateScope.isCurrent(ticket,matchId);
+});
+action('events',async()=>{
+  const id=el('match-id').value.trim(),ticket=privateScope.capture();
+  if(!privateScope.isCurrent(ticket,id))throw Error('PARTIDA_DESACTUALIZADA');
+  const events=await api('GET',`/api/matches/${id}/events`);
+  if(!privateScope.isCurrent(ticket,id) || el('match-id').value.trim()!==id)return false;
+  stateText(events);
+});
 action('deck-initialize',async()=>{
   if(!cached?.matchId || cached.you !== 'A' || cached.revision !== 0 || cached.phase)throw Error('INICIALIZACION_NO_DISPONIBLE');
-  await api('POST',`/api/matches/${cached.matchId}/deck/initialize`,{});await inspect();
+  const id=cached.matchId,ticket=privateScope.capture();
+  if(!privateScope.isCurrent(ticket,id))throw Error('PARTIDA_DESACTUALIZADA');
+  await api('POST',`/api/matches/${id}/deck/initialize`,{});
+  if(!privateScope.isCurrent(ticket,id))return false;
+  await inspect();
+  return privateScope.isCurrent(ticket,id);
 });
 action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));
 action('deck-orders',()=>sendDeck('assign_synthetic_orders',{
