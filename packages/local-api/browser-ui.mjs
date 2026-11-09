@@ -1,10 +1,12 @@
 /** Local-only browser lab; no licensed artwork, card texts or legal Ancients rules. */
 import {deckActions, deckCommand, deckSummary, parseSyntheticMovementPath} from './deck-controls.mjs';
+import {createMovementBoard} from './movement-board-ui.mjs';
 
 const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
 const stateText = value => {el('state').textContent = JSON.stringify(value,null,2);};
 let cached = null;
+let movementBoard = null;
 let updates = null, updateMatchId = null, lastNotice = null, inspectionSequence = 0;
 let pendingRefresh = false;
 
@@ -36,6 +38,7 @@ function renderDeck() {
   el('deck-status').textContent = isDeck
     ? `Mazo de prueba · fase ${cached.phase} · turno ${cached.turn} · debe actuar ${cached.actingSide}`
     : 'El mazo de prueba aún no está inicializado';
+  movementBoard?.setView(cached);
 }
 
 function clearPrivateView() {
@@ -121,9 +124,9 @@ function action(id,callback) {
     catch(error){message(error.message);}
   });
 }
-async function sendDeck(type, fields = {}) {
+async function sendDeck(type, fields = {}, retryKey = null) {
   if (!cached?.matchId) throw new Error('No hay partida activa');
-  const key = crypto.randomUUID().replaceAll('-','');
+  const key = retryKey ?? crypto.randomUUID().replaceAll('-','');
   const request = deckCommand(cached,type,fields,key);
   await api('POST',`/api/matches/${cached.matchId}/commands`,request);
   await inspect();
@@ -167,5 +170,17 @@ action('deck-stand',()=>sendDeck('answer_synthetic_defense',{choice:'STAND'}));
 action('deck-evade',()=>sendDeck('answer_synthetic_defense',{choice:'EVADE'}));
 action('deck-combat',()=>sendDeck('finish_synthetic_combat'));
 action('deck-draw',()=>sendDeck('acknowledge_synthetic_draw'));
+movementBoard = createMovementBoard({
+  svg: el('movement-board'),
+  status: el('movement-status'),
+  undoButton: el('board-undo'),
+  cancelButton: el('board-cancel'),
+  confirmButton: el('board-confirm'),
+  onConfirm: async (fields, idempotencyKey) => {
+    await sendDeck('move_synthetic_unit', fields, idempotencyKey);
+    message('Movimiento sintético confirmado por el servidor');
+  },
+  onError: error => message(error.message)
+});
 renderDeck();
 await session();
