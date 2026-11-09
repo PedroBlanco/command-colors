@@ -6,7 +6,7 @@ class Node {
   constructor(doc,tag){this.ownerDocument=doc;this.tag=tag;this.attrs={};this.children=[];
     this.listeners=new Map();this.classes=new Set();this.textContent='';this.disabled=false;
     this.classList={add:x=>this.classes.add(x),remove:x=>this.classes.delete(x)};}
-  setAttribute(name,value){this.attrs[name]=value;}
+  setAttribute(name,value){this.attrs[name]=String(value);}
   getAttribute(name){return this.attrs[name]??null;}
   contains(other){return this===other||this.children.some(child=>child.contains?.(other));}
   focus(){this.ownerDocument.activeElement=this;}
@@ -34,7 +34,8 @@ test('renders exactly 117 accessible interactive hexes with public units only',(
  const {svg}=setup();assert.equal(svg.children[0].children.length,117);
  assert.match(cell(svg,3,4).attrs['aria-label'],/synthetic-a/);
  assert.equal(cell(svg,3,4).attrs.role,'button');
- assert.equal(cell(svg,3,4).attrs.tabindex,'0');
+ assert.equal(cell(svg,3,4).attrs.tabindex,'-1');
+ assert.equal(cell(svg,0,0).attrs.tabindex,'0');
  assert.equal(cell(svg,3,4).children[1].attrs.class,'unit-a');
  assert.equal(JSON.stringify(svg).includes('secret-card'),false);
 });
@@ -143,7 +144,7 @@ test('single Tab stop, arrow navigation and persistent focus across SVG redraws'
  }
  for(let i=0;i<4;i++)svg.ownerDocument.activeElement.dispatch('keydown',{key:'ArrowDown'});
  const unit=svg.ownerDocument.activeElement;
- assert.equal(unit.attrs['data-col'],3);assert.equal(unit.attrs['data-row'],4);
+ assert.equal(unit.attrs['data-col'],'3');assert.equal(unit.attrs['data-row'],'4');
  assert.equal(controller.getDraft(),null);
  unit.dispatch('keydown',{key:'Enter'});
  assert.equal(controller.getDraft().unitId,'synthetic-a');
