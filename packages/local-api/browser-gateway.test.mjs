@@ -67,6 +67,19 @@ test('serves only the public browser UI, with restrictive CSP',()=>harness(async
   const controls=await call('GET','/deck-controls.mjs');
   assert.equal(controls.status,200);assert.match(controls.text,/deckCommand/);
   assert.match(controls.headers.get('content-type'),/javascript/);
+  for (const [resource, expected] of [
+    ['/movement-board-ui.mjs','createMovementBoard'],
+    ['/hex-selection.mjs','beginMovementDraft'],
+    ['/hex-grid/hex.mjs','polygonPoints']
+  ]) {
+    const asset=await call('GET',resource);
+    assert.equal(asset.status,200,resource);
+    assert.match(asset.headers.get('content-type'),/javascript/);
+    assert.ok(asset.text.includes(expected),resource);
+    assert.match(asset.headers.get('content-security-policy'),/script-src 'self'/);
+  }
+  assert.equal((await call('GET','/movement-board-ui.mjs?import=1')).status,400);
+  assert.equal((await call('GET','/packages/local-api/movement-board-ui.test.mjs')).status,401);
   assert.equal((await call('GET','/packages/sqlite-store/sqlite.mjs')).status,401);
 }));
 

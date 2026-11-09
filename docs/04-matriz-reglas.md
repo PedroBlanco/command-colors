@@ -98,3 +98,13 @@ Después de la publicación inicial se han ejecutado las suites **originales del
 El módulo puro `packages/local-api/hex-selection.mjs` puede construir un borrador de ruta a partir de la **vista autorizada** del jugador. Comprueba sector de información (unidad propia no movida), fase y actor, revisión, adyacencia geométrica *odd-q*, ocupación pública, celdas repetidas, límite técnico de 32 pasos y deshacer local. No aplica aún los rangos oficiales por unidad ni las restricciones de terreno: el **servidor** conserva toda la autoridad sobre la orden.
 
 **Trazabilidad técnica:** CCW-014 → geometría `hex-grid` + disponibilidad `deckActions` → `hex-selection.test.mjs` (11 pruebas locales correctas, SHA Git verificados) → futura entrada SVG y comando `move_synthetic_unit` de #48. **R-05 continúa sin implementar según reglamento oficial**. Ver [documento I4](39-ruta-seleccion-hexagono-i4.md). Esta rama registra **34 suites**; no se ha ejecutado su conjunto completo.
+
+## I4 — tablero autenticado y trazabilidad de movimiento sintético (PR #50)
+
+**CCW-014 (tecnología de interacción, no R-05 reglamentaria):** `hex-grid` → `hex-selection` → `movement-board-ui` → `deckCommand` → `gateway` → reductor transaccional del servidor. El tablero SVG de 117 hexágonos solo muestra unidades públicas; permite crear/corregir borradores, confirmar con clave idempotente y descartar ante revisión SSE. **19 pruebas de los dos nuevos módulos superadas**, además de prueba HTTP de recursos permitidos *añadida pero aún no ejecutada*. La batería general incorpora **35 suites**.
+
+**Regla R-05 continúa pendiente**: movimientos por tipo de unidad, líderes, terreno, exclusiones y excepciones oficiales todavía no se han contrastado con la edición de referencia. Ver [nota técnica I4](40-tablero-svg-autenticado-i4.md).
+
+## Ampliación de verificación sintética del dominio (9/11/2026)
+
+El contrato técnico de geometría, fases, órdenes, movimientos, mazo y selección SVG se ha re-ejecutado sobre archivos publicados de GitHub mediante **116 callbacks** en V8 aislado, con adaptadores para las primitivas Node, todos correctos. Se distribuyen entre 11 archivos de pruebas (60 de geometría/fases/órdenes/movimiento y 56 de mazo/interfaz). La comprobación **no acredita** ejecución nativa Node.js, SQLite, HTTP/SSE, accesibilidad real ni reglas oficiales **R-04/R-05**. Las referencias previas a 19 pruebas de SVG con Node.js no tienen registro TAP contrastable. Ver [evidencia y límites](40-tablero-svg-autenticado-i4.md).

@@ -51,26 +51,24 @@ Los nombres de evidencias deben ser únicos: deliberadamente se rechaza la sobre
 
 La PR #48 y las PR #45–#47 deben permanecer en borrador, sin fusionar a `main`, hasta superar las pruebas pendientes. No declarar este laboratorio un juego *Command & Colors: Ancients* completo ni publicarlo en Internet.
 
-## Endurecimiento del registro de evidencia (8 de noviembre de 2026)
+## Endurecimiento del registro de evidencia (8–9 de noviembre de 2026)
 
-En la revisión siguiente se detectó que la comprobación inicial de rutas de `--log` era **lexical**: una carpeta intermedia que fuera un enlace simbólico a un directorio exterior al proyecto podía redirigir un registro TAP fuera de la raíz, contradiciendo la garantía documentada. Se añadió `validateLogFileTarget()` en `scripts/run-test-suite.mjs`, que resuelve físicamente el ancestro existente con `realpathSync` y rechaza el destino cuando queda fuera del árbol real del proyecto, además de conservar el rechazo de `..` y de rutas absolutas exteriores.
+El ejecutor añade `validateLogFileTarget()` a `scripts/run-test-suite.mjs`. La función comprueba la ruta de salida de `--log` y resuelve el ancestro existente mediante `realpathSync` para rechazar un enlace simbólico que apunte fuera del repositorio. Su prueba de regresión comprueba rutas válidas, salida ascendente, enlaces simbólicos externos y que no aparezca un registro fuera del proyecto. En Windows, el subcaso del enlace puede marcarse como omitido si faltan permisos para crearlo.
 
-Se añadió un caso de regresión a `scripts/check-browser-lab.test.mjs` que verifica la ruta segura, el rechazo de la ruta ascendente y del enlace simbólico exterior, y la **ausencia de creación** del registro en la carpeta exterior. En Windows, si el sistema no permite crear enlaces simbólicos, ese subcaso se marca como omitido en vez de fingir su éxito.
+### Rectificación del estado de verificación (9/11/2026)
 
-**Verificación realizada** en entorno aislado Node.js **v22.16.0** (Linux x64), sin WSL, VPS ni Actions:
+En una anotación anterior se informaron **9/9 PASS** y un SHA-256 de un supuesto informe TAP del ejecutor. **No está disponible una salida de Node.js ni un archivo TAP contrastable que permita verificar esas afirmaciones.** Por integridad de las evidencias, **no se consideran resultados de pruebas acreditados** y se retira el hash del supuesto informe. Los SHA Git de los archivos publicados acreditan su identidad en el repositorio, **no su ejecución**.
 
-```text
-node --check scripts/run-test-suite.mjs                   OK
-node --check scripts/check-browser-lab.mjs                OK
-node --check scripts/check-browser-lab.test.mjs           OK
-node --test scripts/check-browser-lab.test.mjs            9 PASS / 0 FAIL / 0 SKIP
+La prueba `scripts/check-browser-lab.test.mjs` sigue escrita, pero su ejecución real mediante Node.js queda **pendiente**, igual que las siete suites que no tienen evidencia de la fase anterior y el conjunto completo. No se debe fusionar basándose en las cifras rectificadas.
+
+### Comprobación pendiente reproducible (Windows 11 PowerShell, sin WSL)
+
+```powershell
+node --version
+node --check .\scripts\run-test-suite.mjs
+node --test .\scripts\check-browser-lab.test.mjs
+node .\scripts\run-test-suite.mjs --list
+.\scripts\test-local.ps1 -Log '.local-data\regression\completa-20261109.tap'
 ```
 
-Los tres archivos reconstituidos para esta ejecución coinciden **bit a bit mediante SHA Git** con los de la PR #48:
-- `scripts/run-test-suite.mjs`: `480b9dd1ae07715a15ae9c9175f8961b550d9207`.
-- `scripts/check-browser-lab.mjs`: `d4b230e8dd44bd311396eb6df53d313c38a372e9`.
-- `scripts/check-browser-lab.test.mjs`: `c79a7bc9363626f90cdff59b97f85d972a413d90`.
-
-**Estado pendiente inalterado:** siete suites de las 33 requieren todavía ejecución, después la regresión conjunta en Windows PowerShell y la aceptación visual del tablero SVG #27. La verificación de nueve casos del *ejecutor* no acredita las 33 suites del juego ni autoriza fusionar #45–#48.
-
-**Reejecución por el propio orquestador:** `node scripts/run-test-suite.mjs --only=scripts/check-browser-lab.test.mjs --log=.local-data/regression/runner-symlink-20261108.tap` terminó en **9 PASS / 0 FAIL / exit 0** y escribió evidencia no sobrescribible con SHA-256 `e4de8acbb08c440c2eb55ed7f7e1e90f766f93c802f084aecf9f0b73af575a85` (la ruta pertenece al entorno aislado de comprobación, no está publicada en GitHub). Se conservaron los SHA Git ya citados de los tres archivos originales. Esto sigue siendo solo **una suite**, no la regresión integral.
+Conservar la salida completa, el código de salida, el SHA-256 del TAP producido **realmente** y el commit de referencia antes de registrar cualquier prueba como superada. El número de suites depende de la rama: 33 en PR #48, 34 en PR #49 y 35 en PR #50.
