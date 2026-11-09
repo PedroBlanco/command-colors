@@ -3,6 +3,7 @@ import {deckActions, deckCommand, deckSummary, parseSyntheticMovementPath} from 
 import {createMovementBoard} from './movement-board-ui.mjs';
 import {createPrivateViewScope} from './private-view-scope.mjs';
 import {privateProjectionMatches} from './private-projection.mjs';
+import {createRevisionRefresh} from './revision-refresh.mjs';
 
 const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
@@ -11,8 +12,12 @@ let cached = null;
 let signedInHandle = null;
 const privateScope = createPrivateViewScope();
 let movementBoard = null;
-let updates = null, updateMatchId = null, lastNotice = null, inspectionSequence = 0;
-let pendingRefresh = false;
+let updates = null, updateMatchId = null, inspectionSequence = 0;
+const revisionRefresh = createRevisionRefresh({
+  inspect: () => inspect(),
+  onError: error => message(error.message)
+});
+revisionRefresh.setPaused(document.hidden);
 
 function renderDeck() {
   const isDeck = cached && typeof cached.phase === 'string';
@@ -74,8 +79,7 @@ function closeUpdates() {
   if (updates) updates.close();
   updates = null;
   updateMatchId = null;
-  lastNotice = null;
-  pendingRefresh = false;
+  revisionRefresh.reset();
   el('connection').textContent = 'Avisos en tiempo real desconectados';
 }
 function subscribeTo(matchId) {
@@ -92,23 +96,20 @@ function subscribeTo(matchId) {
     try {
       const {lobbyRevision, gameRevision} = JSON.parse(event.data);
       if (!Number.isSafeInteger(lobbyRevision) || !(gameRevision === null || Number.isSafeInteger(gameRevision))) return;
-      const key = `${lobbyRevision}:${gameRevision}`;
-      if (key === lastNotice) return;
-      lastNotice = key;
-      if (document.hidden) pendingRefresh = true;
-      else inspect().catch(error => message(error.message));
+      // A revision is acknowledged only after inspect() really succeeds.
+      // Failed HTTP requests remain pending for bounded automatic retry.
+      revisionRefresh.notice(`${lobbyRevision}:${gameRevision}`);
     } catch {message('No se ha podido interpretar el aviso de revisión');}
   });
 }
 document.addEventListener('visibilitychange', async () => {
-  if (document.hidden) return;
-  // Cookies can change when another tab logs in as a different player.
-  // Revalidate before revealing an old hand or processing deferred SSE.
-  if (!await session()) return;
-  if (pendingRefresh) {
-    pendingRefresh = false;
-    inspect().catch(error => message(error.message));
+  if (document.hidden) {
+    revisionRefresh.setPaused(true);
+    return;
   }
+  // Confirm the current cookie identity before resuming deferred notices.
+  if (!await session()) return;
+  revisionRefresh.setPaused(false);
 });
 window.addEventListener('beforeunload', closeUpdates);
 
