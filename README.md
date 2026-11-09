@@ -291,3 +291,11 @@ node --test packages/local-api/hex-selection.test.mjs
 ```
 
 El nuevo módulo superó **11/11 pruebas** en Node.js 22.16.0 y los dos archivos publicados coinciden por SHA Git con los probados. El manifiesto contiene **34 suites** en esta rama; **no se ha ejecutado la regresión conjunta** ni las siete suites previamente pendientes. El tablero SVG #27 aún no está integrado, y la selección gráfica no es utilizable desde el navegador por el momento. [Detalles y limitaciones](docs/39-ruta-seleccion-hexagono-i4.md). R-05 sigue sin reglas oficiales implementadas; PR #49 y sus predecesoras permanecen en borrador.
+
+## Tablero táctico SVG con sesión autenticada (I4, PR #50)
+
+La rama `feat/i4-authenticated-svg-board` añade a la página del **laboratorio local** un tablero SVG de 117 hexágonos: seleccionar una unidad propia, marcar una ruta, deshacer pasos en el navegador, cancelar o confirmar. Al confirmar, se envía `move_synthetic_unit` por la API de cookies existente; el servidor sigue comprobando actor, órdenes, recorrido, revisión e idempotencia. Los mensajes SSE invalidan borradores obsoletos.
+
+La vista dibuja **solo información pública**; nunca la mano contraria. El servidor entrega los módulos del tablero por una lista cerrada de rutas. El formulario manual continúa disponible. No se han incorporado imágenes ni reglas oficiales. La PR #27 de tablero con identidades simuladas A/B permanece separada y pendiente de aceptación; estos dos renderizadores deberán consolidarse tras la revisión.
+
+Pruebas **realmente ejecutadas**: 19/19 (11 selección + 8 tablero), Node.js 22.16.0, módulos originales cotejados por SHA Git. El manifiesto de la rama tiene **35 suites**; la ejecución conjunta, la prueba HTTP de recursos nuevos y la aceptación visual/móvil quedan pendientes. Véase [especificación y criterios de aceptación](docs/40-tablero-svg-autenticado-i4.md). No ejecutar en Internet ni fusionar PR #45–#50 hasta resolver los bloqueos.
