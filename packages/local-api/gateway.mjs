@@ -18,6 +18,7 @@ const HEX_SELECTION_FILE = fileURLToPath(new URL('./hex-selection.mjs',import.me
 const MOVEMENT_BOARD_FILE = fileURLToPath(new URL('./movement-board-ui.mjs',import.meta.url));
 const PRIVATE_VIEW_SCOPE_FILE = fileURLToPath(new URL('./private-view-scope.mjs',import.meta.url));
 const PRIVATE_PROJECTION_FILE = fileURLToPath(new URL('./private-projection.mjs',import.meta.url));
+const REVISION_REFRESH_FILE = fileURLToPath(new URL('./revision-refresh.mjs',import.meta.url));
 const HEX_GRID_FILE = fileURLToPath(new URL('../hex-grid/hex.mjs',import.meta.url));
 // Exact same-origin allowlist: never serve arbitrary repository paths.
 const BROWSER_ASSETS = new Map([
@@ -27,6 +28,7 @@ const BROWSER_ASSETS = new Map([
   ['/movement-board-ui.mjs', MOVEMENT_BOARD_FILE],
   ['/private-view-scope.mjs', PRIVATE_VIEW_SCOPE_FILE],
   ['/private-projection.mjs', PRIVATE_PROJECTION_FILE],
+  ['/revision-refresh.mjs', REVISION_REFRESH_FILE],
   ['/hex-grid/hex.mjs', HEX_GRID_FILE]
 ]);
 
