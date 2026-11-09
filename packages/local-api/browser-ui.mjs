@@ -83,12 +83,16 @@ function subscribeTo(matchId) {
   if (updates && updateMatchId === matchId) return;
   closeUpdates();
   updateMatchId = matchId;
-  updates = new EventSource(`/api/matches/${matchId}/updates`);
+  const feed = new EventSource(`/api/matches/${matchId}/updates`);
+  const ticket = privateScope.capture();
+  updates = feed;
+  const active = () => updates === feed && privateScope.isCurrent(ticket,matchId) &&
+    el('match-id').value.trim() === matchId;
   el('connection').textContent = 'Conectando avisos de partida…';
-  updates.onopen = () => {el('connection').textContent = 'Avisos de partida conectados';};
-  updates.onerror = () => {el('connection').textContent = 'Reconectando avisos de partida…';};
-  updates.addEventListener('revision', event => {
-    if (el('match-id').value.trim() !== matchId) return;
+  feed.onopen = () => {if (active()) el('connection').textContent = 'Avisos de partida conectados';};
+  feed.onerror = () => {if (active()) el('connection').textContent = 'Reconectando avisos de partida…';};
+  feed.addEventListener('revision', event => {
+    if (!active()) return;
     try {
       const {lobbyRevision, gameRevision} = JSON.parse(event.data);
       if (!Number.isSafeInteger(lobbyRevision) || !(gameRevision === null || Number.isSafeInteger(gameRevision))) return;
@@ -96,8 +100,8 @@ function subscribeTo(matchId) {
       if (key === lastNotice) return;
       lastNotice = key;
       if (document.hidden) pendingRefresh = true;
-      else inspect().catch(error => message(error.message));
-    } catch {message('No se ha podido interpretar el aviso de revisión');}
+      else inspect().catch(error => {if (active()) message(error.message);});
+    } catch {if (active()) message('No se ha podido interpretar el aviso de revisión');}
   });
 }
 document.addEventListener('visibilitychange', async () => {
