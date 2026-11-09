@@ -401,3 +401,50 @@ test('a temporary session check failure hides cached private information',()=>wi
  assert.equal(c.element('state').textContent.includes('own_1'),false);
  assert.match(c.element('message').textContent,/No se puede verificar la identidad/);
 }));
+
+test('changed cookie blocks a legacy deck initialization from the previous player',()=>withBrowser(async c=>{
+ await loginReady(c);
+ assert.equal(c.element('deck-initialize').disabled,false);
+ const previous=c.requests.filter(r=>r.path===`/api/matches/${MATCH}/deck/initialize`).length;
+ c.state.handle='bob'; // another tab changed the shared cookie without a visibility event
+ await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/deck/initialize`).length,previous);
+ assert.equal(c.state.initialized,false);
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('state').textContent,'null');
+ assert.equal(c.element('deck-panel').hidden,true);
+}));
+
+test('changed cookie blocks invitation and demo turn commands before HTTP mutation',()=>withBrowser(async c=>{
+ await loginReady(c);
+ c.state.handle='bob';
+ await c.element('invite').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/invitations`).length,0);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('match-id').value,'');
+ // Re-open under Alice so a second stale session change tests the demo action.
+ c.state.handle='alice';
+ c.element('match-id').value=MATCH;
+ await c.element('refresh').dispatch('click');
+ assert.equal(c.element('match-id').value,MATCH);
+ c.state.handle='bob';
+ await c.element('turn').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/commands` && r.body?.type==='pass_demo_turn').length,0);
+ assert.equal(c.element('state').textContent,'null');
+}));
+
+test('changed cookie blocks new match creation and private event reads',()=>withBrowser(async c=>{
+ await loginReady(c);
+ c.state.handle='bob';
+ await c.element('events').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/events`).length,0);
+ assert.equal(c.element('state').textContent,'null');
+ c.state.handle='alice';
+ await c.element('create').dispatch('click');
+ assert.equal(c.element('match-id').value,MATCH);
+ const before=c.requests.filter(r=>r.path==='/api/matches' && r.method==='POST').length;
+ c.state.handle='bob';
+ await c.element('create').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path==='/api/matches' && r.method==='POST').length,before);
+ assert.equal(c.element('match-id').value,'');
+}));
