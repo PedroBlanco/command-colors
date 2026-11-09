@@ -130,3 +130,39 @@ test('multiple SSE notices while hidden coalesce into one refreshed projection',
   await nextTurn();
   assert.equal(reads(),before+1);
 }));
+
+test('visibility race: hiding during session revalidation must not resume queued SSE',()=>withBrowser(async ctx=>{
+  await ctx.element('login-form').dispatch('submit');
+  await ctx.element('create').dispatch('click');
+  const feed=ctx.feeds[0];
+  const reads=()=>ctx.requests.filter(x=>x.path===`/api/matches/${MATCH}`).length;
+  ctx.document.hidden=true;
+  await ctx.document.dispatch('visibilitychange');
+  feed.emit({lobbyRevision:1,gameRevision:0});
+  await nextTurn();
+  const before=reads();
+  const originalFetch=globalThis.fetch;
+  let release=null;
+  globalThis.fetch=(path,options)=>path==='/api/session' && options?.method==='GET'
+    ? new Promise(resolve=>{release=()=>originalFetch(path,options).then(resolve);})
+    : originalFetch(path,options);
+  try {
+    ctx.document.hidden=false;
+    const pendingVisible=ctx.document.dispatch('visibilitychange');
+    await nextTurn();
+    assert.equal(typeof release,'function','the visible handler must be awaiting session');
+    ctx.document.hidden=true;
+    await ctx.document.dispatch('visibilitychange');
+    const finishSession=release;release=null;finishSession();
+    await pendingVisible;
+    await nextTurn();
+    assert.equal(reads(),before,'a stale visibility event must not start a private GET in a hidden tab');
+  } finally {
+    globalThis.fetch=originalFetch;
+    release?.();
+  }
+  ctx.document.hidden=false;
+  await ctx.document.dispatch('visibilitychange');
+  await nextTurn();
+  assert.equal(reads(),before+1,'the queued notice resumes only after a fresh visible session check');
+}));
