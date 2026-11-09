@@ -69,6 +69,8 @@ test('serves only the public browser UI, with restrictive CSP',()=>harness(async
   assert.match(controls.headers.get('content-type'),/javascript/);
   for (const [resource, expected] of [
     ['/movement-board-ui.mjs','createMovementBoard'],
+    ['/private-view-scope.mjs','createPrivateViewScope'],
+    ['/private-projection.mjs','privateProjectionMatches'],
     ['/hex-selection.mjs','beginMovementDraft'],
     ['/hex-grid/hex.mjs','polygonPoints']
   ]) {

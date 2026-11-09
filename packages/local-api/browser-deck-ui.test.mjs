@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const MATCH='123e4567-e89b-42d3-a456-426614174000';
+const MATCH_B='123e4567-e89b-42d3-a456-426614174001';
 let serial=0;
-async function withBrowser(run) {
+async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
  const original={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,EventSource:globalThis.EventSource};
  const elements=new Map(), handlers=new Map(), requests=[], sources=[];
  function element(id) {
@@ -19,7 +20,7 @@ async function withBrowser(run) {
  const document={hidden:false,getElementById:element,createElement(type){return {type,value:'',textContent:''}},
    addEventListener(type,fn){handlers.set(type,fn)},async dispatch(type){await handlers.get(type)?.()}};
  const window={addEventListener(type,fn){handlers.set(type,fn)}};
- const state={login:false,lobby:'INVITING',initialized:false,phase:'AWAIT_CARD',revision:0,
+ const state={login:false,handle:'alice',denyLobby:false,sessionUnavailable:false,lobby:'INVITING',initialized:false,phase:'AWAIT_CARD',revision:0,
    handA:['own_1','own_2'],handB:['other_1','other_2','other_3'],discard:[],inPlay:null,turn:'A',
    board:[{id:'unit_a',side:'A',col:3,row:4},{id:'unit_b',side:'B',col:9,row:4}],movedUnitIds:[]};
  class FakeEventSource {
@@ -32,23 +33,37 @@ async function withBrowser(run) {
    const data=options.body?JSON.parse(options.body):undefined;
    requests.push({path,method:options.method,body:data,headers:options.headers});
    let code='NOT_FOUND',status=404,response={code};
-   if(path==='/api/session'&&options.method==='POST'){state.login=true;status=200;response={ok:true}}
+   if(path==='/api/session'&&options.method==='POST'){state.login=true;state.handle=data.handle;status=200;response={ok:true}}
    else if(path==='/api/session'&&options.method==='DELETE'){state.login=false;status=200;response={ok:true}}
-   else if(path==='/api/session'&&state.login){status=200;response={authenticated:true,handle:'alice'}}
+   else if(path==='/api/session'&&state.login&&state.sessionUnavailable){status=503;response={code:'SERVICE_UNAVAILABLE'}}
+   else if(path==='/api/session'&&state.login){status=200;response={authenticated:true,handle:state.handle}}
+   else if(path==='/api/session'){status=401;response={code:'UNAUTHENTICATED'}}
    else if(path==='/api/matches'&&options.method==='POST'){status=201;response={matchId:MATCH}}
-   else if(path===`/api/matches/${MATCH}`&&state.login){
-     const view={matchId:MATCH,you:'A',turn:state.turn,revision:state.revision,yourHand:[...state.handA],
+   else if(path===`/api/matches/${MATCH}`&&state.login&&state.denyLobby){
+     status=404;response={code:'NOT_FOUND'};
+   }
+   else if(path===`/api/invitations/accept`&&options.method==='POST'){
+     status=200;response={matchId:MATCH_B};
+   }
+   else if((path===`/api/matches/${MATCH}`||path===`/api/matches/${MATCH_B}`)&&state.login){
+     const view={matchId:path.endsWith(MATCH_B)?MATCH_B:MATCH,you:state.forceSide??'A',turn:state.turn,revision:state.revision,yourHand:[...state.handA],
        opponentCardCount:state.handB.length,board:structuredClone(state.board),movedUnitIds:[...state.movedUnitIds]};
      if(state.initialized)Object.assign(view,{phase:state.phase,actingSide:state.turn,drawPileCount:13,
        discardPile:[...state.discard],cardInPlay:state.inPlay,pendingDecision:null});
-     status=200;response={status:state.lobby,players:[{side:'A',handle:'alice'},{side:'B',handle:'bob'}],
+     status=200;response={matchId:view.matchId,status:state.lobby,
+       players:state.lobby==='READY'?[{side:'A',handle:'alice'},{side:'B',handle:'bob'}]:[{side:'A',handle:'alice'}],
        ...(state.lobby==='READY'?{state:view}:{})};
+   }
+   else if(path===`/api/matches/${MATCH}/invitations`&&options.method==='POST'){
+     if(onInvite) await onInvite();
+     status=201;response={token:'test-secret-invitation'};
    }
    else if(path===`/api/matches/${MATCH}/deck/initialize`&&options.method==='POST'){
      if(state.lobby==='READY'&&!state.initialized&&Object.keys(data).length===0){state.initialized=true;status=201;response={code:'DECK_INITIALIZED'}}
      else{status=409;response={code:'NOT_AVAILABLE'}}
    }
    else if(path===`/api/matches/${MATCH}/commands`&&options.method==='POST'){
+     if(data?.type==='move_synthetic_unit' && onMoveCommand) await onMoveCommand();
      if(!state.initialized || data.expectedRevision!==state.revision){status=409;response={code:'STALE_REVISION'}}
      else{
        const next={
@@ -168,15 +183,20 @@ test('switching browser identity clears cards, lobby and invitation token',()=>w
  assert.equal(c.element('lobby').textContent,'Sin partida cargada');
 }));
 
-test('switching match input clears old cards before fetching another lobby',()=>withBrowser(async c=>{
+test('switching match input clears old cards and invitation secrets before the next lobby',()=>withBrowser(async c=>{
  await loginReady(c);await c.element('deck-initialize').dispatch('click');
  assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.element('invite-token').textContent='OLD_MATCH_INVITATION_SECRET';
+ c.element('received').value='RECEIVED_SECRET';
  const feed=c.sources[0];
  c.element('match-id').value='invalid-new-match';
  await c.element('match-id').dispatch('input');
  assert.equal(feed.closed,true);
  assert.equal(c.element('state').textContent.includes('own_1'),false);
  assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('received').value,'');
+ assert.equal(c.element('lobby').textContent,'Sin partida cargada');
 }));
 
 test('manual movement button sends sanitized own-unit path after order assignment',()=>withBrowser(async c=>{
@@ -202,4 +222,221 @@ test('manual movement button sends sanitized own-unit path after order assignmen
  await c.element('deck-move').dispatch('click');
  assert.equal(c.requests.length,before);
  assert.equal(c.element('message').textContent,'RUTA_INVALIDA');
+}));
+
+
+test('late movement success after switching match never refreshes or overwrites the new view',()=>{
+ let enter,release;
+ const entered=new Promise(resolve=>enter=resolve);
+ const gate=new Promise(resolve=>release=resolve);
+ return withBrowser(async c=>{
+   await loginReady(c);
+   await c.element('deck-initialize').dispatch('click');
+   await c.element('deck-play').dispatch('click');
+   c.element('deck-units').value='unit_a';
+   await c.element('deck-orders').dispatch('click');
+   c.element('deck-move-unit').value='unit_a';
+   c.element('deck-move-path').value='4,4';
+   const pending=c.element('deck-move').dispatch('click');
+   await entered;
+   c.element('match-id').value='123e4567-e89b-42d3-a456-426614174001';
+   await c.element('match-id').dispatch('input');
+   c.element('message').textContent='NEW_SESSION_MESSAGE';
+   const previousReads=c.requests.filter(x=>x.path===`/api/matches/${MATCH}`).length;
+   release();
+   await pending;
+   assert.equal(c.element('message').textContent,'NEW_SESSION_MESSAGE');
+   assert.equal(c.element('state').textContent,'null');
+   assert.equal(c.element('deck-panel').hidden,true);
+   assert.equal(c.requests.filter(x=>x.path===`/api/matches/${MATCH}`).length,previousReads);
+ },{onMoveCommand:async()=>{enter();await gate}});
+});
+
+test('late movement success after logout never restores the former private board',()=>{
+ let enter,release;
+ const entered=new Promise(resolve=>enter=resolve);
+ const gate=new Promise(resolve=>release=resolve);
+ return withBrowser(async c=>{
+   await loginReady(c);
+   await c.element('deck-initialize').dispatch('click');
+   await c.element('deck-play').dispatch('click');
+   c.element('deck-units').value='unit_a';
+   await c.element('deck-orders').dispatch('click');
+   c.element('deck-move-unit').value='unit_a';
+   c.element('deck-move-path').value='4,4';
+   const pending=c.element('deck-move').dispatch('click');
+   await entered;
+   await c.element('logout').dispatch('click');
+   c.element('message').textContent='LOGGED_OUT_MESSAGE';
+   release();
+   await pending;
+   assert.equal(c.element('message').textContent,'LOGGED_OUT_MESSAGE');
+   assert.equal(c.element('match-id').value,'');
+   assert.equal(c.element('deck-panel').hidden,true);
+   assert.equal(c.element('state').textContent.includes('own_1'),false);
+ },{onMoveCommand:async()=>{enter();await gate}});
+});
+
+
+test('late invitation response is discarded after switching match',()=>{
+ let enter,release;
+ const entered=new Promise(resolve=>enter=resolve);
+ const gate=new Promise(resolve=>release=resolve);
+ return withBrowser(async c=>{
+   await loginReady(c);
+   c.element('invitee').value='bob';
+   const pending=c.element('invite').dispatch('click');
+   await entered;
+   c.element('match-id').value='123e4567-e89b-42d3-a456-426614174001';
+   await c.element('match-id').dispatch('input');
+   c.element('message').textContent='MATCH_CHANGED';
+   release();
+   await pending;
+   assert.equal(c.element('invite-token').textContent,'—');
+   assert.equal(c.element('message').textContent,'MATCH_CHANGED');
+ },{onInvite:async()=>{enter();await gate}});
+});
+
+
+test('visibility revalidation removes private cards after an externally revoked session',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.state.login=false;
+ c.document.hidden=false;
+ await c.document.dispatch('visibilitychange');
+ assert.equal(c.element('current').textContent,'Sin sesión');
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.equal(c.element('invite-token').textContent,'—');
+}));
+
+test('visibility revalidation removes previous hand after another tab changes account',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.state.handle='bob';
+ c.document.hidden=false;
+ await c.document.dispatch('visibilitychange');
+ assert.equal(c.element('current').textContent,'Conectado: bob');
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.match(c.element('message').textContent,/cambiado la identidad/);
+}));
+
+
+test('a revoked match purges board and invitation state on refresh',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.element('invite-token').textContent='STALE_INVITATION';
+ c.state.denyLobby=true;
+ await c.element('refresh').dispatch('click');
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.match(c.element('message').textContent,/partida ya no están disponibles/);
+}));
+
+
+test('accepting an invitation programmatically replaces old tokens and private match',()=>withBrowser(async c=>{
+ await loginReady(c);
+ c.element('invite-token').textContent='OLD_MATCH_INVITE_TOKEN';
+ c.element('received').value='NEW_MATCH_INVITE_TOKEN';
+ await c.element('accept').dispatch('click');
+ assert.equal(c.element('match-id').value,MATCH_B);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('received').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.match(c.element('lobby').textContent,/READY/);
+}));
+
+test('creating a match from a different context clears its former invitation',()=>withBrowser(async c=>{
+ await loginReady(c);
+ c.element('match-id').value=MATCH_B;
+ await c.element('refresh').dispatch('click');
+ c.element('invite-token').textContent='OTHER_MATCH_PRIVATE_TOKEN';
+ c.element('received').value='OTHER_MATCH_RECEIVED_TOKEN';
+ await c.element('create').dispatch('click');
+ assert.equal(c.element('match-id').value,MATCH);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('received').value,'');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+}));
+
+
+test('a visible tab rejects SSE private state after the cookie switches to another player',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ const feed=c.sources[0];
+ c.state.handle='bob';
+ feed.emit({lobbyRevision:2,gameRevision:5});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.equal(feed.closed,true);
+ assert.match(c.element('message').textContent,/cambiado la identidad/);
+}));
+
+test('a 200 response with another side must never reveal that hand',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.state.forceSide='B';
+ await c.element('refresh').dispatch('click');
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.match(c.element('message').textContent,/no corresponde a la sesión vigente/);
+}));
+
+
+test('a temporary session check failure hides cached private information',()=>withBrowser(async c=>{
+ await loginReady(c);await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.element('state').textContent.includes('own_1'),true);
+ c.state.sessionUnavailable=true;
+ await c.element('refresh').dispatch('click');
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('deck-panel').hidden,true);
+ assert.equal(c.element('state').textContent.includes('own_1'),false);
+ assert.match(c.element('message').textContent,/No se puede verificar la identidad/);
+}));
+
+
+test('late SSE callbacks from a closed feed cannot revive connection or fetch private state',()=>withBrowser(async c=>{
+ await loginReady(c);
+ const old=c.sources[0];
+ assert.equal(old.closed,false);
+ c.element('match-id').value=MATCH_B;
+ await c.element('match-id').dispatch('input');
+ assert.equal(old.closed,true);
+ const count=c.requests.length;
+ old.onopen?.();
+ old.onerror?.();
+ old.emit({lobbyRevision:3,gameRevision:3});
+ old.listeners.get('revision')?.({data:'malformed JSON'});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(c.requests.length,count);
+ assert.equal(c.element('connection').textContent,'Avisos en tiempo real desconectados');
+ assert.equal(c.element('lobby').textContent,'Sin partida cargada');
+ assert.equal(c.element('message').textContent.includes('interpretar el aviso'),false);
+}));
+
+test('old SSE callbacks do not interfere with the newly subscribed match',()=>withBrowser(async c=>{
+ await loginReady(c);
+ const old=c.sources[0];
+ c.element('match-id').value=MATCH_B;
+ await c.element('match-id').dispatch('input');
+ await c.element('refresh').dispatch('click');
+ const fresh=c.sources.at(-1);
+ assert.equal(old.closed,true);
+ assert.equal(fresh.closed,false);
+ assert.equal(fresh.url,`/api/matches/${MATCH_B}/updates`);
+ fresh.onopen?.();
+ const before=c.requests.length;
+ old.onerror?.();
+ old.emit({lobbyRevision:7,gameRevision:7});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(c.requests.length,before);
+ assert.equal(c.element('connection').textContent,'Avisos de partida conectados');
 }));
