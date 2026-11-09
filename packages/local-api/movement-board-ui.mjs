@@ -37,6 +37,12 @@ export function renderMovementBoard(svg, board, draft, onSelect) {
     cellsById.set(key(unit),unit);
   }
   const marked = new Map((draft?.path ?? []).map((step,index) => [key(step),index+1]));
+  // One Tab stop on the board; arrow keys navigate cells. Preserve DOM focus
+  // through redraws, otherwise Enter would strand keyboard players after
+  // selecting their first unit or hexagon.
+  const focusKey = svg.dataset?.focusedCell ?? '0,0';
+  const hadBoardFocus = !!doc.activeElement && !!svg.contains?.(doc.activeElement);
+  const focusable = new Map();
   const group = svgNode(doc,'g',{'aria-label':'Tablero hexagonal de laboratorio'});
   for (const cell of boardCells) {
     const unit = cellsById.get(key(cell));
@@ -44,7 +50,7 @@ export function renderMovementBoard(svg, board, draft, onSelect) {
     const step = marked.get(key(cell));
     const position = pixelCenter(cell,RADIUS,OX,OY);
     const hex = svgNode(doc,'g',{
-      role:'button',tabindex:'0',
+      role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
       'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}` : ''}`,
       'aria-pressed':String(Boolean(origin || step)),
       'data-col':cell.col,'data-row':cell.row
@@ -66,14 +72,37 @@ export function renderMovementBoard(svg, board, draft, onSelect) {
       indexLabel.textContent=String(step);
       hex.append(indexLabel);
     }
-    const activate=()=>onSelect?.({col:cell.col,row:cell.row});
+    const activate=()=>{
+      const current=svg.dataset?.focusedCell ?? focusKey;
+      if (current !== key(cell)) {
+        focusable.get(current)?.setAttribute('tabindex','-1');
+        hex.setAttribute('tabindex','0');
+        if (svg.dataset) svg.dataset.focusedCell=key(cell);
+      }
+      onSelect?.({col:cell.col,row:cell.row});
+    };
     hex.addEventListener('click',activate);
     hex.addEventListener('keydown',event=>{
-      if (event.key==='Enter'||event.key===' ') {event.preventDefault();activate();}
+      if (event.key==='Enter'||event.key===' ') {event.preventDefault();activate();return;}
+      const deltas={
+        ArrowLeft:[-1,0],ArrowRight:[1,0],
+        ArrowUp:[0,-1],ArrowDown:[0,1]
+      };
+      const delta=deltas[event.key];
+      if (!delta) return;
+      event.preventDefault();
+      const target=focusable.get(`${Math.max(0,Math.min(12,cell.col+delta[0]))},${Math.max(0,Math.min(8,cell.row+delta[1]))}`);
+      if (!target || target===hex) return;
+      hex.setAttribute('tabindex','-1');
+      target.setAttribute('tabindex','0');
+      if(svg.dataset)svg.dataset.focusedCell=`${target.getAttribute('data-col')},${target.getAttribute('data-row')}`;
+      target.focus?.();
     });
+    focusable.set(key(cell),hex);
     group.append(hex);
   }
   svg.replaceChildren(group);
+  if (hadBoardFocus) focusable.get(svg.dataset?.focusedCell ?? focusKey)?.focus?.();
   svg.setAttribute('viewBox','0 0 510 430');
   return {cells:boardCells.length,units:board.length,selectedSteps:draft?.path.length ?? 0};
 }
@@ -136,6 +165,19 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if(!next||!view || next.matchId!==view.matchId || next.you!==view.you
        || next.revision!==view.revision || next.phase!==view.phase || next.actingSide!==view.actingSide) {
       draft=null;keyForRetry=null;
+    }
+    // A same-revision projection should be immutable, but fail closed if a
+    // corrupted/restored snapshot invalidates a draft even without a bump.
+    if (draft && next) {
+      try {
+        if (draft.path.length) movementDraftFields(next,draft);
+        else {
+          const fresh=beginMovementDraft(next,draft.unitId);
+          if (key(fresh.origin)!==key(draft.origin)) throw Error('BORRADOR_DESACTUALIZADO');
+        }
+      } catch {
+        draft=null;keyForRetry=null;
+      }
     }
     view=next;
     repaint();
