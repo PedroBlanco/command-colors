@@ -38,7 +38,7 @@ node --test packages/local-api/private-view-scope.test.mjs packages/local-api/pr
 - `private-projection.mjs` → `6bcfb34ee66e6946376202d739d207c7720a2bc4`
 - `private-projection.test.mjs` → `ae7a815f1071eefa1ec6ffb9345698a92d00b017`
 
-Se ejecutaron también los **20 callbacks** de `browser-deck-ui.test.mjs` (18) y `browser-ui.test.mjs` (2) sobre los módulos publicados, con un intérprete V8 aislado y dobles de DOM/fetch. **20/20 correctos**, incluidos movimientos tardíos tras cambiar de partida o cerrar sesión, invitaciones tardías, borrado de tokens al cambiar de partida, revocación de sesión, cambio de usuario en otra pestaña, pérdida de acceso a una partida y navegación programática por creación o aceptación de invitaciones. Este segundo resultado **no es una ejecución nativa de Node.js ni una prueba de navegador**, por lo que no acredita todavía la integración HTTP.
+Se ejecutaron también los **22 callbacks** de `browser-deck-ui.test.mjs` (20) y `browser-ui.test.mjs` (2) sobre los módulos publicados, con un intérprete V8 aislado y dobles de DOM/fetch. **22/22 correctos**, incluidos movimientos tardíos tras cambiar de partida o cerrar sesión, invitaciones tardías, borrado de tokens al cambiar de partida, revocación de sesión, cambio de usuario en otra pestaña, pérdida de acceso a una partida y navegación programática por creación o aceptación de invitaciones. Este segundo resultado **no es una ejecución nativa de Node.js ni una prueba de navegador**, por lo que no acredita todavía la integración HTTP.
 
 ## Regresión y bloqueos
 
@@ -59,3 +59,7 @@ El nuevo `private-projection.mjs` rechaza un `GET /api/matches/:id` que no corre
 Cada inspección —incluidas las provocadas por SSE mientras la pestaña está abierta— vuelve a confirmar la identidad **antes** de leer una proyección privada. Un comando de mazo también revalida la sesión antes del POST. Si falla la comprobación, incluso temporalmente, la interfaz **oculta la vista privada**, no conserva cartas de una cuenta anterior. Se amplían los tests simulados para cambio de cookie con pestaña visible, respuesta HTTP 200 del otro bando y revalidación temporalmente no disponible.
 
 **Evidencia comprobada:** 20/20 en `node --test` con Node.js 22.16.0, hashes Git cotejados; 20/20 callbacks de interfaz en V8 con simulador de eventos, no equivalente al ejecutor nativo. La suite HTTP real y la regresión general de 37 suites siguen pendientes. No se han introducido reglas oficiales ni autorizado despliegues.
+
+## Descarte de avisos SSE tardíos
+
+Cada conexión `EventSource` queda vinculada a su propia instancia y al ámbito de sesión/partida. Los eventos `open`, `error` y `revision` se ignoran después de cerrar el feed o cambiar de partida, incluso si el navegador invoca callbacks antiguos que ya estaban en cola. También se descartan errores de parseo y errores asíncronos de refresco correspondientes al feed antiguo. Dos casos adicionales de interfaz simulada verifican que el feed cerrado no realiza consultas ni altera el indicador de conexión, y que no interfiere con el feed nuevo. **22/22 callbacks correctos en V8**, no ejecutados como prueba de navegador real.
