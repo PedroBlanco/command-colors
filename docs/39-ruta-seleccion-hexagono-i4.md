@@ -15,28 +15,23 @@ El módulo nuevo `packages/local-api/hex-selection.mjs` reutiliza la geometría 
 
 **Seguridad y límites:** el cliente utiliza únicamente la vista autorizada; rechaza unidades enemigas o ya movidas, tableros duplicados, información incompleta y borradores caducados tras una nueva revisión. No incluye actor en la orden. La comprobación es una ayuda visual: el servidor **siempre** decide órdenes, fase, distancia, terreno, idempotencia y aceptación definitiva. Los dos hexágonos ficticios de movimiento de laboratorio no son reglas oficiales de *Ancients*.
 
-## Verificación ejecutada
+## Verificación revisada (9 de noviembre de 2026)
 
-En un directorio aislado se ejecutaron los **archivos exactos** publicados, junto con los dos módulos existentes de dependencia. Node.js **22.16.0**, Linux x64, sin WSL, GitHub Actions, VPS ni servidor web:
+Se ejecutaron los **11 callbacks originales** de `hex-selection.test.mjs` sobre el código de GitHub dentro de un **V8 aislado con adaptador de aserciones**, y todos fueron correctos. Se ejecutaron también los 11 del módulo posterior de tablero (#50), totalizando **22/22** en dicha comprobación limitada. El código original de los archivos de la PR se cotejó por SHA Git:
 
-```sh
-node --check packages/local-api/hex-selection.mjs
-node --check packages/local-api/hex-selection.test.mjs
+- `hex-selection.mjs`: `5d75efc729562ae7f4dac9fc886dd496a682b553`.
+- `hex-selection.test.mjs`: `8158cdb1937cdcb2ed12f2cde57a3fa75072ea37`.
+- `hex-grid/hex.mjs`: `ae0e4526b8e91c4c0d5d94aebc52077b60f410da`.
+- `deck-controls.mjs`: `254dcb1cb148c771dfce82853b4c7cf9f8337228`.
+
+**Importante:** esto **no es una ejecución nativa de Node.js**, sino una comprobación de callbacks en V8 con adaptadores. Las anteriores afirmaciones de «11/11 ejecutadas con Node.js» carecen de TAP disponible y quedan pendientes de confirmación. Para una evidencia real en Windows 11 PowerShell, sin WSL, ejecutar:
+
+```powershell
 node --test packages/local-api/hex-selection.test.mjs
+.\scripts\test-local.ps1 -Log '.local-data\regression\completa-20261109.tap'
 ```
 
-**11/11 pruebas correctas, 0 fallos**, con cobertura de selección propia, cambio de turno/fase, movimiento previo, revisión obsoleta, geometría de bordes, celdas ocupadas, saltos, retornos, eliminación local, máximo de 32 pasos, saneamiento de los datos y compatibilidad con `deckCommand()`.
-
-Comprobación cruzada de SHA de objeto Git (`git hash-object` local = GitHub):
-
-| Archivo | SHA Git |
-| --- | --- |
-| `packages/local-api/hex-selection.mjs` | `5d75efc729562ae7f4dac9fc886dd496a682b553` |
-| `packages/local-api/hex-selection.test.mjs` | `8158cdb1937cdcb2ed12f2cde57a3fa75072ea37` |
-| `packages/hex-grid/hex.mjs` | `ae0e4526b8e91c4c0d5d94aebc52077b60f410da` |
-| `packages/local-api/deck-controls.mjs` | `254dcb1cb148c771dfce82853b4c7cf9f8337228` |
-
-El manifiesto local incorpora una suite adicional (**34 en esta rama**); el contador del diagnóstico se actualiza a 34. **No se han ejecutado aquí las otras 33 suites**, ni las siete pendientes de la PR #48, ni validación visual real.
+La regresión general, las siete suites previas sin evidencia y la validación visual siguen pendientes. Esta rama agrupa 34 suites (la rama posterior #50 contiene 35); no fusionar basándose solo en la prueba V8.
 
 ## Integración pendiente
 
