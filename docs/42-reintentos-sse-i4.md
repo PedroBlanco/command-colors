@@ -75,3 +75,22 @@ La corrección conserva la revisión pendiente y el contador de fallos, pero **n
 - Añadidas dos regresiones a `revision-refresh.test.mjs`: inspección en vuelo que devuelve `false`, e inspección en vuelo rechazada con error HTTP.
 - **14/14 casos del módulo (12 anteriores + 2 nuevos)** ejecutados correctamente en V8 aislado sobre el código corregido y la fuente de pruebas; **no equivalen a la ejecución nativa de `node --test` ni a HTTP/SSE real**.
 - Continúan **38 suites** en el manifiesto; las dos pruebas nuevas se añaden a una suite existente. No se acredita regresión integral, revisión visual ni seguridad de producción.
+
+## Ejecución nativa posterior, con los archivos publicados (9/11/2026)
+
+Se ha ejecutado la versión corregida de la suite de reintentos de manera **nativa con Node.js v22.16.0**, en entorno Linux aislado, sin WSL ni GitHub Actions. Se recuperaron los dos archivos de la rama de GitHub y se comprobó su identidad byte a byte calculando su SHA de objeto Git con `git hash-object` antes de ejecutar las pruebas.
+
+| Archivo | SHA Git publicado = SHA ejecutado |
+| --- | --- |
+| `packages/local-api/revision-refresh.mjs` | `0f4648b85e24dad891c253194e187ea79a4010fc` |
+| `packages/local-api/revision-refresh.test.mjs` | `542289f61cbce8656a4b8ae06a76d8058ae80b34` |
+
+Comando en la carpeta que contiene ambos archivos:
+
+```sh
+node --test --test-reporter=tap revision-refresh.test.mjs
+```
+
+**Resultado real:** 14 pruebas, **14 PASS**, 0 FAIL, 0 SKIP, código de salida 0. Registro TAP sin cabeceras añadidas, SHA-256 `cf7f01db6621736113d8321ba33b2bae5e9a64b2005f4e4c9dce7d5b055c13b3` (generado en esta conversación y entregable como archivo, no almacenado en GitHub). Esta evidencia **reemplaza** la limitación V8 indicada en la sección precedente para estos 14 casos concretos.
+
+No implica haber ejecutado las **38 suites** de la batería, ni haber verificado sesiones HTTP/SSE de extremo a extremo, ni haber probado Chrome/Firefox/móvil; todos estos bloqueos de integración continúan vigentes.
