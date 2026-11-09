@@ -15,7 +15,7 @@ El navegador puede cambiar de cuenta o de partida mientras un comando, una invit
 - `capture()` obtiene una instantánea inmutable y `isCurrent(ticket,matchId)` comprueba que aún pertenece al mismo ámbito, evitando incluso el caso A→B→A.
 - No contiene credenciales ni concede acceso: la **API sigue derivando la identidad de la cookie** y comprobando permisos para cada petición.
 
-`browser-ui.mjs` usa estas comprobaciones antes de aplicar respuestas de partidas, movimientos, inicialización, invitaciones, eventos y sesión. El indicador de éxito/error no se sobrescribe por acciones de un ámbito anterior. Un POST de movimiento que llega tras cambiar de cuenta o partida no recarga una vista privada incorrecta.
+`browser-ui.mjs` usa estas comprobaciones antes de aplicar respuestas de partidas, movimientos, inicialización, invitaciones, eventos y sesión. También verifica la identidad al volver a una pestaña visible, elimina la vista privada si hay una revocación HTTP 401/403/404 o si la cookie corresponde a otra cuenta y descarta errores tardíos de ámbitos ya abandonados. El indicador de éxito/error no se sobrescribe por acciones de un ámbito anterior. Un POST de movimiento que llega tras cambiar de cuenta o partida no recarga una vista privada incorrecta.
 
 Además, al editar el identificador de partida se borran **los tokens de invitación emitidos o recibidos, el lobby anterior, los datos del jugador y los controles de cartas**. Una respuesta de invitación tardía no vuelve a mostrarse.
 
@@ -35,7 +35,7 @@ node --test packages/local-api/private-view-scope.test.mjs
 - `private-view-scope.mjs` → `100f44e73bfc2ef0352527ea457beac5e8601dd6`
 - `private-view-scope.test.mjs` → `731a63d8fad2ee7e378bdf4c335237e95d2c007c`
 
-Se ejecutaron también **los diez callbacks** de `browser-deck-ui.test.mjs` sobre los módulos publicados, con un intérprete V8 aislado y dobles de DOM/fetch. **10/10 correctos**, incluidos los nuevos casos de movimiento tardío tras cambio de partida, movimiento tardío tras logout, invitación tardía y borrado de tokens. Este segundo resultado **no es una ejecución nativa de Node.js ni una prueba de navegador**, por lo que no acredita todavía la integración HTTP.
+Se ejecutaron también **los trece callbacks** de `browser-deck-ui.test.mjs` sobre los módulos publicados, con un intérprete V8 aislado y dobles de DOM/fetch. **13/13 correctos**, incluidos movimientos tardíos tras cambiar de partida o cerrar sesión, invitaciones tardías, borrado de tokens al cambiar de partida, revocación de sesión, cambio de usuario en otra pestaña y pérdida de acceso a una partida. Este segundo resultado **no es una ejecución nativa de Node.js ni una prueba de navegador**, por lo que no acredita todavía la integración HTTP.
 
 ## Regresión y bloqueos
 
