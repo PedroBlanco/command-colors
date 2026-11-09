@@ -149,7 +149,10 @@ async function session() {
       el('current').textContent='Sin sesión';
       message('La sesión ha caducado o se ha cerrado.');
     } else {
+      // Treat a failed identity check as unverified: keep no old hand visible.
+      closeUpdates();clearPrivateView();
       el('current').textContent='No se ha podido verificar la sesión';
+      message('No se puede verificar la identidad; vuelve a identificarte.');
     }
     return false;
   }
