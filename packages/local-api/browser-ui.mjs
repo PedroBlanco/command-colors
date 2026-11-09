@@ -130,8 +130,13 @@ async function inspect() {
 }
 function action(id,callback) {
   el(id).addEventListener('click',async() => {
-    try { const outcome = await callback(); if (outcome !== false) message('Operación realizada'); }
-    catch(error){message(error.message);}
+    const ticket=privateScope.capture();
+    try {
+      const outcome = await callback();
+      if (outcome !== false && privateScope.isCurrent(ticket)) message('Operación realizada');
+    } catch(error) {
+      if (privateScope.isCurrent(ticket)) message(error.message);
+    }
   });
 }
 async function sendDeck(type, fields = {}, retryKey = null) {
@@ -179,8 +184,10 @@ action('create',async()=>{
   const result=await api('POST','/api/matches');
   if(!privateScope.isCurrent(ticket))return false;
   el('match-id').value=result.matchId;
+  privateScope.selectMatch(result.matchId);
+  const nextTicket=privateScope.capture();
   await inspect();
-  return privateScope.isCurrent(privateScope.capture(),result.matchId);
+  return privateScope.isCurrent(nextTicket,result.matchId);
 });
 el('match-id').addEventListener('input', () => {if (el('match-id').value.trim() !== updateMatchId) {privateScope.reset();closeUpdates();cached=null;inspectionSequence++;stateText(null);renderDeck();}});
 action('refresh',inspect);
@@ -196,8 +203,10 @@ action('accept',async()=>{
   const data=await api('POST','/api/invitations/accept',{invitationToken:el('received').value.trim()});
   if(!privateScope.isCurrent(ticket))return false;
   el('match-id').value=data.matchId;
+  privateScope.selectMatch(data.matchId);
+  const nextTicket=privateScope.capture();
   await inspect();
-  return privateScope.isCurrent(privateScope.capture(),data.matchId);
+  return privateScope.isCurrent(nextTicket,data.matchId);
 });
 action('reject',async()=>{
   const ticket=privateScope.capture();
