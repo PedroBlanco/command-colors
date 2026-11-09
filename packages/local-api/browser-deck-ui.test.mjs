@@ -422,10 +422,9 @@ test('changed cookie blocks invitation and demo turn commands before HTTP mutati
  assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/invitations`).length,0);
  assert.equal(c.element('invite-token').textContent,'—');
  assert.equal(c.element('match-id').value,'');
- // Re-open under Alice so a second stale session change tests the demo action.
- c.state.handle='alice';
- c.element('match-id').value=MATCH;
- await c.element('refresh').dispatch('click');
+ // Explicit login is required after detecting an external cookie switch.
+ c.element('handle').value='alice';
+ await loginReady(c);
  assert.equal(c.element('match-id').value,MATCH);
  c.state.handle='bob';
  await c.element('turn').dispatch('click');
@@ -439,8 +438,8 @@ test('changed cookie blocks new match creation and private event reads',()=>with
  await c.element('events').dispatch('click');
  assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/events`).length,0);
  assert.equal(c.element('state').textContent,'null');
- c.state.handle='alice';
- await c.element('create').dispatch('click');
+ c.element('handle').value='alice';
+ await loginReady(c);
  assert.equal(c.element('match-id').value,MATCH);
  const before=c.requests.filter(r=>r.path==='/api/matches' && r.method==='POST').length;
  c.state.handle='bob';
