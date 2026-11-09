@@ -4,7 +4,7 @@ import {renderMovementBoard,createMovementBoard} from './movement-board-ui.mjs';
 
 class Node {
   constructor(doc,tag){this.ownerDocument=doc;this.tag=tag;this.attrs={};this.children=[];
-    this.listeners=new Map();this.classes=new Set();this.textContent='';this.disabled=false;
+    this.listeners=new Map();this.classes=new Set();this.dataset={};this.textContent='';this.disabled=false;
     this.classList={add:x=>this.classes.add(x),remove:x=>this.classes.delete(x)};}
   setAttribute(name,value){this.attrs[name]=String(value);}
   getAttribute(name){return this.attrs[name]??null;}
