@@ -25,24 +25,31 @@ Conectar un tablero SVG del **laboratorio local con sesiones reales** al protoco
 5. El servidor SQLite valida además órdenes concedidas, tablero persistido, distancia inventada, ocupación, actor, fase e idempotencia en la transacción. La prevalidación cliente nunca se considera autorización.
 6. El servidor local sigue atado a `127.0.0.1`; no hay garantía de seguridad para Internet.
 
-## Verificación ejecutada
+## Revisión de accesibilidad del tablero (9/11/2026)
 
-Con Node.js **22.16.0** en entorno Linux aislado, **sin WSL ni Actions**:
+Se detectó que la primera versión construía **117 puntos de tabulación** y podía perder el foco tras `svg.replaceChildren()`. Ahora solo el hexágono activo tiene `tabindex="0"`; las flechas desplazan el foco entre celdas, y Enter/Espacio seleccionan unidad o paso. El foco se restablece al sustituir los nodos y nunca se roba a botones externos. Los borradores también se descartan si una proyección posterior con la **misma** revisión cambia la ocupación o el origen.
+
+## Verificación reproducida en esta revisión
+
+Se ejecutaron los **22 callbacks originales** de `hex-selection.test.mjs` (11) y `movement-board-ui.test.mjs` (11) sobre el código real descargado de GitHub, dentro de un intérprete **V8 aislado**. Para ello se sustituyeron los imports de `node:test` y `node:assert/strict` por un adaptador de aserciones y `structuredClone` por una clonación JSON adecuada para estos datos planos.
+
+**Resultado de esa comprobación limitada: 22/22 callbacks correctos, sin fallos.** No es una ejecución de `node --test`, ni una prueba HTTP, ni una validación con navegador real. Las anteriores referencias a «19 pruebas ejecutadas con Node.js» no están acreditadas mediante salida TAP y **no se utilizan como evidencia de integración**.
+
+Hashes de los módulos y pruebas cotejados en esta revisión:
+
+- `movement-board-ui.mjs`: `4999b42be49ee2c685a60d383746d1b3da8ca1e0`.
+- `movement-board-ui.test.mjs`: `9a5f1b9809b088bae48460843cd229a5d64dab1c`.
+- `hex-selection.mjs`: `5d75efc729562ae7f4dac9fc886dd496a682b553`.
+- `hex-selection.test.mjs`: `8158cdb1937cdcb2ed12f2cde57a3fa75072ea37`.
+
+Para acreditar las pruebas reales de Node.js en PowerShell:
 
 ```powershell
-node --check packages/local-api/movement-board-ui.mjs
-node --check packages/local-api/movement-board-ui.test.mjs
 node --test packages/local-api/hex-selection.test.mjs packages/local-api/movement-board-ui.test.mjs
+.\scripts\test-local.ps1 -Log '.local-data\regression\completa-20261109.tap'
 ```
 
-**19 PASS, 0 FAIL, 0 SKIP**: 11 pruebas previas de selección y 8 nuevas de tablero/controlador (117 hexágonos; teclado; previsualización sin HTTP; saltos y ocupación; cancelar y deshacer local; expiración; reintentos de red; revisión SSE durante envío; rechazo de tableros corruptos).
-
-El contenido de los dos nuevos archivos de implementación y pruebas que se ejecutó tiene **idéntico SHA Git** al publicado:
-
-- `movement-board-ui.mjs` — `721d24061136eb930717e91b696c206da44922ca`.
-- `movement-board-ui.test.mjs` — `d6b1b8d0444c0209073a72c7ae64c8450ebfb9ed`.
-
-**No se han ejecutado las restantes 33 suites en esta sesión**, ni la suite HTTP real ampliada, ni el recorrido visual en Windows, escritorio y móvil. Los siete archivos de prueba pendientes de la fase anterior siguen sin evidencia de ejecución; la prueba de la página y del servidor contra navegador real continúa pendiente. **No fusionar** todavía esta PR ni las PR #45–#49.
+**Pendiente:** la ejecución completa de las 35 suites, incluidas las siete que seguían sin evidencia, la suite HTTP extendida y las pruebas visuales/táctiles de escritorio y móvil con sesiones separadas. **No fusionar** esta PR ni las dependientes basándose solamente en la verificación V8.
 
 ## Dependencias y próximos pasos
 
