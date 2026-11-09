@@ -60,3 +60,15 @@ node --test packages/local-api/hex-selection.test.mjs packages/local-api/movemen
 5. Vincular reglas reales por edición y terreno, y verificar autoría/permisos de escenarios y recursos oficiales.
 
 La entrada manual existente continúa disponible como alternativa si el tablero requiere ajustes.
+
+## Ampliación de regresión de dominio aislado (9/11/2026)
+
+Se volvieron a recuperar **los módulos y archivos de prueba originales** desde la rama en GitHub y se ejecutaron los callbacks en dos lotes independientes bajo V8 aislado, con adaptadores de `node:test`, aserciones estrictas, clonación y `node:crypto.randomInt` (la sustitución de `randomInt` no es criptográfica y **no valida seguridad ni calidad de aleatoriedad**).
+
+| Lote | Archivos de pruebas | Casos evaluados | Resultado |
+| --- | --- | ---: | --- |
+| Geometría, fases, movimiento, política y órdenes | `hex-grid`, `turn-phase`, `movement`, `server-policy`, `order-validator`, `server-context` | 60 | 60 correctos |
+| Mazo y controles de navegador | `command-deck/deck`, `deck-controls`, `movement-controls`, `hex-selection`, `movement-board-ui` | 56 | 56 correctos |
+| **Total, 11 archivos** | | **116** | **116 correctos, 0 fallos** |
+
+**Alcance real de la evidencia:** los 116 casos son callbacks del proyecto ejecutados contra los módulos publicados con adaptadores V8, **no** once suites del ejecutor nativo `node --test`. Las comprobaciones previas de 22 casos están **incluidas** en los 116, no se suman. Permanecen sin ejecutar en esta revisión las pruebas de SQLite, HTTP/cookies, SSE real, lanzador y navegador físico. La regresión formal de **35 suites** y sus registros TAP sigue bloqueando la integración. No hay certificación de reglas oficiales ni de seguridad de despliegue.
