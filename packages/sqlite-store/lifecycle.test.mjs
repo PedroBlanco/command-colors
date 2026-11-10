@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {mkdtemp, readdir, readFile, writeFile, rm, stat} from 'node:fs/promises';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {CCW_APPLICATION_ID, CURRENT_SCHEMA_VERSION, initializeSchema, inspectSchema, verifyDatabase} from './schema-version.mjs';
@@ -19,7 +20,20 @@ CREATE TABLE IF NOT EXISTS game_commands(match_id TEXT NOT NULL REFERENCES match
 `;
 async function withTemp(fn) {
   const dir=await mkdtemp(join(tmpdir(),'ccw-lifecycle-'));
-  try {return await fn(dir);} finally {await rm(dir,{recursive:true,force:true});}
+  let originalFailure = null;
+  try {return await fn(dir);}
+  catch (error) {originalFailure = error;throw error;}
+  finally {
+    try {
+      // SQLite/Windows may release WAL and SHM file handles shortly after DB
+      // close(). Retry transient EBUSY/EPERM without hiding real test failures.
+      await rm(dir,{recursive:true,force:true,maxRetries:20,retryDelay:100});
+    } catch (cleanupError) {
+      if (!originalFailure) throw cleanupError;
+      // Preserve the first assertion/SQL failure rather than masking it with
+      // a secondary EBUSY during fixture cleanup.
+    }
+  }
 }
 function newDB(path) {
  const db=new DatabaseSync(path);
@@ -151,8 +165,8 @@ test('backup: invalid foreign-key reference blocks backup before publishing it',
 
 test('CLI: backup, verify, restore end-to-end without overwriting data',()=>withTemp(async dir=>{
  const live=join(dir,'live.sqlite'),db=newDB(live);init(db);seed(db);db.close();
- const tool=new URL('../../scripts/sqlite-maintenance.mjs',import.meta.url);
- const invoke=(...args)=>spawnSync(process.execPath,[tool.pathname,...args],{encoding:'utf8',timeout:15000});
+ const tool=fileURLToPath(new URL('../../scripts/sqlite-maintenance.mjs',import.meta.url));
+ const invoke=(...args)=>spawnSync(process.execPath,[tool,...args],{encoding:'utf8',timeout:15000});
  const dest=join(dir,'backup.sqlite'),target=join(dir,'restored.sqlite');
  const b=invoke('backup',live,dest);assert.equal(b.status,0,b.stderr);
  assert.equal(JSON.parse(b.stdout).operation,'backup');
@@ -167,8 +181,8 @@ test('CLI: backup, verify, restore end-to-end without overwriting data',()=>with
 
 test('CLI: nonexistent source must fail without creating an empty database',()=>withTemp(async dir=>{
  const source=join(dir,'not-exist.sqlite'),target=join(dir,'backup.sqlite');
- const tool=new URL('../../scripts/sqlite-maintenance.mjs',import.meta.url);
- const p=spawnSync(process.execPath,[tool.pathname,'backup',source,target],{encoding:'utf8',timeout:15000});
+ const tool=fileURLToPath(new URL('../../scripts/sqlite-maintenance.mjs',import.meta.url));
+ const p=spawnSync(process.execPath,[tool,'backup',source,target],{encoding:'utf8',timeout:15000});
  assert.notEqual(p.status,0);
  await assert.rejects(stat(source),{code:'ENOENT'});
  await assert.rejects(stat(target),{code:'ENOENT'});
