@@ -170,3 +170,10 @@ Dos suites nuevas, **31 casos ejecutados con éxito en V8 aislado sobre el códi
 `packages/ancients-rules/sqlite-reservation-lab.mjs` implementa una **reserva transaccional únicamente experimental** con `BEGIN IMMEDIATE`, revisión, idempotencia, evento público mínimo y marcador `RANGED_SCREENING_ONLY`, sobre **un fichero SQLite distinto** del esquema CCW v1. El adaptador `sqlite-guarded-reservation.mjs` ya compone ese almacén con el **comprobador reglamentario real** de PR #63, pero solo en pruebas aisladas; también permite **cancelar una criba pendiente sin resultados de dados**, de manera atómica y sin marcar batalla resuelta.
 
 Las dos suites nativas de laboratorio superan **33/33 pruebas** con Node 22.16.0/Linux (23 de transacción/cancelación + 10 de guardas reales SQLite). El manifiesto contiene **50 suites**, sin regresión integral. No se considera implementada R-04 ni R-06: falta máquina de estados de resolución y migración del servidor, API autenticada, resultados de combate, cartas y pruebas de aceptación. Véase [contrato de reserva experimental](51-reserva-sqlite-combates-ancients.md).
+
+
+## Registro experimental de dados digitales/físicos tras la reserva (R-06/R-13 parcial)
+
+La nueva función `stageDice()`, exclusivamente del SQLite de laboratorio `CCRL`, registra resultados de `dice-roller` después de una reserva válida y sin autorización de ataque. Deriva la cantidad de dados de la criba fiable, distingue `SERVER_GENERATED` (digital) de `PLAYER_DECLARED` (física), conserva revisión e idempotencia, y bloquea la cancelación de una reserva con resultados ya registrados. Los símbolos usados son **sintéticos** y no representan las caras ni efectos del dado oficial.
+
+Las tres suites SQLite del laboratorio suman **47/47 pruebas nativas correctas** (33 previas + 14 nuevas), con Node.js 22.16.0/Linux. El manifiesto registra **51 suites** todavía pendientes de regresión integral. El juego oficial sigue sin disponer de impactos, retiradas, casos especiales, fases completas ni resolución de combate; R-06 y R-13 **no están implementadas**. Véase [registro de dados sintéticos](52-registro-dados-sinteticos-reserva-ancients.md).
