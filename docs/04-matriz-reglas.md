@@ -191,3 +191,10 @@ Las tres suites SQLite del laboratorio suman **47/47 pruebas nativas correctas**
 `packages/ancients-rules/dice-plan.mjs` distingue tres planes persistidos: sintético heredado sin versión, sintético `SYNTHETIC_RANGED_V1` y oficial preliminar `ANCIENTS_BASE_RANGED_PREVIEW_V1` (seis caras). La variante oficial se construye **solo desde datos de tablero y criba del servidor** y el adaptador `openOfficialAncientsRangedPreviewLab` registra en SQLite la tirada y una interpretación privada de coincidencias de color/banderas. Un plan antiguo no se convierte a oficial tras reabrir la base; las versiones desconocidas o malformadas se rechazan.
 
 **26 pruebas nuevas** (9 de plan y 17 de integración SQLite); **89/89 casos nativos correctos** combinando 7 archivos de pruebas en Node.js 22.16.0/Linux. El manifiesto llega a **54 suites**, sin ejecutar la regresión integral ni las pruebas Windows/HTTP/SSE. Sigue siendo **previsualización sin ataque autorizado, sin bajas ni retiradas**, por lo que R-06 y R-13 continúan incompletas. Véase [informe y límites](54-plan-versionado-dados-oficiales-sqlite.md).
+
+
+## Pérdida de bloques y decisiones pendientes de líder (R-06/R-09/R-13 parcial)
+
+`packages/ancients-rules/block-loss-preview.mjs` introduce la **proyección sin mutaciones** de pérdidas de bloques en disparos: topes iniciales según los 13 tipos del básico, impactos limitados a bloques restantes, excedentes ineficaces, banderas pendientes y propuesta de comprobación de baja de líder (dos dados si sobrevive la unidad, uno si es eliminada). Los bloques restantes, impactos/banderas y unión de líder deben proceder en el futuro de **datos autenticados del servidor**, no se infieren ni se aceptan como mandato del cliente.
+
+La suite `block-loss-preview.test.mjs` supera **24/24 pruebas nativas** aisladas con Node.js 22.16.0/Linux; el inventario llega a **55 suites registradas**, sin regresión integral. **No** se han aplicado pérdidas a SQLite ni otorgado estandartes, retiradas o decisiones. R-06/R-09/R-13 continúan incompletas. Véase [contrato de pérdidas provisionales](55-perdida-bloques-disparos-ancients.md).
