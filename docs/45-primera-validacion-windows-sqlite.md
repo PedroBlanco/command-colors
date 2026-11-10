@@ -55,3 +55,23 @@ Si esa suite pasa, ejecutar el conjunto completo y guardar un informe nuevo:
 La regresión se considerará superada solo si obtiene **366/366 PASS, 0 FAIL y código 0** (salvo que aparezcan tests nuevos posteriores) y persiste el funcionamiento manual. Si aparece una aserción distinta al `EBUSY`, investigar la causa en lugar de ocultarla con más reintentos.
 
 **Mantener en borrador** PR #45–#55, sin fusión a `main` ni despliegue en Internet mientras se completa la validación.
+
+## Segunda ejecución real en Windows — diagnóstico definitivo del EPERM (10/11/2026)
+
+Reejecutada por la persona usuaria la suite afectada `node --test --test-reporter=tap packages/sqlite-store/lifecycle.test.mjs`. **Node.js 26.13.0, Windows:** 12 casos, **6 correctos y 6 fallidos**. El resultado confirma que la corrección de `URL.pathname` funciona: el caso de fuente inexistente pasa y ya no aparece la ruta duplicada `T:\\T:\\...`.
+
+Los seis fallos, incluidos los cinco inicialmente ocultos por la limpieza `EBUSY` y el caso CLI end-to-end, convergen en:
+
+```text
+EPERM: operation not permitted, fsync
+  at fsyncFile (packages/sqlite-store/backup.mjs)
+  at createVerifiedBackup
+```
+
+**Causa raíz:** `fsyncFile()` abría sus archivos temporales propios mediante `open(path,'r')` y después invocaba `FileHandle.sync()`. En Windows, `FlushFileBuffers` exige que el descriptor tenga derecho `GENERIC_WRITE`; un descriptor abierto de solo lectura genera `EPERM`. Fuente normativa: [Microsoft, FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
+**Corrección incorporada a esta misma PR #55:** apertura mediante `open(path,'r+')`, que concede acceso de lectura/escritura a los **archivos temporales de copia y manifiesto creados por el propio proceso**. `r+` **no trunca** ni modifica por sí mismo el fichero. Se conserva `await f.sync()`: no se ocultan errores de durabilidad. No se cambian las bases origen, esquemas, API ni reglas del juego.
+
+Verificación local limitada: Node.js 22.16.0 bajo Linux (no WSL), `open('r+')`, `FileHandle.sync()` y cierre se ejecutan correctamente; hash SHA-256 idéntico antes y después (`cb975c7c1281866a76f7b6e51b3f940daf616452179276cc5a67eabd7c8a9c54`, con una muestra de texto ficticio). **No equivale a ejecutar la suite nativa en Windows.**
+
+**Pendiente:** actualizar la rama en Windows y repetir `lifecycle.test.mjs`, después la regresión completa con un nombre de TAP nuevo. Si la nueva ejecución descubre otros errores, investigarlos antes de fusionar.
