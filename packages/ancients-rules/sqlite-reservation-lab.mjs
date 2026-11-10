@@ -136,6 +136,48 @@ export function openAncientsReservationLab({file, checkDeclaration} = {}) {
     });
   }
 
+  /**
+   * Abort an UNRESOLVED screening reservation only. No dice or random outcome
+   * exists in this lab; this is NOT an undo operation on a real combat.
+   * Authorization is bound to the authenticated reserving player, never
+   * inferred from a client-supplied side or participant label.
+   */
+  function cancel({matchId,sessionUserId,reservationId,expectedRevision,idempotencyKey} = {}) {
+    if (!MATCH.test(String(matchId)) || typeof sessionUserId!=='string' || !sessionUserId ||
+        !MATCH.test(String(reservationId)) ||
+        !Number.isSafeInteger(expectedRevision) || expectedRevision<0 ||
+        typeof idempotencyKey!=='string' || !KEY.test(idempotencyKey))
+      return denied(400,'INVALID_CANCELLATION');
+    return inTransaction(() => {
+      const entry=row.get(matchId);
+      const side=entry && sideFor(entry,sessionUserId);
+      if (!side) return denied(404,'NOT_FOUND');
+      const signature=JSON.stringify(['CANCEL_SCREENING',expectedRevision,reservationId]);
+      const replay=previous.get(matchId,side,idempotencyKey);
+      if (replay) return replay.signature===signature
+        ? Object.freeze({status:200,code:'ALREADY_CANCELLED',revision:replay.committed_revision,
+            reservationId:replay.reservation_id,attackAuthorized:false})
+        : denied(409,'IDEMPOTENCY_KEY_REUSED');
+      if (entry.revision!==expectedRevision) return denied(409,'STALE_REVISION');
+      const turnState=JSON.parse(entry.turn_json);
+      if (turnState.revision!==entry.revision) throw new Error('LAB_REVISION_MISMATCH');
+      const marker=turnState.pendingCombat;
+      if (!marker || marker.kind!=='RANGED_SCREENING_ONLY' || marker.actor!==side ||
+          marker.reservationId!==reservationId || marker.fullValidationRequired!==true)
+        return denied(409,'RESERVATION_NOT_CANCELLABLE');
+      turnState.pendingCombat=null;
+      const revision=entry.revision+1;
+      turnState.revision=revision;
+      if (update.run(revision,JSON.stringify(turnState),matchId,entry.revision).changes!==1)
+        throw new Error('LAB_CONCURRENT_UPDATE');
+      // Do not expose attack participants or internal reservation details.
+      eventInsert.run(matchId,revision,JSON.stringify({sequence:revision,type:'RANGED_SCREENING_CANCELLED',side}));
+      commandInsert.run(matchId,side,idempotencyKey,signature,reservationId,revision);
+      return Object.freeze({status:200,code:'SCREENING_CANCELLED',revision,reservationId,
+        attackAuthorized:false});
+    });
+  }
+
   /** Restricted test-only inspection; intentionally not part of a network API. */
   const inspectFixture = ({matchId,sessionUserId} = {}) => {
     const entry=row.get(matchId);
@@ -144,7 +186,7 @@ export function openAncientsReservationLab({file, checkDeclaration} = {}) {
       events:events.all(matchId).map(x=>JSON.parse(x.payload))};
   };
   let closed=false;
-  return Object.freeze({seedFixture,reserve,inspectFixture,
+  return Object.freeze({seedFixture,reserve,cancel,inspectFixture,
     unsafeTestDatabase:()=>db,
     close:()=>{if (!closed) {db.close();closed=true;}}});
 }
