@@ -8,12 +8,15 @@ import {DatabaseSync} from 'node:sqlite';
 import {randomUUID} from 'node:crypto';
 import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
+import {generateDigitalRoll, recordPhysicalRoll} from '../dice-roller/dice.mjs';
 
 const APP_ID = 0x4343524c; // 'CCRL', distinct from the main CCWB SQLite app_id.
 const KEY = /^[a-zA-Z0-9_-]{8,80}$/;
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const MATCH = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const denied = (status, code) => Object.freeze({status, code});
+// Invented laboratory symbols; these are NOT the official Ancients die faces.
+const LAB_DIE_FACES = Object.freeze(['RED', 'BLUE', 'FLAG', 'RED']);
 const schema = `
  CREATE TABLE lab_matches (
    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, guest_id TEXT NOT NULL,
@@ -123,8 +126,11 @@ export function openAncientsReservationLab({file, checkDeclaration} = {}) {
       if (!screened || screened.status!=='CANDIDATE' || screened.attackAuthorized!==false ||
           screened.needsFullLegalityCheck!==true) return denied(409,'DECLARATION_REJECTED');
       const reservationId=randomUUID(),revision=entry.revision+1;
+      const count=screened.ranged?.diceAfterTerrain;
+      const dicePlan=Number.isSafeInteger(count) && count>=1 && count<=32
+        ? {diceCount:count,dieFaces:[...LAB_DIE_FACES]} : null;
       turnState.pendingCombat={kind:'RANGED_SCREENING_ONLY',actor:side,
-        attackerId,targetId,reservationId,fullValidationRequired:true};
+        attackerId,targetId,reservationId,fullValidationRequired:true,dicePlan};
       turnState.revision=revision;
       if (update.run(revision,JSON.stringify(turnState),matchId,entry.revision).changes!==1)
         throw new Error('LAB_CONCURRENT_UPDATE');
@@ -178,6 +184,77 @@ export function openAncientsReservationLab({file, checkDeclaration} = {}) {
     });
   }
 
+  /**
+   * Records *synthetic* dice from an UNRESOLVED screening. It is not legal
+   * combat resolution: no casualties, flags or turn-battle count are changed.
+   * sessionUserId must be derived from a trusted authenticated server session.
+   */
+  function stageDice({matchId,sessionUserId,reservationId,expectedRevision,
+    idempotencyKey,mode,declaredFaces} = {}) {
+    if (!MATCH.test(String(matchId)) || typeof sessionUserId!=='string' || !sessionUserId ||
+        !MATCH.test(String(reservationId)) || !Number.isSafeInteger(expectedRevision) ||
+        expectedRevision<0 || typeof idempotencyKey!=='string' || !KEY.test(idempotencyKey) ||
+        !['DIGITAL','PHYSICAL'].includes(mode) ||
+        (mode==='DIGITAL' && declaredFaces!==undefined) ||
+        (mode==='PHYSICAL' && (!Array.isArray(declaredFaces) ||
+          declaredFaces.length<1 || declaredFaces.length>32 ||
+          !declaredFaces.every(x=>typeof x==='string' && /^[A-Z][A-Z0-9_]{0,31}$/.test(x)))))
+      return denied(400,'INVALID_DICE_DECLARATION');
+    // Copy the physical array to prevent mutation between signature and check.
+    const faces=mode==='PHYSICAL' ? structuredClone(declaredFaces) : null;
+    const signature=JSON.stringify(['STAGE_RANGED_DICE',expectedRevision,reservationId,mode,faces]);
+    return inTransaction(() => {
+      const entry=row.get(matchId);
+      const side=entry && sideFor(entry,sessionUserId);
+      if (!side) return denied(404,'NOT_FOUND');
+      const replay=previous.get(matchId,side,idempotencyKey);
+      const turnState=JSON.parse(entry.turn_json);
+      if (turnState.revision!==entry.revision) throw new Error('LAB_REVISION_MISMATCH');
+      if (replay) {
+        if (replay.signature!==signature) return denied(409,'IDEMPOTENCY_KEY_REUSED');
+        const saved=turnState.pendingCombat;
+        if (!saved || saved.kind!=='RANGED_DICE_STAGED_SYNTHETIC' ||
+            saved.reservationId!==reservationId || saved.actor!==side || !saved.stagedDice)
+          return denied(409,'DICE_REPLAY_UNAVAILABLE');
+        return Object.freeze({status:200,code:'ALREADY_STAGED',revision:replay.committed_revision,
+          reservationId,roll:structuredClone(saved.stagedDice),attackAuthorized:false,
+          combatResolved:false});
+      }
+      if (entry.revision!==expectedRevision) return denied(409,'STALE_REVISION');
+      const marker=turnState.pendingCombat;
+      if (!marker || marker.kind!=='RANGED_SCREENING_ONLY' || marker.actor!==side ||
+          marker.reservationId!==reservationId || marker.fullValidationRequired!==true)
+        return denied(409,'RESERVATION_NOT_STAGEABLE');
+      // Only the real Ancients checker supplies the positive count at reserve.
+      const plan=marker.dicePlan;
+      if (!plan || !Number.isSafeInteger(plan.diceCount) || plan.diceCount<1 ||
+          plan.diceCount>32 || JSON.stringify(plan.dieFaces)!==JSON.stringify(LAB_DIE_FACES))
+        return denied(409,'DICE_PLAN_UNAVAILABLE');
+      const spec={rollId:'roll_'+reservationId.replaceAll('-',''),actor:side,
+        diceCount:plan.diceCount,dieFaces:plan.dieFaces};
+      // Invalid declared faces are client errors, never an accepted stage.
+      let roll;
+      try {
+        roll=mode==='DIGITAL' ? generateDigitalRoll(spec) : recordPhysicalRoll(spec,faces);
+      } catch (error) {
+        if (error instanceof TypeError) return denied(400,'INVALID_DICE_DECLARATION');
+        throw error;
+      }
+      marker.kind='RANGED_DICE_STAGED_SYNTHETIC';
+      marker.stagedDice=roll;
+      const revision=entry.revision+1;
+      turnState.revision=revision;
+      if (update.run(revision,JSON.stringify(turnState),matchId,entry.revision).changes!==1)
+        throw new Error('LAB_CONCURRENT_UPDATE');
+      // Intentionally do not publish the faces, unit identifiers or roll ID.
+      eventInsert.run(matchId,revision,JSON.stringify({sequence:revision,
+        type:'RANGED_DICE_STAGED_SYNTHETIC',side,source:mode,diceCount:plan.diceCount}));
+      commandInsert.run(matchId,side,idempotencyKey,signature,reservationId,revision);
+      return Object.freeze({status:200,code:'DICE_STAGED_SYNTHETIC',revision,reservationId,
+        roll:structuredClone(roll),attackAuthorized:false,combatResolved:false});
+    });
+  }
+
   /** Restricted test-only inspection; intentionally not part of a network API. */
   const inspectFixture = ({matchId,sessionUserId} = {}) => {
     const entry=row.get(matchId);
@@ -186,7 +263,7 @@ export function openAncientsReservationLab({file, checkDeclaration} = {}) {
       events:events.all(matchId).map(x=>JSON.parse(x.payload))};
   };
   let closed=false;
-  return Object.freeze({seedFixture,reserve,cancel,inspectFixture,
+  return Object.freeze({seedFixture,reserve,cancel,stageDice,inspectFixture,
     unsafeTestDatabase:()=>db,
     close:()=>{if (!closed) {db.close();closed=true;}}});
 }
