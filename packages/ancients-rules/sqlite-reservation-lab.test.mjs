@@ -177,3 +177,71 @@ test('two distinct matches have separate revisions, events and idempotency',()=>
   assert.equal(s.inspectFixture({matchId:MATCH,sessionUserId:'bob'}).events.length,1);
   assert.equal(s.inspectFixture({matchId:OTHER,sessionUserId:'bob'}).events.length,1);
 }));
+
+test('cancelled screening reservation removes pending marker but never records battle',()=>fixture(({seed})=>{
+  const s=seed(),reserved=s.reserve(cmd());
+  const response=s.cancel({matchId:MATCH,sessionUserId:'alice',reservationId:reserved.reservationId,
+    expectedRevision:5,idempotencyKey:'cancel_key_0001'});
+  assert.equal(response.code,'SCREENING_CANCELLED');assert.equal(response.revision,6);
+  const view=s.inspectFixture({matchId:MATCH,sessionUserId:'bob'});
+  assert.equal(view.turnState.pendingCombat,null);
+  assert.deepEqual(view.turnState.resolvedBattleUnitIds,[]);
+  assert.deepEqual(view.events.map(e=>e.type),['RANGED_SCREENING_RESERVED','RANGED_SCREENING_CANCELLED']);
+  assert.equal(JSON.stringify(view.events).includes(reserved.reservationId),false);
+}));
+
+test('cancel idempotency survives restart and different payload fails',()=>fixture(({seed,open})=>{
+  const s=seed(),r=s.reserve(cmd());
+  const cancellation={matchId:MATCH,sessionUserId:'alice',reservationId:r.reservationId,
+    expectedRevision:5,idempotencyKey:'cancel_key_0002'};
+  const out=s.cancel(cancellation);assert.equal(out.code,'SCREENING_CANCELLED');
+  s.close();const reopened=open();
+  const retry=reopened.cancel(cancellation);
+  assert.equal(retry.code,'ALREADY_CANCELLED');assert.equal(retry.revision,6);
+  assert.equal(reopened.cancel({...cancellation,expectedRevision:6}).code,'IDEMPOTENCY_KEY_REUSED');
+  assert.equal(reopened.inspectFixture({matchId:MATCH,sessionUserId:'bob'}).events.length,2);
+}));
+
+test('only the original reserving side can cancel; no request can name a third-party match',()=>fixture(({seed})=>{
+  const s=seed(),r=s.reserve(cmd());
+  const base={matchId:MATCH,sessionUserId:'alice',reservationId:r.reservationId,
+    expectedRevision:5,idempotencyKey:'cancel_key_0003'};
+  assert.equal(s.cancel({...base,sessionUserId:'mallory'}).code,'NOT_FOUND');
+  assert.equal(s.cancel({...base,sessionUserId:'bob'}).code,'RESERVATION_NOT_CANCELLABLE');
+  assert.equal(s.cancel({...base,matchId:OTHER}).code,'NOT_FOUND');
+  assert.equal(s.inspectFixture({matchId:MATCH,sessionUserId:'alice'}).revision,5);
+}));
+
+test('cancellation rejects wrong reservation id, old revision and missing inputs',()=>fixture(({seed})=>{
+  const s=seed(),r=s.reserve(cmd()),base={matchId:MATCH,sessionUserId:'alice',
+    reservationId:r.reservationId,expectedRevision:5,idempotencyKey:'cancel_key_0004'};
+  assert.equal(s.cancel({...base,reservationId:OTHER}).code,'RESERVATION_NOT_CANCELLABLE');
+  assert.equal(s.cancel({...base,expectedRevision:4}).code,'STALE_REVISION');
+  for(const changes of [{reservationId:null},{expectedRevision:undefined},{idempotencyKey:''},
+    {sessionUserId:null}]) assert.equal(s.cancel({...base,...changes}).code,'INVALID_CANCELLATION');
+  assert.equal(s.cancel(base).code,'SCREENING_CANCELLED');
+  assert.equal(s.cancel({...base,expectedRevision:6,idempotencyKey:'cancel_key_0005'}).code,'RESERVATION_NOT_CANCELLABLE');
+}));
+
+test('cancellation event failure rolls back revision, marker and key',()=>fixture(({seed})=>{
+  const s=seed(),r=s.reserve(cmd()),db=s.unsafeTestDatabase();
+  const cancellation={matchId:MATCH,sessionUserId:'alice',reservationId:r.reservationId,
+    expectedRevision:5,idempotencyKey:'cancel_key_0006'};
+  db.exec("CREATE TRIGGER break_cancel BEFORE INSERT ON lab_events BEGIN SELECT RAISE(ABORT, 'CANCEL_IO_ERROR'); END");
+  assert.throws(()=>s.cancel(cancellation),/CANCEL_IO_ERROR/);
+  assert.equal(s.inspectFixture({matchId:MATCH,sessionUserId:'alice'}).revision,5);
+  assert.equal(s.inspectFixture({matchId:MATCH,sessionUserId:'alice'}).turnState.pendingCombat.reservationId,r.reservationId);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_commands').get().n,1);
+  db.exec('DROP TRIGGER break_cancel');
+  assert.equal(s.cancel(cancellation).code,'SCREENING_CANCELLED');
+}));
+
+test('cancellation allows new screening only with new revision and a new key',()=>fixture(({seed})=>{
+  const s=seed(),r=s.reserve(cmd());
+  assert.equal(s.cancel({matchId:MATCH,sessionUserId:'alice',reservationId:r.reservationId,
+    expectedRevision:5,idempotencyKey:'cancel_key_0007'}).code,'SCREENING_CANCELLED');
+  const next=s.reserve(cmd({expectedRevision:6,idempotencyKey:'combat_key_0008'}));
+  assert.equal(next.code,'SCREENING_RESERVED');assert.equal(next.revision,7);
+  assert.notEqual(next.reservationId,r.reservationId);
+  assert.equal(s.inspectFixture({matchId:MATCH,sessionUserId:'bob'}).events.length,3);
+}));
