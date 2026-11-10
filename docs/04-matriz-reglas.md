@@ -128,3 +128,9 @@ Ver [documento de trazabilidad](43-perfiles-movimiento-ancients-base.md), módul
 **R-05 sigue incompleta.** La nueva función `precheckAncientsMovementPath` (documento [44](44-precomprobacion-ruta-ancients.md)) combina la geometría odd-q, una comprobación de ocupación ordinaria y los perfiles básicos de PR #53. Rechaza caminos no adyacentes, repetidos, ocupados, salidas de tablero, líderes enemigos en el destino y avances imposibles sin resolver el combate; señala cargas de guerreros, líderes propios en la ruta y excepciones de perfil. Los tres estados `BLOCKED`, `REQUIRES_RULE_EXCEPTION` y `CANDIDATE` **nunca equivalen a autorización de movimiento**: no se integran con SQLite ni API, y todos devuelven `needsFullLegalityCheck: true`.
 
 **19/19 pruebas nativas Node.js 22.16.0 correctas, fuente y pruebas cotejadas por SHA Git.** La rama registra **40 suites**, todavía sin ejecución integral. Continúan pendientes órdenes, cartas, terreno, líderes, excepciones y validación HTTP/SSE y visual.
+
+## Primer contrato de terreno básico (I4, PR #55)
+
+**R-05 sigue incompleta.** Se añade `precheckAncientsTerrainMovement` para bosques, colinas y terreno accidentado del juego básico. Bosque: detenerse al entrar y excepciones de combate para infantería ligera, auxilia y guerreros; colina: sin restricción de movimiento ordinario; terreno accidentado: prohíbe entrar a máquinas de guerra y detiene a unidades montadas, que no pueden combatir tras entrar. **Nunca autoriza un movimiento** y no calcula combate, línea de visión, cartas ni escenarios. [Reglas y límites](45-terreno-basico-ancients.md).
+
+**16/16 pruebas en V8 aislado**, con fuentes exactas publicadas en GitHub; todavía no equivalen a una ejecución nativa Node.js. Manifiesto de **41 suites**, sin regresión integral. Mantener PR #55 en borrador.
