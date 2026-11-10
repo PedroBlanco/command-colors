@@ -55,7 +55,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/battle-dice.test.mjs',
   'packages/ancients-rules/dice-plan.test.mjs',
   'packages/ancients-rules/sqlite-official-dice-preview.test.mjs',
-  'packages/ancients-rules/block-loss-preview.test.mjs'
+  'packages/ancients-rules/block-loss-preview.test.mjs',
+  'packages/ancients-rules/sqlite-block-loss-preview.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
