@@ -62,6 +62,17 @@ SHA-256 del registro TAP aislado `61efaad2e36f262d246561f7870c0da6a5b2d98f1407ca
 
 **Límite:** estas 25 pruebas nativas no sustituyen la ejecución completa de las 42 suites ni una partida reglamentaria. El usuario confirmó que la última repetición Windows de las pruebas de PR #55 terminó sin errores, pero en ese mensaje no adjuntó TAP con contadores, por lo que se mantiene pendiente la certificación formal de esa regresión. No solicitar más pruebas al usuario mientras esté en pausa.
 
+
+### Reejecución adicional de regresiones anteriores
+
+También se recuperó desde GitHub **la suite original de 19 casos** de `movement-path-precheck.test.mjs`, se comprobó su SHA Git `a5c253a3290ca29c2202d3b09c23e96ef3a61eb7` y se ejecutó **con las dos nuevas** y sus módulos exactos:
+
+```sh
+node --test --test-reporter=tap packages/ancients-rules/movement-path-precheck.test.mjs packages/ancients-rules/terrain-movement.test.mjs packages/ancients-rules/terrain-integration.test.mjs
+```
+
+Resultado total: **44/44 casos nativos correctos, 0 fallos, 0 omisiones, código 0** (19 antiguos + 16 de terreno + 9 combinados). SHA-256 del TAP de las tres suites: `07f59aaadb6a955568733c8daaa98b9b63281397216f51918653486d861458a4`. Esto demuestra ausencia de regresión en las **19 pruebas previas de rutas**; **no** valida las otras 39 suites del manifiesto de 42.
+
 ## Próximos pasos / condiciones de salida
 
 1. Definir la estructura de terreno como parte del escenario oficial autorizado y persistido: sin recibir mapas desde el cliente.
