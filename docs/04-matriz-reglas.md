@@ -149,3 +149,10 @@ Evidencia: [documento 47](47-limites-dados-terreno-ancients.md), **10/10 pruebas
 `packages/ancients-rules/line-of-sight.mjs` añade un **comprobador aislado** de visibilidad por centros de hexágonos `odd-q` en tablero 13×9. Reconoce unidades y líderes interpuestos, bosques, colinas, mesetas contiguas y aristas compartidas; terreno accidentado no bloquea la visión. Rechaza coordenadas, duplicados y clases de terreno no modeladas. Retorna `VISIBLE` o `BLOCKED` con `attackAuthorized:false` y `needsFullLegalityCheck:true`.
 
 Su suite propia de **14 pruebas** pasó con Node 22.16.0/Linux, y se registró como la **suite 44** del manifiesto. **No se ha ejecutado la regresión integral de 44 suites ni una batalla oficial**. No comprueba distancia de tiro, armas, cartas, bloqueos por adyacencia enemiga, ni fases; escenarios y estado de servidor aún no conectados. R-06 permanece **no implementada** como regla completa. Véase [informe de LOS](48-linea-vision-ancients-basico.md).
+
+
+## Precomprobación de disparo ordinario en Ancients (R-06 parcial)
+
+La nueva capa `ranged-profile.mjs` define alcance, arma y movimiento de **seis** clases con disparo ordinario dentro de los 13 tipos de unidad actualmente registrados. `ranged-precheck.mjs` combina esos datos con la prohibición de disparar cuando un enemigo está adyacente, la LOS de PR #61 y el límite de dados por terreno de PR #59. Todo se deriva de un tablero suministrado por el servidor; **ningún resultado autoriza un ataque**, modifica el estado o añade capacidades excepcionales.
+
+Se ejecutaron **27 pruebas nuevas** (10 de perfil y 17 de composición) junto a las **14 pruebas ya existentes de LOS**; resultado **41/41 correctas** con Node 22.16.0 en Linux nativo, sin WSL ni Actions. El manifiesto pasa a **46 suites**, no ejecutadas integralmente. La regla R-06 sigue **sin implementar** como combate completo: faltan órdenes, fase, cartas, alcance excepcional, resolución de dados, retirada y servidor. Véase [informe R-06](49-precomprobacion-combate-distancia-ancients.md).
