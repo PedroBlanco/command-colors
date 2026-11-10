@@ -128,3 +128,11 @@ Ver [documento de trazabilidad](43-perfiles-movimiento-ancients-base.md), módul
 **R-05 sigue incompleta.** La nueva función `precheckAncientsMovementPath` (documento [44](44-precomprobacion-ruta-ancients.md)) combina la geometría odd-q, una comprobación de ocupación ordinaria y los perfiles básicos de PR #53. Rechaza caminos no adyacentes, repetidos, ocupados, salidas de tablero, líderes enemigos en el destino y avances imposibles sin resolver el combate; señala cargas de guerreros, líderes propios en la ruta y excepciones de perfil. Los tres estados `BLOCKED`, `REQUIRES_RULE_EXCEPTION` y `CANDIDATE` **nunca equivalen a autorización de movimiento**: no se integran con SQLite ni API, y todos devuelven `needsFullLegalityCheck: true`.
 
 **19/19 pruebas nativas Node.js 22.16.0 correctas, fuente y pruebas cotejadas por SHA Git.** La rama registra **40 suites**, todavía sin ejecución integral. Continúan pendientes órdenes, cartas, terreno, líderes, excepciones y validación HTTP/SSE y visual.
+
+## Primer comprobador de terreno del juego básico (I4, PR #55)
+
+**R-05: avance parcial, NO completada.** `precheckAncientsTerrainMovement` combina perfiles (PR #53) y trayectorias (PR #54) con tres terrenos: **bosque** (parada al entrar y excepción para combate de infantería ligera, auxilia y guerreros), **colina** (sin restricción de movimiento) y **terreno accidentado** (parada y prohibición de combate para montadas; impasable para máquina de guerra pesada). No interpreta marismas, río ni otros terrenos como llanura; exige lista de terreno del escenario explícita.
+
+`assessAncientsTerrainDiceCap` propone máximos ordinarios de combate cuerpo a cuerpo hacia/desde bosque o accidentado, cuesta arriba, cuesta abajo y colina-colina, y de fuego contra bosque. Se **excluyen** línea de visión, efectos de cartas, fases, permisos, líderes, combate y reglas de escenario. **Los resultados son informativos y mantienen `needsFullLegalityCheck: true`**; no se conectan a SQLite ni a la API.
+
+**24/24 pruebas nativas Node.js 22.16.0 superadas**, SHA de todos los módulos y pruebas cotejados contra objetos Git. La rama declara **41 suites** para la batería local, aún sin ejecutarla íntegramente. Ver [fuentes, alcance y limitaciones](45-terreno-basico-ancients.md).
