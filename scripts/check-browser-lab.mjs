@@ -48,7 +48,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/ranged-profile.test.mjs',
   'packages/ancients-rules/ranged-precheck.test.mjs',
   'packages/ancients-rules/combat-turn-guard.test.mjs',
-  'packages/ancients-rules/ranged-turn-precheck.test.mjs'
+  'packages/ancients-rules/ranged-turn-precheck.test.mjs',
+  'packages/ancients-rules/sqlite-reservation-lab.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
