@@ -163,3 +163,10 @@ Se ejecutaron **27 pruebas nuevas** (10 de perfil y 17 de composición) junto a 
 `combat-turn-guard.mjs` comprueba fase `COMBAT`, jugador en turno, revisión, unidad ordenada, combate no repetido, ausencia de decisiones/combates pendientes y registro de movimiento del servidor. `ranged-turn-precheck.mjs` compone esa criba con la validación de disparos de PR #62, siempre **sin autorización ni persistencia de combate**. Rechaza expresamente el estado `synthetic-phases-v1` como sustituto de las reglas oficiales y no interpreta efectos de cartas.
 
 Dos suites nuevas, **31 casos ejecutados con éxito en V8 aislado sobre el código exacto de GitHub** (no `node:test` nativo). El manifiesto registra **48 suites**, pendientes de regresión integral. **R-04 y R-06 no están implementadas como reglas completas**. Véase [documentación y contrato](50-guardas-turno-ordenes-disparo-ancients.md).
+
+
+## Reserva de criba de combate en SQLite independiente (R-04/R-06 parcial)
+
+`packages/ancients-rules/sqlite-reservation-lab.mjs` implementa una **reserva transaccional únicamente experimental** con `BEGIN IMMEDIATE`, revisión, idempotencia, evento público mínimo y marcador `RANGED_SCREENING_ONLY`, sobre **un fichero SQLite distinto** del esquema CCW v1. Se ensaya mediante un comprobador inyectado para verificar la transacción, **no** el motor oficial.
+
+La suite nativa `sqlite-reservation-lab.test.mjs` supera **17/17 pruebas** con Node 22.16.0/Linux. El manifiesto crece a **49 suites**, sin regresión integral. No se considera implementada R-04 ni R-06: falta integración con el comprobador real, máquina de estados y migración del servidor, API autenticada, finalización de combates y pruebas de aceptación. Véase [contrato de reserva experimental](51-reserva-sqlite-combates-ancients.md).
