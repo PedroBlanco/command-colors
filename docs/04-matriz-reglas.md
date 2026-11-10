@@ -156,3 +156,10 @@ Su suite propia de **14 pruebas** pasó con Node 22.16.0/Linux, y se registró c
 La nueva capa `ranged-profile.mjs` define alcance, arma y movimiento de **seis** clases con disparo ordinario dentro de los 13 tipos de unidad actualmente registrados. `ranged-precheck.mjs` combina esos datos con la prohibición de disparar cuando un enemigo está adyacente, la LOS de PR #61 y el límite de dados por terreno de PR #59. Todo se deriva de un tablero suministrado por el servidor; **ningún resultado autoriza un ataque**, modifica el estado o añade capacidades excepcionales.
 
 Se ejecutaron **27 pruebas nuevas** (10 de perfil y 17 de composición) junto a las **14 pruebas ya existentes de LOS**; resultado **41/41 correctas** con Node 22.16.0 en Linux nativo, sin WSL ni Actions. El manifiesto pasa a **46 suites**, no ejecutadas integralmente. La regla R-06 sigue **sin implementar** como combate completo: faltan órdenes, fase, cartas, alcance excepcional, resolución de dados, retirada y servidor. Véase [informe R-06](49-precomprobacion-combate-distancia-ancients.md).
+
+
+## Contrato aislado de fase/orden en combate a distancia (R-04/R-06 parcial)
+
+`combat-turn-guard.mjs` comprueba fase `COMBAT`, jugador en turno, revisión, unidad ordenada, combate no repetido, ausencia de decisiones/combates pendientes y registro de movimiento del servidor. `ranged-turn-precheck.mjs` compone esa criba con la validación de disparos de PR #62, siempre **sin autorización ni persistencia de combate**. Rechaza expresamente el estado `synthetic-phases-v1` como sustituto de las reglas oficiales y no interpreta efectos de cartas.
+
+Dos suites nuevas, **31 casos ejecutados con éxito en V8 aislado sobre el código exacto de GitHub** (no `node:test` nativo). El manifiesto registra **48 suites**, pendientes de regresión integral. **R-04 y R-06 no están implementadas como reglas completas**. Véase [documentación y contrato](50-guardas-turno-ordenes-disparo-ancients.md).
