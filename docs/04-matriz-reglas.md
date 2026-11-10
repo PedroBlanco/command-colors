@@ -134,3 +134,11 @@ Ver [documento de trazabilidad](43-perfiles-movimiento-ancients-base.md), módul
 **R-05 sigue incompleta.** El módulo [`terrain-movement.mjs`](../packages/ancients-rules/terrain-movement.mjs) incorpora una precomprobación de **bosques, colinas y terreno accidentado** según las reglas de *Ancients* (3.ª edición, 2009). Detecta detención obligatoria al entrar en bosque, detención de montadas al entrar en accidentado, prohibición de entrar a máquina de guerra pesada en accidentado y restricciones para combatir después de entrar. El combinador `precheckAncientsMovementPath` devuelve ahora también `terrain` y `battleAfterMovement`; **no se conecta al motor sintético ni autoriza un movimiento**.
 
 La evidencia comprobada consta de **25/25 pruebas nativas Node.js 22.16.0** (16 de terreno y 9 de integración), con SHA Git de código y tests coincidentes. Se suman dos archivos al manifiesto (42 suites previstas), pero el conjunto integral **no** se ha ejecutado en esta rama. Persisten pendientes terreno restante, LOS, dados, órdenes, cartas y escenarios. [Documentación y condiciones de integración](46-terreno-ancients-basico.md).
+
+## Límites ordinarios de dados por terreno, separados del movimiento (I4)
+
+Tras la PR #57 (que ya aplica las restricciones de entrada y de combate posterior al movimiento), el módulo `assessAncientsTerrainDiceCap` incorpora un cálculo **parcial y no autoritativo** de máximos ordinarios: cuerpo a cuerpo hacia/desde bosque o terreno accidentado, disparo contra bosque, cuesta arriba, cuesta abajo y combate entre colinas, distinguiendo infantería y montadas. `maxDice: null` significa que el terreno no introduce un límite, **no** que el ataque sea legal o ilimitado.
+
+**R-06/R-07 siguen sin implementar.** No hay validación de línea de visión, disponibilidad/alcance de armas, dados propios de unidad, cartas, líderes ni combate. Siempre `needsFullLegalityCheck: true`; `lineOfSightChecked: false` y `cardModifiersApplied: false`. Sin conexión con partidas, SQLite ni HTTP.
+
+Evidencia: [documento 47](47-limites-dados-terreno-ancients.md), **10/10 pruebas nativas correctas con Node.js 22.16.0**, hash Git de módulo/pruebas/dependencias contrastado. Manifiesto ampliado a **43 suites** sin ejecución integral.

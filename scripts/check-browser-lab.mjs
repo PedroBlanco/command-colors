@@ -42,7 +42,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/movement-profile.test.mjs',
   'packages/ancients-rules/movement-path-precheck.test.mjs',
   'packages/ancients-rules/terrain-movement.test.mjs',
-  'packages/ancients-rules/terrain-integration.test.mjs'
+  'packages/ancients-rules/terrain-integration.test.mjs',
+  'packages/ancients-rules/terrain-dice-cap.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
