@@ -48,7 +48,9 @@ function finalizeSnapshotJournal(path) {
 }
 
 async function fsyncFile(path) {
-  const f = await open(path, 'r');
+  // Win32 FlushFileBuffers needs a writable handle; 'r' fails with EPERM.
+  // These are our existing temporary backup/manifest files: 'r+' never truncates.
+  const f = await open(path, 'r+');
   try {await f.sync();}
   finally {await f.close();}
 }
