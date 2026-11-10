@@ -54,11 +54,12 @@ node --test --test-reporter=tap packages/ancients-rules/line-of-sight.test.mjs
 
 Resultado: **14/14 pruebas correctas, 0 fallos, 0 omitidas, exitCode 0**. Incluye línea libre, unidades/líderes, bosque, terreno accidentado, visibilidad de colinas, continuidad y huecos de meseta, simetría, aristas compartidas, mezcla de obstáculos y entradas inválidas. Se pasó además una comprobación local de **1100 pares pseudoaleatorios** con mapa aleatorio para verificar simetría de resultados, sin fallos; es una comprobación auxiliar, no suite registrada.
 
-Identidad Git de los archivos publicados y probados:
+Identidad Git de los archivos publicados y probados (incluida la dependencia original del repositorio, recuperada y cotejada en la segunda ejecución):
+- `packages/hex-grid/hex.mjs`: `ae0e4526b8e91c4c0d5d94aebc52077b60f410da`.
 - `line-of-sight.mjs`: `0f1b129365bba9b2dfcfafb83fa98ffc9ecf7b1f`.
 - `line-of-sight.test.mjs`: `06a05614e8fcd27d7770312df6d5368aae83231b`.
 
-SHA-256 del TAP aislado: `727226ce995e539e842f59ac0fbd19346bb426f6ae18976f2b2d950f68c13f02`.
+SHA-256 del TAP aislado: `2b93918d533d3d21f8cb19799aeb3dd9930c23cdea74660d8c1285fd7d5eff6b`.
 
 `scripts/check-browser-lab.mjs` registra ahora **44 suites**; este aumento se verificará en la regresión global. **No se han ejecutado las 44 suites completas** ni las pruebas HTTP/SSE, SQLite y navegador con dos usuarios en esta rama.
 
