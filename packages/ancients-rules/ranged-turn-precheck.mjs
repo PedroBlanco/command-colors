@@ -26,8 +26,9 @@ export function precheckAncientsRangedDeclaration({turnState, board, sessionSide
     return freeze('BLOCKED', turnGate.reason, {turnGate});
 
   if (!board || typeof board !== 'object' || Array.isArray(board)
-      || !Array.isArray(board.units) || !Array.isArray(board.leaders)
-      || !Array.isArray(board.terrain))
+      || !Array.isArray(board.units) || board.units.length < 2 || board.units.length > 117
+      || !Array.isArray(board.leaders) || board.leaders.length > 117
+      || !Array.isArray(board.terrain) || board.terrain.length > 117)
     throw new TypeError('INVALID_SERVER_RANGED_BOARD');
   // Do not disclose to a different player whether an ID is an opposing unit
   // or missing. Detailed board/LOS results must not be exposed over HTTP.
