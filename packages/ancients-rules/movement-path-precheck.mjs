@@ -5,6 +5,7 @@
  */
 import {distance, inBounds} from '../hex-grid/hex.mjs';
 import {assessBaseMovement, BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
+import {assessAncientsTerrainMovement} from './terrain-movement.mjs';
 
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES = new Set(['A', 'B']);
@@ -44,7 +45,7 @@ function validatePieces(units, leaders) {
  * geometry, occupancy and movement-distance screening found no obstacle.
  * A candidate MUST NOT be committed, persisted or shown as a legal move.
  */
-export function precheckAncientsMovementPath({units, leaders = [], unitId, path} = {}) {
+export function precheckAncientsMovementPath({units, leaders = [], unitId, path, terrain = []} = {}) {
   const {occupied, leadersByCell} = validatePieces(units, leaders);
   if (!goodId(unitId) || !Array.isArray(path) || path.length < 1 || path.length > 32
       || !path.every(goodCell)) throw new TypeError('INVALID_BASE_PATH');
@@ -69,9 +70,16 @@ export function precheckAncientsMovementPath({units, leaders = [], unitId, path}
     previous = target;
     visited.add(dest);
   }
+  // Screen terrain only after the normal occupancy/geometric walk. This is
+  // still not an authoritative legal-move check or a card-exception engine.
+  const terrainScreen = assessAncientsTerrainMovement({
+    unitType:unit.type, origin:unit, path, terrain
+  });
+  if (terrainScreen.status === 'BLOCKED')
+    return Object.freeze({...fail(terrainScreen.reason, terrainScreen.step, profile), terrain:terrainScreen});
   if (profile.status === 'EXCEEDS_STANDARD_PROFILE')
     return Object.freeze({status:'REQUIRES_RULE_EXCEPTION', reason:'STANDARD_MOVEMENT_EXCEEDED',
-      step:null, profile, needsFullLegalityCheck:true});
+      step:null, profile, terrain:terrainScreen, needsFullLegalityCheck:true});
   const destination = path.at(-1);
   const charge = profile.status === 'CONDITIONAL_CHARGE';
   if (charge && ![...occupied.values(), ...leadersByCell.values()].some(enemy =>
@@ -83,6 +91,8 @@ export function precheckAncientsMovementPath({units, leaders = [], unitId, path}
     status:'CANDIDATE', reason:null, step:null, profile,
     requiresLeaderResolution: attachLeader || carriesLeader,
     requiresMandatoryCloseCombat:charge,
+    terrain:terrainScreen,
+    battleAfterMovement:terrainScreen.battleOnEntry === 'UNAVAILABLE' ? 'UNAVAILABLE' : profile.battle,
     needsFullLegalityCheck:true
   });
 }
