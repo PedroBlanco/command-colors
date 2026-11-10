@@ -120,7 +120,7 @@ test('LOS and weapon restrictions remain effective after the phase/order gate',(
 
 test('reject malformed board and corrupt ranged data rather than authorizing',()=>{
   assert.throws(()=>check(input({board:null})),/INVALID_SERVER_RANGED_BOARD/);
-  assert.throws(()=>check(input({board:{units:[],leaders:[],terrain:[]}})),/INVALID_RANGED_BOARD/);
+  assert.throws(()=>check(input({board:{units:[],leaders:[],terrain:[]}})),/INVALID_SERVER_RANGED_BOARD/);
   const b=board();b.terrain=[{col:3,row:4,kind:'MARSH'}];
   assert.throws(()=>check(input({board:b})),/INVALID_RANGED_BOARD|INVALID_LOS_TERRAIN/);
 });
