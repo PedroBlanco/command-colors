@@ -40,8 +40,9 @@ La rama `fix/i4-windows-sqlite-lifecycle-tests` (PR #55, apilada sobre #54):
 El arreglo está publicado, pero **todavía no se ha ejecutado en Windows**. Verificar primero solo la suite afectada desde una copia de esta nueva rama:
 
 ```powershell
-git fetch origin
-git switch fix/i4-windows-sqlite-lifecycle-tests
+# La copia inicial se clonó con --single-branch: hay que pedir esta rama explícitamente.
+git fetch origin fix/i4-windows-sqlite-lifecycle-tests
+git switch -c fix/i4-windows-sqlite-lifecycle-tests FETCH_HEAD
 node --test --test-reporter=tap packages/sqlite-store/lifecycle.test.mjs
 ```
 
