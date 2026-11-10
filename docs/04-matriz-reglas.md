@@ -142,3 +142,10 @@ Tras la PR #57 (que ya aplica las restricciones de entrada y de combate posterio
 **R-06/R-07 siguen sin implementar.** No hay validación de línea de visión, disponibilidad/alcance de armas, dados propios de unidad, cartas, líderes ni combate. Siempre `needsFullLegalityCheck: true`; `lineOfSightChecked: false` y `cardModifiersApplied: false`. Sin conexión con partidas, SQLite ni HTTP.
 
 Evidencia: [documento 47](47-limites-dados-terreno-ancients.md), **10/10 pruebas nativas correctas con Node.js 22.16.0**, hash Git de módulo/pruebas/dependencias contrastado. Manifiesto ampliado a **43 suites** sin ejecución integral.
+
+
+## Precomprobación de línea de visión de Ancients (R-06 parcial)
+
+`packages/ancients-rules/line-of-sight.mjs` añade un **comprobador aislado** de visibilidad por centros de hexágonos `odd-q` en tablero 13×9. Reconoce unidades y líderes interpuestos, bosques, colinas, mesetas contiguas y aristas compartidas; terreno accidentado no bloquea la visión. Rechaza coordenadas, duplicados y clases de terreno no modeladas. Retorna `VISIBLE` o `BLOCKED` con `attackAuthorized:false` y `needsFullLegalityCheck:true`.
+
+Su suite propia de **14 pruebas** pasó con Node 22.16.0/Linux, y se registró como la **suite 44** del manifiesto. **No se ha ejecutado la regresión integral de 44 suites ni una batalla oficial**. No comprueba distancia de tiro, armas, cartas, bloqueos por adyacencia enemiga, ni fases; escenarios y estado de servidor aún no conectados. R-06 permanece **no implementada** como regla completa. Véase [informe de LOS](48-linea-vision-ancients-basico.md).
