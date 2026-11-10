@@ -40,7 +40,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/local-api/private-projection.test.mjs',
   'packages/local-api/revision-refresh.test.mjs',
   'packages/ancients-rules/movement-profile.test.mjs',
-  'packages/ancients-rules/movement-path-precheck.test.mjs'
+  'packages/ancients-rules/movement-path-precheck.test.mjs',
+  'packages/ancients-rules/terrain-precheck.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
