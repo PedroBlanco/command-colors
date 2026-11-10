@@ -12,3 +12,13 @@ export function openGuardedAncientsReservationLab({file} = {}) {
     checkDeclaration: precheckAncientsRangedDeclaration
   });
 }
+
+/**
+ * Uses the real Ancients precheck to store six-face results as PREVIEWS only.
+ * This does NOT authorize combat, apply blocks, or serve an HTTP endpoint.
+ * An already-persisted synthetic reservation retains its own plan version.
+ */
+export function openOfficialAncientsRangedPreviewLab({file} = {}) {
+  return openAncientsReservationLab({file,
+    checkDeclaration:precheckAncientsRangedDeclaration,dicePlanMode:'OFFICIAL_PREVIEW'});
+}
