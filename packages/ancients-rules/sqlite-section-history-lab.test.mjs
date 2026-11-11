@@ -145,6 +145,29 @@ test('all rejected actions avoid new events or command keys',()=>fixture(({db})=
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM history_events').get().n,1);
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM history_commands').get().n,0);
 }));
-test('cannot open CCHL journal as CCRL or bootstrap an unknown SQLite schema',()=>fixture(({file})=>{
- assert.equal(open({file}).view({matchId:MATCH,sessionUserId:'alice'}).status,200);
+test('reopened CCHL journal preserves verified state without rewriting data',()=>fixture(({connect})=>{
+ const x=connect();assert.equal(x.view({matchId:MATCH,sessionUserId:'alice'}).status,200);
+}));
+
+test('deleted idempotency record is rejected instead of allowing a second commit',()=>fixture(({db})=>{
+ play(db);
+ db.unsafeTestDatabase().prepare('DELETE FROM history_commands WHERE committed_revision=1').run();
+ assert.equal(db.view({matchId:MATCH,sessionUserId:'alice'}).code,'HISTORY_INTEGRITY_UNAVAILABLE');
+ assert.equal(db.dispatch(req('END_EXPERIMENTAL_TURN',1)).code,'HISTORY_INTEGRITY_UNAVAILABLE');
+}));
+test('forged command signature is rejected before any further dispatch',()=>fixture(({db})=>{
+ play(db);
+ db.unsafeTestDatabase().prepare('UPDATE history_commands SET signature=?').run('forged');
+ assert.equal(db.view({matchId:MATCH,sessionUserId:'alice'}).code,'HISTORY_INTEGRITY_UNAVAILABLE');
+}));
+test('second player can play and stage a section card after lab-only turn switch',()=>fixture(({db})=>{
+ play(db);assign(db);action(db,'END_EXPERIMENTAL_TURN',2);
+ const other=db.view({matchId:MATCH,sessionUserId:'bob'}).view;
+ const chosen=other.yourHand[0];
+ const played=db.dispatch({...req('PLAY_SECTION_CARD',3,{cardInstanceId:chosen.instanceId},'bob_play_section_3'),sessionUserId:'bob'});
+ assert.equal(played.code,'LAB_COMMAND_RECORDED');
+ const order=db.dispatch({...req('ASSIGN_SECTION_ORDERS',4,{unitIds:[],leaderIds:[]},'bob_assign_section_4'),sessionUserId:'bob'});
+ assert.equal(order.code,'LAB_COMMAND_RECORDED');
+ assert.equal(order.view.ordersStaged,true);
+ assert.equal(db.view({matchId:MATCH,sessionUserId:'alice'}).view.revision,5);
 }));
