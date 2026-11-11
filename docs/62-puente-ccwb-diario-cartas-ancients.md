@@ -26,9 +26,9 @@ store.initializeExperimentalSectionHistory('A', trustedLabSetup);
 
 Solo se permite en una partida con ambos jugadores admitidos, revisión de juego 0, sin mazo sintético ya iniciado y sin comandos ni eventos anteriores. El propietario debe iniciar el laboratorio; la operación no permite sobrescribir una configuración existente. La configuración del mazo, el tablero y el mapa de sectores **no pueden proceder de un cliente**.
 
-Una vez iniciado, `getStore().view(actor)` y `getStore().dispatch(request)` se redirigen al puente. La inicialización del mazo sintético responde `SECTION_LAB_MODE_ACTIVE`; `pass_demo_turn` deja de estar admitido. **Una partida no puede mezclar ambas secuencias de comandos.** Las partidas que no activan este modo conservan su funcionamiento anterior.
+Una vez iniciado, `getStore().view(actor)` ofrece exclusivamente la proyección privada del modo experimental. **La ruta genérica `getStore().dispatch(request)` se bloquea siempre con `SECTION_LAB_INTERNAL_ONLY`**, incluso para comandos del laboratorio. El nuevo método **interno exclusivamente de pruebas** `getStore().dispatchExperimentalSectionHistory(request)` permite realizar las transiciones solo desde código confiable del servidor, sin ruta HTTP asociada. La inicialización del mazo sintético responde `SECTION_LAB_MODE_ACTIVE`; `pass_demo_turn` queda rechazado tanto en la ruta genérica como en el adaptador. **Una partida no puede mezclar ambas secuencias de comandos.** Las partidas que no activan este modo conservan su funcionamiento anterior.
 
-**No hay un endpoint HTTP para activar este modo.** La composición todavía expone la infraestructura sintética de demostración: este incremento prepara una ruta interna de persistencia, **no autoriza su despliegue con escenarios reales o jugadores invitados de producción**.
+**No hay un endpoint HTTP para activar este modo.** La lectura del estado continúa disponible en una proyección privada, pero la ruta genérica de comandos del navegador **no puede disparar acciones experimentales**, aunque un programador haya habilitado ese modo mediante una llamada interna. La composición todavía expone la infraestructura sintética de demostración: este incremento prepara una ruta interna de persistencia, **no autoriza su despliegue con escenarios reales o jugadores invitados de producción**.
 
 ## Protección de estado, concurrencia y privacidad
 
@@ -56,7 +56,7 @@ Los archivos publicados y comprobados por hash Git:
 - `sqlite-section-ccwb-bridge.mjs`: `447e2ba9059358aabdde8919610067af8a47b3dc`.
 - `sqlite-section-ccwb-bridge.test.mjs`: `ca8f03b4a334b36db52dbc43241bb00312fb1a15`.
 
-La integración adicional `packages/sqlite-store/ancients-section-history.test.mjs` incorpora **3 pruebas preparadas, pero pendientes de ejecución** con el repositorio completo: cuentas reales de prueba e invitación, exclusividad entre modos y persistencia tras reinicio, y comportamiento intacto de partidas sintéticas no modificadas.
+La integración adicional `packages/sqlite-store/ancients-section-history.test.mjs` incorpora **3 pruebas preparadas, pero pendientes de ejecución**, incluyendo el rechazo de comandos por la ruta genérica y el uso exclusivo del despacho interno; con el repositorio completo: cuentas reales de prueba e invitación, exclusividad entre modos y persistencia tras reinicio, y comportamiento intacto de partidas sintéticas no modificadas.
 
 El manifiesto `scripts/check-browser-lab.mjs` registra ahora **63 suites**, no ejecutadas conjuntamente. También siguen pendientes Windows nativo, HTTP/SSE, pruebas de dos navegadores, recuperación completa y validación manual del reglamento.
 
