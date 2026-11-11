@@ -101,3 +101,21 @@ $LASTEXITCODE
 .\scripts\test-local.ps1
 $LASTEXITCODE
 ```
+
+
+## Extracción de la guardia transaccional y prueba directa con SQLite (11/11/2026)
+
+El doble control de sesión implementado en esta rama ya no queda oculto en una función local difícil de probar: se ha extraído a `packages/sqlite-store/section-mutation-session-guard.mjs`, que expone `makeSectionMutationSessionGuard` para uso **interno** de la composición.
+
+La guardia recibe la conexión SQLite, la función de resolución de actor autenticado, el token y el bando inicialmente identificado. Su callback rechaza invocaciones fuera de una transacción, vuelve a consultar la identidad actual y exige que el bando coincida. Si la sesión ha desaparecido responde `401 UNAUTHENTICATED`; si ha cambiado la identidad/bando, `404 NOT_FOUND`. `sqlite.mjs` invoca este componente desde el mismo `atomic(BEGIN IMMEDIATE)` que persiste estado, eventos e idempotencia.
+
+Se añadió `packages/sqlite-store/section-mutation-session-guard.test.mjs` al inventario: **8/8 PASS, 0 FAIL, 0 SKIP** con `DatabaseSync` sobre una base SQLite temporal real. Incluye: parámetros inválidos, invocación fuera de transacción, operación autorizada dentro de `BEGIN IMMEDIATE`, revocación y reasignación de bando por segunda conexión entre prevalidación y comienzo de escritura, exclusión mutua con una revocación concurrente, preservación de errores de autenticación y rechazo de un resultado de resolución vacío.
+
+La ejecución **conjunta** de las cinco suites nativas disponibles —vinculación de clave, firma versionada, contrato WAL de dos conexiones, carreras entre dos procesos y guardia SQLite— produjo **34 PASS, 0 FAIL, 0 SKIP** en Node.js 22.16.0/Linux nativo, sin WSL ni GitHub Actions; código de salida 0. SHA-256 del informe TAP: `e3b4a289ba823b850e5781b889fa110ca61f330f76ef7c58ad5774109e70066f`.
+
+**Hashes Git de los dos archivos nuevos, cotejados con lo ejecutado:**
+
+- `section-mutation-session-guard.mjs`: `da1dfc312cd59761dc42e1300d60a1af08d6aafa`
+- `section-mutation-session-guard.test.mjs`: `a410ea0e48b15b913c8cc29dd3e21196b4131694`
+
+El manifiesto crece a **68 suites**. Continúa **pendiente** la ejecución de `sqlite-section-ccwb-bridge.test.mjs`, `ancients-section-history.test.mjs` y la regresión de las 68 suites desde el repositorio completo; las 34 pruebas anteriores **no** equivalen a esa integración. El laboratorio sigue sin autorización de reglas oficiales ni exponer nuevos endpoints HTTP.
