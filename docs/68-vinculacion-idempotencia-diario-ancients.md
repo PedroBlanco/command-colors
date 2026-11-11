@@ -49,3 +49,28 @@ $LASTEXITCODE
 ```
 
 Quedan pendientes la regresión de 64 suites, privacidad real por dos sesiones, pruebas HTTP/SSE, Windows y la validación reglamentaria. Mantener la PR en **borrador** hasta disponer de esa evidencia. No fusionar ni desplegar.
+
+
+## Endurecimiento posterior: firma versionada v2 (11/11/2026)
+
+Tras revisar el contrato anterior se detectó un **caso de degradación silenciosa**: si se borraba la propiedad privada `idempotencyKey` de un comando nuevo, `readLabJournalIdempotency` lo interpretaba como un registro `legacy` y el `verify` anterior dejaba de comprobar esa clave. El resto del diario podía seguir siendo válido. Este problema invalida la pretensión de que toda eliminación aislada de una clave nueva quedaba siempre detectada en la implementación inicial.
+
+Para las nuevas operaciones, `lab-command-signature.mjs` genera una firma semántica privada **`CCW_SECTION_COMMAND_V2:` + JSON de `{command,idempotencyKey}`**. El replay distingue por el contenido realmente persistido en `game_commands.signature`:
+
+- Una firma **v2** requiere que la entrada del diario **conserve la clave**, que esta coincida con `game_commands.idem_key`, y que la firma completa corresponda exactamente al comando y la clave. Borrar solo el campo del diario deja de pasar por la ruta de compatibilidad.
+- Una firma **anterior sin prefijo** sigue comprobándose como `JSON.stringify(command)`; el reintento con la misma clave y operación continúa devolviendo `ALREADY_APPLIED`. La asociación de claves de los registros históricos es **más débil** y no se presenta como una garantía v2.
+- El nuevo formato se escribe solamente en `game_commands.signature`, y la clave sigue exclusivamente en SQLite y el diario privado; el evento público contiene únicamente el resultado sanitizado.
+- No hay migraciones de las seis tablas CCWB, ni cambios HTTP, autorizaciones de combate o reglas oficiales.
+
+**Límite explícito:** no hay anclaje criptográfico externo de integridad. Quien pueda reescribir de manera coordinada el historial y las firmas de la propia base podría falsificar una historia coherente, incluida su versión. Esta mejora detecta cambios aislados y degradaciones puntuales, no compromisos completos de SQLite.
+
+### Validación real y pendientes
+
+Ejecutadas **11/11 pruebas nativas PASS** de `packages/ancients-rules/lab-command-signature.test.mjs`, con Node.js **22.16.0/Linux nativo**, sin WSL ni GitHub Actions. Hashes Git cotejados con los bytes probados:
+
+- `lab-command-signature.mjs`: `e0f1d08f6e4a9bdac96253fc06f141da1f76fbe8`
+- `lab-command-signature.test.mjs`: `566007608618604c8c3983636796806e2f51ff99`
+
+Las pruebas puras contemplan firma v2, eliminación de clave privada, sustitución de clave SQL, cambios de comando, lectura legacy, reintentos de ambos formatos e entradas inválidas. Se han preparado **4 pruebas de integración SQLite adicionales** y adaptado el escenario de compatibilidad legacy de la PR #87 para que represente una fila realmente antigua (firma y diario en formato anterior), no una alteración fraudulenta de una fila v2. **No se han ejecutado todavía esas pruebas SQLite** desde el checkout completo.
+
+El inventario crece a **65 suites registradas** (antes 64). **No representa una regresión total ejecutada**. Se conserva el bloqueo de fusiones y despliegue. Los resultados anteriores de 8/8 del helper inicial siguen siendo históricos y no equivalen a la validación integral de este endurecimiento.
