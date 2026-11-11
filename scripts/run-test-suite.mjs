@@ -105,6 +105,16 @@ async function main(args) {
   const {only, logFile, list} = parseArgs(args);
   const files = selectTests(LOCAL_TEST_FILES, only);
   if (list) {for (const file of files) console.log(file); return 0;}
+  // A full regression must not silently omit newly added or missing tests.
+  // Single-suite debugging still uses the validated explicit allowlist.
+  if (only === null) {
+    const {verifyTestInventory} = await import('./check-test-inventory.mjs');
+    const report = verifyTestInventory({rootDir:ROOT,manifest:LOCAL_TEST_FILES});
+    if (!report.ok) {
+      console.error('INVALID_TEST_INVENTORY',JSON.stringify(report));
+      return 2;
+    }
+  }
   const result = await runTestBatch({rootDir: ROOT, files, logFile});
   if (result.missing.length) console.error(`Faltan ${result.missing.length} archivos de pruebas: ${result.missing.join(', ')}`);
   console.log(`CCW: ${result.suites} suites; salida=${result.exitCode}`);
