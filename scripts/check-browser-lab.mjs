@@ -65,6 +65,7 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/lab-command-signature.test.mjs',
   'packages/ancients-rules/lab-idempotency-binding.test.mjs',
   'packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs',
+  'packages/sqlite-store/wal-transaction-contract.test.mjs',
   'packages/sqlite-store/ancients-section-history.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
