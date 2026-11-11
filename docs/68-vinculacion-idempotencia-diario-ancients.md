@@ -74,3 +74,8 @@ Ejecutadas **11/11 pruebas nativas PASS** de `packages/ancients-rules/lab-comman
 Las pruebas puras contemplan firma v2, eliminación de clave privada, sustitución de clave SQL, cambios de comando, lectura legacy, reintentos de ambos formatos e entradas inválidas. Se han preparado **4 pruebas de integración SQLite adicionales** y adaptado el escenario de compatibilidad legacy de la PR #87 para que represente una fila realmente antigua (firma y diario en formato anterior), no una alteración fraudulenta de una fila v2. **No se han ejecutado todavía esas pruebas SQLite** desde el checkout completo.
 
 El inventario crece a **65 suites registradas** (antes 64). **No representa una regresión total ejecutada**. Se conserva el bloqueo de fusiones y despliegue. Los resultados anteriores de 8/8 del helper inicial siguen siendo históricos y no equivalen a la validación integral de este endurecimiento.
+
+
+### Entrada maliciosa: nombres heredados de `Object.prototype`
+
+En la revisión final se corrigió un fallo adicional en `sqlite-section-ccwb-bridge.mjs`: `TYPES[request.type]` accedía a propiedades heredadas, y la expansión de una de ellas como lista de campos podía provocar una excepción antes de validar el tipo. La búsqueda de campos se hace ahora **solo tras verificar que el tipo es una propiedad propia** de la tabla de comandos. `__proto__`, `constructor` y `toString` deben responder `400 INVALID_SECTION_LAB_COMMAND` y no alterar SQLite. Estos casos se han añadido a la suite de integración **pendiente de ejecución**.
