@@ -174,3 +174,62 @@ test('CCWB composition: altered laboratory public events are never projected',()
  assert.throws(()=>store.publicEvents('B'),/SECTION_CCWB_HISTORY_TAMPERED/);
  assert.throws(()=>store.viewExperimentalSectionHistory({sessionToken:tokens.A}),/SECTION_CCWB_HISTORY_TAMPERED/);
 }));
+
+test('CCWB composition: initialization rechecks owner session within SQLite write transaction',()=>fixture(async({app,matchId,tokens})=>{
+ const store=app.getStore(matchId);
+ const before=app.unsafeTestDatabase().prepare('SELECT private_state,lobby_revision FROM matches WHERE id=?').get(matchId);
+ const original=app.identity.resolveSession;
+ let checks=0;
+ try {
+   app.identity.resolveSession=(token)=>{
+     if(token===tokens.A) {
+       checks++;
+       if(checks===2){
+         assert.equal(app.unsafeTestDatabase().isTransaction,true);
+         return null; // Model another connection revoking the session before lock.
+       }
+     }
+     return original(token);
+   };
+   assert.equal(store.initializeExperimentalSectionHistory({
+     sessionToken:tokens.A,trustedSetup:setup()
+   }).code,'UNAUTHENTICATED');
+   assert.equal(checks,2);
+ } finally {app.identity.resolveSession=original;}
+ const after=app.unsafeTestDatabase().prepare('SELECT private_state,lobby_revision FROM matches WHERE id=?').get(matchId);
+ assert.deepEqual(after,before);
+ assert.equal(store.initializeExperimentalSectionHistory({
+   sessionToken:tokens.A,trustedSetup:setup()
+ }).code,'SECTION_LAB_INITIALIZED');
+}));
+
+test('CCWB composition: command rechecks live session within write transaction',()=>fixture(async({app,matchId,tokens})=>{
+ const store=app.getStore(matchId);
+ assert.equal(store.initializeExperimentalSectionHistory({
+   sessionToken:tokens.A,trustedSetup:setup()
+ }).status,201);
+ const card=store.viewExperimentalSectionHistory({sessionToken:tokens.A}).view.yourHand[0].instanceId;
+ const command={sessionToken:tokens.A,type:'PLAY_SECTION_CARD',expectedRevision:0,
+   idempotencyKey:'revoked_race_0001',cardInstanceId:card};
+ const before=app.unsafeTestDatabase().prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId);
+ const original=app.identity.resolveSession;
+ let checks=0;
+ try {
+   app.identity.resolveSession=(token)=>{
+     if(token===tokens.A) {
+       checks++;
+       if(checks===2) {
+         assert.equal(app.unsafeTestDatabase().isTransaction,true);
+         return null;
+       }
+     }
+     return original(token);
+   };
+   assert.equal(store.dispatchExperimentalSectionHistory(command).code,'UNAUTHENTICATED');
+   assert.equal(checks,2);
+ } finally {app.identity.resolveSession=original;}
+ assert.deepEqual(app.unsafeTestDatabase().prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId),before);
+ assert.equal(store.publicEvents('A').length,0);
+ assert.equal(app.unsafeTestDatabase().prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,0);
+ assert.equal(store.dispatchExperimentalSectionHistory(command).code,'SECTION_LAB_APPLIED');
+}));
