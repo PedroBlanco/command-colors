@@ -42,9 +42,12 @@ export function makeLabLeaderRerollConsentCommand({inTransaction,row,previous,
       if(!gate || gate.status!=='PHYSICAL_DISPUTED') return deny(409,'REROLL_CONSENT_UNAVAILABLE');
       const saved=state.pendingCombat.fixtureLeaderCasualtyPreview;
       const agreement=saved.physicalAgreement;
+      // A replay after a newer physical declaration must still return the original
+      // recorded vote. Gate validation above has already checked that declaration.
       const recorded=inspectLabRerollConsent({resolution:saved.rerollConsent,
         agreementRevision:agreement.revision,rollDigestSha256:agreement.rollDigestSha256,
-        currentRevision:entry.revision,attackerSide:state.pendingCombat.actor});
+        currentRevision:gate.rerollDeclared?agreement.revision+2:entry.revision,
+        attackerSide:state.pendingCombat.actor});
       if(!recorded) return deny(409,'REROLL_CONSENT_UNAVAILABLE');
       const vote=saved.rerollConsent?.votes?.[side];
       if(replay) {

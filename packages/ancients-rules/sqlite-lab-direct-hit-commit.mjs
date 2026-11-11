@@ -12,6 +12,7 @@ import {makeLabLeaderAfterHitPreviewCommand} from './sqlite-leader-after-hit-fix
 import {makeLabPhysicalLeaderAgreementCommand} from './lab-physical-leader-agreement.mjs';
 import {makeLabLeaderDiceGateReader} from './lab-leader-dice-gate.mjs';
 import {makeLabLeaderRerollConsentCommand} from './lab-leader-reroll-consent.mjs';
+import {makeLabPhysicalLeaderRerollAttemptCommand} from './lab-physical-leader-reroll-attempt.mjs';
 
 const CCRL=0x4343524c;
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -124,6 +125,21 @@ export function openLabOnlyDirectHitCommit({file,deriveTrustedPreview,allowTestF
     updateTurn,eventInsert:event,commandInsert:insertCommand
   });
 
+  // One NEW declared physical result, only after recorded unanimous consent.
+  // The previous disputed result and both votes remain immutable in the journal.
+  const declareLabPhysicalLeaderReroll=makeLabPhysicalLeaderRerollAttemptCommand({
+    inTransaction:operation=>{
+      db.exec('BEGIN IMMEDIATE');
+      try {const result=operation();db.exec('COMMIT');return result;}
+      catch(error){db.exec('ROLLBACK');throw error;}
+    },
+    row:match,previous:command,
+    sideFor:(entry,userId)=>entry.owner_id===userId?'A':
+      entry.guest_id===userId?'B':null,
+    updateTurn,eventInsert:event,commandInsert:insertCommand,
+    captureLeaderDice:captureBaseAncientsLeaderCasualtyDice
+  });
+
   function apply(request={}) {
     if(!request || typeof request!=='object' || Array.isArray(request))
       return denied(400,'INVALID_LAB_HIT_REQUEST');
@@ -188,5 +204,5 @@ export function openLabOnlyDirectHitCommit({file,deriveTrustedPreview,allowTestF
     }catch(e){db.exec('ROLLBACK');throw e;}
   }
   function finish(value){db.exec('COMMIT');return value;}
-  return Object.freeze({apply,stageLeaderCasualtyPreview,reviewLabPhysicalLeaderDice,readLabLeaderDiceGate,voteLabLeaderReroll,close:()=>{if(!closed){db.close();closed=true;}}});
+  return Object.freeze({apply,stageLeaderCasualtyPreview,reviewLabPhysicalLeaderDice,readLabLeaderDiceGate,voteLabLeaderReroll,declareLabPhysicalLeaderReroll,close:()=>{if(!closed){db.close();closed=true;}}});
 }
