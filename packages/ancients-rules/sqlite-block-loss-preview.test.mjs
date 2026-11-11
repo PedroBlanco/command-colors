@@ -487,3 +487,79 @@ test('SQLite: re-screened preflight remains read-only across repeated invocation
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n,events);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_commands').get().n,commands);
 }));
+
+function attachSectionOrderFixture(store) {
+  mutate(store,{modifyTurn:t=>{
+    t.orderedLeaderIds=[];
+    t.sectionOrderProof={
+      handAtPlay:{side:'A',revision:3,cards:[
+        {instanceId:'private_card_a',definitionId:'ORDER_2_LEFT'},
+        {instanceId:'private_card_b',definitionId:'ORDER_3_RIGHT'}
+      ]},
+      cardPlay:{side:'A',revision:4,instanceId:'private_card_a',
+        definitionId:'ORDER_2_LEFT'},
+      orderSnapshot:{side:'A',revision:5,pieces:[
+        {id:'a1',kind:'UNIT',side:'A',col:2,row:4}
+      ],sectorCells:{'2,4':['LEFT']}}
+    };
+  }});
+}
+test('SQLite: historical section-card order screening is read-only and hides the hand',()=>fixture(({store})=>{
+  reserveAndStage(store);
+  attachSectionOrderFixture(store);
+  const db=store.unsafeTestDatabase();
+  const before=db.prepare('SELECT turn_json,board_json,revision FROM lab_matches').get();
+  const events=db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n;
+  const result=store.previewSectionOrderProof({
+    matchId:MATCH,sessionUserId:'alice',expectedRevision:6
+  });
+  assert.equal(result.code,'SECTION_ORDERS_SCREENED');
+  assert.equal(result.screening.ordersInSnapshot,1);
+  assert.equal(result.screening.handSnapshotMatched,true);
+  assert.equal(result.screening.cardHandEventVerified,false);
+  assert.equal(result.screening.cardPlayAuthorized,false);
+  assert.equal(result.attackAuthorized,false);
+  assert.equal(JSON.stringify(result).includes('private_card_a'),false);
+  assert.equal(JSON.stringify(result).includes('private_card_b'),false);
+  assert.equal(JSON.stringify(result).includes('a1'),false);
+  assert.deepEqual(db.prepare('SELECT turn_json,board_json,revision FROM lab_matches').get(),before);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n,events);
+}));
+test('SQLite: missing historical hand proof fails closed without altering preview hits',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  const result=store.previewSectionOrderProof({
+    matchId:MATCH,sessionUserId:'alice',expectedRevision:6
+  });
+  assert.equal(result.code,'SECTION_ORDER_PROOF_UNAVAILABLE');
+  assert.equal(store.preflightDirectHits(preview(id)).code,'DIRECT_HITS_PREFLIGHT');
+}));
+test('SQLite: wrong-side and stale revision do not leak stored card identity',()=>fixture(({store})=>{
+  reserveAndStage(store);attachSectionOrderFixture(store);
+  for(const request of [
+    {matchId:MATCH,sessionUserId:'mallory',expectedRevision:6},
+    {matchId:MATCH,sessionUserId:'bob',expectedRevision:6},
+    {matchId:MATCH,sessionUserId:'alice',expectedRevision:5}
+  ]) {
+    const result=store.previewSectionOrderProof(request);
+    assert.notEqual(result.code,'SECTION_ORDERS_SCREENED');
+    assert.equal(JSON.stringify(result).includes('private_card_'),false);
+  }
+}));
+test('SQLite: corrupt historical card/section evidence cannot produce valid orders',()=>fixture(({store})=>{
+  reserveAndStage(store);attachSectionOrderFixture(store);
+  const req={matchId:MATCH,sessionUserId:'alice',expectedRevision:6};
+  mutate(store,{modifyTurn:t=>{t.sectionOrderProof.cardPlay.instanceId='not_in_hand';}});
+  assert.equal(store.previewSectionOrderProof(req).code,'SECTION_ORDER_PROOF_UNAVAILABLE');
+  mutate(store,{modifyTurn:t=>{t.sectionOrderProof.cardPlay.instanceId='private_card_a';
+    t.sectionOrderProof.orderSnapshot.sectorCells['2,4']=['RIGHT'];}});
+  assert.equal(store.previewSectionOrderProof(req).code,'SECTION_ORDER_PROOF_UNAVAILABLE');
+}));
+test('SQLite: caller cannot inject a hand, card or sector membership via request',()=>fixture(({store})=>{
+  reserveAndStage(store);attachSectionOrderFixture(store);
+  const req={matchId:MATCH,sessionUserId:'alice',expectedRevision:6};
+  for(const changed of [
+    {cardPlay:{instanceId:'private_card_a'}},
+    {handAtPlay:{side:'A'}},
+    {sectorCells:{'2,4':['LEFT']}}
+  ]) assert.equal(store.previewSectionOrderProof({...req,...changed}).code,'INVALID_SECTION_ORDER_REQUEST');
+}));
