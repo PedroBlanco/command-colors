@@ -432,3 +432,58 @@ test('SQLite: altered board after staging fails closed and does not advance revi
   assert.equal(p.code,'PREFLIGHT_UNAVAILABLE');
   assert.equal(store.inspectFixture({matchId:MATCH,sessionUserId:'alice'}).revision,6);
 }));
+
+test('SQLite: preflight rechecks range/LOS/dice on the saved revision',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  const p=store.preflightDirectHits(preview(id));
+  assert.equal(p.code,'DIRECT_HITS_PREFLIGHT');
+  assert.equal(p.proposal.screeningRechecked,true);
+  assert.equal(p.proposal.recheckedDiceCount,2);
+  assert.equal(p.proposal.commandCardValidated,false);
+  assert.equal(p.proposal.scenarioExceptionsChecked,false);
+  assert.equal(p.proposal.commitPermitted,false);
+}));
+
+test('SQLite: privileged re-attestation cannot conceal a target moved out of range',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyBoard:b=>{b.units[1].col=11;},attestBoard:true});
+  assert.equal(store.previewStagedBlockLoss(preview(id)).status,200);
+  assert.equal(store.preflightDirectHits(preview(id)).code,'PREFLIGHT_UNAVAILABLE');
+}));
+
+test('SQLite: privileged re-attestation cannot conceal a new adjacent enemy',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyBoard:b=>b.units.push({
+    id:'enemy_adjacent',side:'B',type:'LIGHT_INFANTRY',col:3,row:4,
+    blocksRemaining:4
+  }),attestBoard:true});
+  assert.equal(store.previewStagedBlockLoss(preview(id)).status,200);
+  assert.equal(store.preflightDirectHits(preview(id)).code,'PREFLIGHT_UNAVAILABLE');
+}));
+
+test('SQLite: forest cap change invalidates the original two-die plan',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyBoard:b=>b.terrain.push({col:5,row:4,kind:'FOREST'}),
+    attestBoard:true});
+  assert.equal(store.previewStagedBlockLoss(preview(id)).status,200);
+  assert.equal(store.preflightDirectHits(preview(id)).code,'PREFLIGHT_UNAVAILABLE');
+}));
+
+test('SQLite: tampered moved steps fail even if the board SHA has not changed',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyTurn:t=>{t.movedStepsByUnit.a1=3;}});
+  assert.equal(store.previewStagedBlockLoss(preview(id)).status,200);
+  assert.equal(store.preflightDirectHits(preview(id)).code,'PREFLIGHT_UNAVAILABLE');
+}));
+
+test('SQLite: re-screened preflight remains read-only across repeated invocations',()=>fixture(({store})=>{
+  const id=reserveAndStage(store),db=store.unsafeTestDatabase();
+  const before=db.prepare('SELECT revision,board_json,turn_json FROM lab_matches').get();
+  const events=db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n;
+  const commands=db.prepare('SELECT COUNT(*) AS n FROM lab_commands').get().n;
+  const p=store.preflightDirectHits(preview(id));
+  assert.deepEqual(store.preflightDirectHits(preview(id)),p);
+  assert.deepEqual(db.prepare('SELECT revision,board_json,turn_json FROM lab_matches').get(),before);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n,events);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_commands').get().n,commands);
+}));
