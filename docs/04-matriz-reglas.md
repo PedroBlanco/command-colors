@@ -261,3 +261,10 @@ Las nuevas entradas privadas del diario de cartas de sección conservan su clave
 La PR #87 se endurece frente a una degradación detectada en su primera revisión: borrar únicamente la clave privada de un comando nuevo podía hacer que se tratara como registro `legacy`. Las nuevas firmas de `game_commands.signature` usan el prefijo `CCW_SECTION_COMMAND_V2:` y vinculan comando más clave. La reconstrucción exige esa vinculación para entradas v2 y permite el formato anterior exclusivamente como contrato histórico con una garantía menor. No se añaden datos privados a eventos públicos ni se modifica CCWB v1.
 
 **11 pruebas nativas PASS** del nuevo módulo puro en Node.js 22.16/Linux, comparadas por SHA Git con los archivos publicados. **4 casos nuevos SQLite preparados pero sin ejecutar**, y un caso legacy previo adaptado. **65 suites registradas** y aún no superadas como regresión integral. Ver [documentación de firma versionada](68-vinculacion-idempotencia-diario-ancients.md). R-03 y R-04 continúan sin validación oficial ni autorización reglamentaria completa.
+
+
+## Revalidación de sesión en la misma transacción (R-03/R-04, solo laboratorio)
+
+El control experimental de carta y órdenes ahora vuelve a consultar la sesión y la membresía del actor **después de iniciar `BEGIN IMMEDIATE` y antes de modificar el diario**. Esto elimina la ventana en la que otro proceso podía revocar la sesión después de la prevalidación pero antes de adquirir el bloqueo de escritura. Un resultado negativo deniega la operación sin escribir estado, eventos ni claves de idempotencia. La lectura y las rutas HTTP siguen fuera de este cambio; no se autoriza combate.
+
+**Pruebas nuevas preparadas:** 3 casos de transacción en el adaptador y 2 casos de revocación simulada entre comprobaciones en la composición, **pendientes de ejecución nativa**. Inventario sin suites nuevas: **65 suites** registradas; regresión completa, Windows, dos jugadores y carreras multiproceso pendientes. Ver [revalidación de sesión y transacción](69-revalidacion-sesion-transaction-ccwb.md).
