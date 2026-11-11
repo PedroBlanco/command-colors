@@ -41,3 +41,38 @@ $LASTEXITCODE
 ```
 
 **Criterio de fusión:** pruebas transaccionales nativas y regresión completa sin fallos, luego evaluación de privacidad y concurrencia real de dos sesiones. Hasta entonces mantener en borrador, sin desplegar ni modificar `main`.
+
+
+## Ampliación: lectura privada en instantánea WAL y liberación de bloqueos
+
+La composición ahora dispone de dos tipos de transacción, con objetivos distintos:
+
+- **Escritura:** `atomic()` emplea `BEGIN IMMEDIATE`; en él se revalida la sesión del participante antes de persistir una carta o sus órdenes.
+- **Lectura:** `readSnapshot()` emplea `BEGIN` (diferido) para leer sesión, membresía, estado y proyección privada de `viewExperimentalSectionHistory({sessionToken})` desde **una misma instantánea SQLite/WAL**. La lectura de `publicEvents(actor)` también pasa a esta modalidad: conserva la verificación del replay y los eventos en la misma instantánea, pero **ya no reserva el bloqueo de escritura** para una simple lectura. `publicEvents(actor)` sigue siendo una API interna: el llamante debe autenticar el actor.
+
+La primera consulta SELECT de una transacción de lectura define la instantánea. Si una sesión fue revocada antes de esa lectura, la respuesta será denegada; una revocación posterior no puede cambiar retroactivamente la instantánea ya observada. Esto es coherencia transaccional, **no promesa de revocación instantánea de una lectura ya iniciada**.
+
+En `ancients-section-history.test.mjs` se añadieron **2 casos adicionales**, pendientes de ejecución en el repositorio completo: resolución de sesión bajo transacción de lectura y capacidad de consultar manos/eventos mientras una segunda conexión mantiene `BEGIN IMMEDIATE` en modo WAL.
+
+### Prueba nativa reproducible del contrato SQLite/WAL
+
+Nueva suite independiente `packages/sqlite-store/wal-transaction-contract.test.mjs`, añadida al manifiesto canónico local. Ejecutada en **Node.js 22.16.0, Linux nativo, sin WSL ni GitHub Actions**, con SQLite real y dos conexiones a un archivo temporal:
+
+```sh
+node --test --test-reporter=tap packages/sqlite-store/wal-transaction-contract.test.mjs
+```
+
+**Resultado: 5 PASS, 0 FAIL, 0 SKIP.** Comprueba lectura concurrente con bloqueo de escritura, instantánea consistente después de un segundo commit, bloqueo de revocación durante `BEGIN IMMEDIATE`, rollback de lectura y momento en que comienza la instantánea. El archivo ejecutado tiene SHA-256 `92be87a1442aa3380b5f4d0465722c3bcc25ad0b210b240fad452a794c3acd35` y blob SHA Git `83fafa1fffd5f4c09f0147cf0310698bd2a6b401`, **idéntico al publicado en GitHub**.
+
+La suite es de **contrato de SQLite**, no sustituye las pruebas integradas del adaptador ni la de revocación real mediante procesos y sesiones del juego.
+
+El inventario local contiene ahora **66 suites** (65 anteriores + este contrato WAL). **No se ha ejecutado conjuntamente la regresión de 66 suites**; siguen pendientes Windows, HTTP/SSE, dos navegadores y las pruebas de composición.
+
+En Windows 11, sin WSL, añadir la verificación del nuevo contrato a las instrucciones anteriores:
+
+```powershell
+node --test --test-reporter=tap packages/sqlite-store/wal-transaction-contract.test.mjs packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs packages/sqlite-store/ancients-section-history.test.mjs
+$LASTEXITCODE
+.\scripts\test-local.ps1
+$LASTEXITCODE
+```
