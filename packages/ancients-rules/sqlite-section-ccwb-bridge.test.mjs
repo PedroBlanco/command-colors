@@ -150,3 +150,15 @@ test('CCWB: lab turn-ending command has no combat effects and turns swap',()=>fi
  assert.equal(result.combatResolved,false);assert.equal(result.view.attackAuthorized,false);
  assert.equal(root.bridge.view('B').opponentCardCount,2);
 }));
+test('CCWB: transaction rolls back state and idempotency after failed public event insert',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());
+ const card=root.bridge.view('A').yourHand[0].instanceId;
+ const before=root.getRow(MATCH);
+ root.db.exec("CREATE TRIGGER fail_section_event BEFORE INSERT ON game_events BEGIN SELECT RAISE(ABORT, 'SIMULATED_EVENT_FAILURE'); END;");
+ assert.throws(()=>root.bridge.dispatch(req('PLAY_SECTION_CARD',0,{cardInstanceId:card})),/SIMULATED_EVENT_FAILURE/);
+ assert.deepEqual(root.getRow(MATCH),before);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,0);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events').get().n,0);
+ root.db.exec('DROP TRIGGER fail_section_event');
+ assert.equal(root.bridge.dispatch(req('PLAY_SECTION_CARD',0,{cardInstanceId:card})).code,'SECTION_LAB_APPLIED');
+}));
