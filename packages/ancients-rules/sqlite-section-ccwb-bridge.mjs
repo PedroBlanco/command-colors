@@ -7,6 +7,8 @@
 import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
   assertSectionHistoryLab, projectSectionHistoryLab} from './section-history-journal.mjs';
 import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
+import {signSectionJournalCommand, checkSectionJournalSignature,
+  matchesSectionJournalRetry} from './lab-command-signature.mjs';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
@@ -60,7 +62,7 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     if(storedEvents.length!==row.game_revision||storedKeys.length!==row.game_revision)
       throw new Error('SECTION_CCWB_EVENT_COUNT');
     for(let i=0;i<journal.commands.length;i++){
-      const {command,idempotencyKey,legacyUnverified}=
+      const {command,idempotencyKey}=
         readLabJournalIdempotency(journal.commands[i]);
       const step=applySectionHistoryLabCommand(snapshot,command),revision=i+1;
       if(!step.accepted||step.nextState.revision!==revision)
@@ -68,10 +70,11 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       const evt=storedEvents[i],saved=JSON.parse(evt.payload),key=storedKeys[i];
       if(evt.sequence!==revision||evt.visibility!=='public'||
          !exact(saved,{...step.publicEvent,visibility:'public'})||
-         key.actor!==command.actor||key.committed_revision!==revision||
-         key.signature!==JSON.stringify(command)||
-         (!legacyUnverified&&key.idem_key!==idempotencyKey))
+         key.actor!==command.actor||key.committed_revision!==revision)
         throw new Error('SECTION_CCWB_HISTORY_TAMPERED');
+      checkSectionJournalSignature({
+        signature:key.signature,command,journalKey:idempotencyKey,sqlKey:key.idem_key
+      });
       snapshot=step.nextState;
     }
     if(snapshot.revision!==row.game_revision||!exact(snapshot,journal.state))
@@ -120,9 +123,9 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       const row=resultRow(),{persisted,journal,snapshot}=verify(row);
       const command={type:request.type,actor:request.actor,expectedRevision:request.expectedRevision};
       for(const field of fields)command[field]=structuredClone(request[field]);
-      const signature=JSON.stringify(command);
+      const signature=signSectionJournalCommand(command,request.idempotencyKey);
       const previous=getKey.get(row.id,request.actor,request.idempotencyKey);
-      if(previous)return previous.signature===signature
+      if(previous)return matchesSectionJournalRetry(previous.signature,command,request.idempotencyKey)
         ? Object.freeze({status:200,code:'ALREADY_APPLIED',revision:previous.committed_revision,view:safeView(row,request.actor)})
         : denied(409,'IDEMPOTENCY_KEY_REUSED');
       if(row.game_revision!==request.expectedRevision)return denied(409,'STALE_REVISION');
