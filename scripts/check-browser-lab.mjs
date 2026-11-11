@@ -62,7 +62,9 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/sqlite-lab-direct-hit-commit.test.mjs',
   'packages/ancients-rules/sqlite-lab-direct-hit-adapter.test.mjs',
   'packages/ancients-rules/sqlite-leader-after-hit-fixture.test.mjs',
-  'packages/ancients-rules/sqlite-leader-after-hit-adapter.test.mjs'
+  'packages/ancients-rules/sqlite-leader-after-hit-adapter.test.mjs',
+  'packages/ancients-rules/lab-physical-leader-agreement.test.mjs',
+  'packages/ancients-rules/sqlite-physical-leader-agreement-adapter.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
