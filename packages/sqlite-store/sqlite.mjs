@@ -222,6 +222,17 @@ export function openSqliteComposition({file, clock = Date.now,
     }
     const plainLabRequest = value => value !== null && typeof value === 'object'
       && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+    // A preflight check provides a useful rejection to the caller, but it is
+    // insufficient for mutations: another SQLite connection can revoke the
+    // session before the bridge acquires its write lock.
+    function mutationSessionGuard(sessionToken, originalActor) {
+      return () => {
+        if (!db.isTransaction) throw new Error('SECTION_LAB_AUTH_REQUIRES_TRANSACTION');
+        const current=resolveSectionLabActor(sessionToken);
+        if (current.error) return current.error;
+        return current.actor===originalActor ? true : {status:404,code:'NOT_FOUND'};
+      };
+    }
     return {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
@@ -246,7 +257,8 @@ export function openSqliteComposition({file, clock = Date.now,
         const identity = resolveSectionLabActor(request.sessionToken);
         if (identity.error) return identity.error;
         rowOrThrow();
-        return sectionHistory.initialize(identity.actor, request.trustedSetup);
+        return sectionHistory.initialize(identity.actor, request.trustedSetup,
+          mutationSessionGuard(request.sessionToken, identity.actor));
       },
       /** Private experimental projection bound to the live participant session. */
       viewExperimentalSectionHistory(request = {}) {
@@ -271,7 +283,8 @@ export function openSqliteComposition({file, clock = Date.now,
         if (identity.error) return identity.error;
         if (!hasExperimentalSectionHistory(rowOrThrow()))
           return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-        return sectionHistory.dispatch({...command,actor:identity.actor});
+        return sectionHistory.dispatch({...command,actor:identity.actor},
+          mutationSessionGuard(sessionToken, identity.actor));
       },
       publicEvents(actor) {
         if (!['A','B'].includes(actor)) return null;
