@@ -9,7 +9,7 @@ try {
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   # Node genera rutas validadas. No se construyen comandos PowerShell con texto externo.
-  $files = @(& node --input-type=module -e 'import {LOCAL_TEST_FILES} from "./scripts/check-browser-lab.mjs"; for (const file of LOCAL_TEST_FILES) console.log(file);')
+  $files = @(& node scripts/list-test-files.mjs)
   if ($LASTEXITCODE -ne 0 -or $files.Count -eq 0) { throw "No se pudo cargar el manifiesto de pruebas" }
   & node --test @files
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
