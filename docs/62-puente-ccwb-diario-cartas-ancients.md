@@ -61,7 +61,7 @@ Los archivos publicados y comprobados por hash Git:
 - `sqlite-section-ccwb-bridge.mjs`: `447e2ba9059358aabdde8919610067af8a47b3dc`.
 - `sqlite-section-ccwb-bridge.test.mjs`: `ca8f03b4a334b36db52dbc43241bb00312fb1a15`.
 
-La integración adicional `packages/sqlite-store/ancients-section-history.test.mjs` incorporaba **3 pruebas preparadas, pero pendientes de ejecución con el repositorio completo**, para: cuentas e invitaciones reales de prueba, exclusividad de modos, rechazo del despacho genérico en favor del interno, persistencia tras reinicio y comportamiento intacto de partidas sintéticas no modificadas.
+La integración adicional `packages/sqlite-store/ancients-section-history.test.mjs` incorporaba **3 pruebas preparadas, pero pendientes de ejecución con el repositorio completo**: cuentas e invitaciones reales de prueba, exclusividad de modos, rechazo del despacho genérico en favor del interno, persistencia tras reinicio y comportamiento intacto de partidas sintéticas no modificadas.
 
 El manifiesto `scripts/check-browser-lab.mjs` registra ahora **63 suites**, no ejecutadas conjuntamente. También siguen pendientes Windows nativo, HTTP/SSE, pruebas de dos navegadores, recuperación completa y validación manual del reglamento.
 
