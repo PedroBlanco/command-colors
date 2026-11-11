@@ -77,6 +77,16 @@ export function openSqliteComposition({file, clock = Date.now,
     try { const result = fn(); db.exec('COMMIT'); return result; }
     catch (error) { db.exec('ROLLBACK'); throw error; }
   }
+  /**
+   * SQLite WAL read snapshot. First SELECT fixes the visible database state:
+   * session, membership, match state and event replay must come from that state.
+   * Do not take a RESERVED writer lock merely to read public events.
+   */
+  function readSnapshot(fn) {
+    db.exec('BEGIN');
+    try { const result = fn(); db.exec('COMMIT'); return result; }
+    catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
   const selectAccount = db.prepare('SELECT id, handle, salt, password_hash FROM accounts WHERE handle = ?');
   const currentSession = db.prepare(`SELECT a.id AS userId, a.handle AS handle FROM sessions s
     JOIN accounts a ON a.id = s.user_id WHERE s.token_digest = ? AND s.expires_at > ?`);
@@ -264,11 +274,15 @@ export function openSqliteComposition({file, clock = Date.now,
       viewExperimentalSectionHistory(request = {}) {
         if (!plainLabRequest(request) || Object.keys(request).some(k => k !== 'sessionToken'))
           return {status:400,code:'INVALID_SECTION_LAB_REQUEST'};
-        const identity = resolveSectionLabActor(request.sessionToken);
-        if (identity.error) return identity.error;
-        if (!hasExperimentalSectionHistory(rowOrThrow()))
-          return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-        return {status:200,code:'SECTION_LAB_VIEW',view:sectionHistory.view(identity.actor)};
+        // Keep the session, membership and private projection on one WAL
+        // snapshot. Revocation before the snapshot's first read is rejected.
+        return readSnapshot(() => {
+          const identity = resolveSectionLabActor(request.sessionToken);
+          if (identity.error) return identity.error;
+          if (!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return {status:200,code:'SECTION_LAB_VIEW',view:sectionHistory.view(identity.actor)};
+        });
       },
       /**
        * INTERNAL LAB ONLY, no HTTP route. The request contains a session
@@ -288,9 +302,10 @@ export function openSqliteComposition({file, clock = Date.now,
       },
       publicEvents(actor) {
         if (!['A','B'].includes(actor)) return null;
-        // Mode selection, replay verification and event read share a snapshot:
-        // another SQLite connection cannot activate the lab between the checks.
-        return atomic(() => {
+        // Mode selection, replay verification and event read share a WAL
+        // snapshot, without holding an IMMEDIATE writer lock.
+        // This is an internal API: callers still must authenticate the actor.
+        return readSnapshot(() => {
           const row = rowOrThrow();
           if (hasExperimentalSectionHistory(row)) sectionHistory.view(actor);
           return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
