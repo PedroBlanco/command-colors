@@ -104,6 +104,5 @@ function stageLeaderCasualtyPreview(request = {}) {
   });
 }
 
-
   return stageLeaderCasualtyPreview;
 }
