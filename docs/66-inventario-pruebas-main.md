@@ -49,3 +49,28 @@ Muestra las rutas canónicas sin ejecutar ninguna suite. Para esta herramienta n
 Es un cambio autocontenido de mantenimiento y un candidato mejor para fusión independiente que la cadena de combate experimental. Antes de fusionar conviene ejecutar las **28 suites completas** y el lanzador Windows. Ninguna parte requiere desplegar un servidor; el proyecto permanece experimental.
 
 **No hay ningún cambio de reglas de Ancients ni de la persistencia de partidas.**
+
+
+## Incidencia de validación en Windows: SQLite WAL y rutas del CLI
+
+**Detectada al ejecutar el paso de regresión de la PR #80 en Windows con Node.js v26.13.0**. Fallaron varios casos de `packages/sqlite-store/lifecycle.test.mjs` al intentar borrar los archivos temporales `live.sqlite-wal` o `live.sqlite-shm`: error `EBUSY`. Un caso adicional construía una ruta incorrecta `T:\\T:\\Github\\...\\scripts\\sqlite-maintenance.mjs` por utilizar `new URL(...).pathname` como argumento de Node en Windows.
+
+Correcciones realizadas en la **rama de la misma PR #80**, sin tocar `main`:
+
+1. El bloque `withTemp()` reintenta exclusivamente la eliminación de su carpeta temporal `ccw-lifecycle-*` con `rm({recursive:true,force:true,maxRetries:12,retryDelay:100})`. Un bloqueo persistente **no queda silenciado**: el error se comunica.
+2. Los dos subprocesos de pruebas del CLI utilizan `fileURLToPath(tool)` de `node:url` en lugar de `tool.pathname`, evitando la duplicación de la letra de unidad `T:`.
+3. No se modificaron las operaciones de backup/restore ni la lógica del motor; se corrigieron únicamente las pruebas y su limpieza.
+
+**Puerta de aceptación Windows pendiente tras el parche:**
+
+```powershell
+# Dentro del worktree ya actualizado de la PR #80
+node --test --test-reporter=tap packages/sqlite-store/lifecycle.test.mjs
+$LASTEXITCODE
+.\scripts\test-local.ps1
+$LASTEXITCODE
+```
+
+El primer comando comprueba la suite corregida antes de volver a ejecutar las **28 suites**. Si el resultado `EBUSY` persiste en Node 26, repetir la suite por separado con Node **22 LTS compatible (22.16 o posterior)** permite distinguir comportamiento dependiente de versión; documentar ambas versiones y resultados, **sin borrar archivos SQLite manualmente**.
+
+El parche solo se ha contrastado contra el código fuente publicado y las reglas de conversión de URLs a rutas nativas en Node; **la ejecución Windows posterior al cambio sigue pendiente de la respuesta del equipo de pruebas**. No fusionar todavía.
