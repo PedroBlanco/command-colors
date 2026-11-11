@@ -15,13 +15,16 @@ git fetch origin
 git switch main
 git pull --ff-only
 node scripts/check-browser-lab.mjs
+node scripts/check-test-inventory.mjs
 .\scripts\test-local.ps1
 node scripts/browser-lab.mjs
 ```
 
+La auditoría del inventario se ejecuta automáticamente desde `test-local.ps1`; la invocación independiente es opcional. Para enumerar las suites: `node scripts/list-test-files.mjs`. No se incorpora el motor reglamentario experimental. Véase [inventario de pruebas de main](docs/66-inventario-pruebas-main.md).
+
 El servidor escucha **solo en `http://127.0.0.1:8788/`**. La primera vez crea dos usuarios ficticios (`alice` y `bob`) y muestra contraseñas aleatorias **una sola vez**. Usar dos perfiles de navegador distintos y nunca copiar credenciales o bases SQLite a GitHub. No usar WSL ni es necesario instalar un VPS o ejecutar Actions.
 
-El tablero SVG de la [PR #27](https://github.com/PedroBlanco/command-colors/pull/27) continúa **separado, pendiente de validación visual**. La [guía de primera validación](docs/18-guia-primera-validacion.md) explica cómo probarlo sin mezclar ramas. La batería local contempla ahora **18 suites**; en incrementos anteriores pasaron 99 pruebas de I2 y 15 del módulo sintético de fases por separado. **La batería conjunta de 18 suites y la interfaz visual deben verificarse en Windows.**
+El tablero SVG de la [PR #27](https://github.com/PedroBlanco/command-colors/pull/27) continúa **separado, pendiente de validación visual**. La [guía de primera validación](docs/18-guia-primera-validacion.md) explica cómo probarlo sin mezclar ramas. La batería local de esta rama contempla ahora **28 suites**, incluida la auditoría de su inventario; en incrementos anteriores pasaron 99 pruebas de I2 y 15 del módulo sintético de fases por separado. **La regresión conjunta de 28 suites y el lanzador PowerShell siguen pendientes de comprobación en Windows.**
 
 ## Decisiones confirmadas
 
