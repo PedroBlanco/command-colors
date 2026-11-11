@@ -57,7 +57,7 @@ node --test --test-reporter=tap \
 - 15 pruebas puras: conservación, mano propia, denegación de carta ajena, órdenes y líderes, fase/revisión, reconstrucción desde comandos, robo y descarte de laboratorio, privacidad.
 - 18 pruebas SQLite: esquema diferente, dos jugadores, eventos públicos/privados, reapertura, transacciones y varias conexiones, idempotencia, fases, denegaciones, alteraciones de eventos/estado/comandos y segundo jugador.
 
-SHA-256 de la salida TAP nativa: `aae045ad7cf7f48c7729b0477f944ac6159efeaae8e210e3e55e04c1f83d4b05`. Se contrastaron los **hashes Git exactos** de los cuatro archivos con los copiados a GitHub. El manifiesto general registra ahora **61 suites**, pero **no** se ha ejecutado su regresión completa ni pruebas Windows, HTTP/SSE o dos navegadores.
+SHA-256 de la salida TAP nativa: `aae045ad7cf7f48c7729b0477f944ac6159efeaae8e210e3e55e04c1f83d4b05`. Se contrastaron los **hashes Git exactos** de los cuatro archivos con los copiados a GitHub. Adicionalmente, se ejecutaron **52/52 pruebas nativas PASS**, 0 fallos y 0 omitidos, al combinar las **19 pruebas anteriores de cartas de sección** con las 33 del diario y SQLite (3 suites, Node.js v22.16.0/Linux). SHA-256 del TAP combinado: `9ea880736ff822403f8ce8e877cf918cb6e4c8ce7fa5a98ff2f2ba3170e2b5ce`. El manifiesto general registra ahora **61 suites**, pero **no** se ha ejecutado su regresión completa ni pruebas Windows, HTTP/SSE o dos navegadores.
 
 ## Pendiente antes de usarlo en partidas
 
