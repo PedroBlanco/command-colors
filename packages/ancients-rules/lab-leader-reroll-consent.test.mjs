@@ -11,9 +11,9 @@ const RES='123e4567-e89b-42d3-a456-426614174010';
 const sha=x=>createHash('sha256').update(x).digest('hex');
 function fixture(fn,{agreementChoice='DISPUTE',digital=false,fixtureOnly=true,eliminated=false}={}) {
   const db=new DatabaseSync(':memory:');
-  db.exec(\`CREATE TABLE lab_matches (id TEXT PRIMARY KEY,owner_id TEXT,guest_id TEXT,revision INTEGER,turn_json TEXT,board_json TEXT);
+  db.exec(`CREATE TABLE lab_matches (id TEXT PRIMARY KEY,owner_id TEXT,guest_id TEXT,revision INTEGER,turn_json TEXT,board_json TEXT);
     CREATE TABLE lab_events (match_id TEXT,sequence INTEGER,payload TEXT,PRIMARY KEY(match_id,sequence));
-    CREATE TABLE lab_commands (match_id TEXT,actor TEXT,idem_key TEXT,signature TEXT,reservation_id TEXT,committed_revision INTEGER,PRIMARY KEY(match_id,actor,idem_key));\`);
+    CREATE TABLE lab_commands (match_id TEXT,actor TEXT,idem_key TEXT,signature TEXT,reservation_id TEXT,committed_revision INTEGER,PRIMARY KEY(match_id,actor,idem_key));`);
   const boardJson=JSON.stringify({units:eliminated?[]:[{id:'b1',blocksRemaining:2}],leaders:[{id:'l1'}]});
   const count=eliminated?1:2;
   const faces=count===1?['LEADER']:['LEADER','FLAG'];
@@ -157,7 +157,7 @@ test('event contains only decision and acting side',()=>fixture(({command,req,db
   assert.deepEqual(event,{sequence:10,type:'LAB_LEADER_REROLL_CONSENT_RECORDED',
     side:'A',choice:'CONSENT_REROLL'});
   const raw=JSON.stringify(event);
-  for(const value of [RES,'\\"results\\":','\\"rollId\\":','\\"helmetCount\\":','\\"leaderWouldBeEliminated\\":'])
+  for(const value of [RES,'\"results\":','\"rollId\":','\"helmetCount\":','\"leaderWouldBeEliminated\":'])
     assert.equal(raw.includes(value),false,value);
 }));
 test('failed event insert rolls back vote, state, revision and command',()=>fixture(({command,req,db,saved,counts})=>{
