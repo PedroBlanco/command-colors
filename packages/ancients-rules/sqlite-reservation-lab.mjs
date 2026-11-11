@@ -12,6 +12,7 @@ import {generateDigitalRoll, recordPhysicalRoll} from '../dice-roller/dice.mjs';
 import {captureBaseAncientsRangedDice, interpretBaseAncientsRangedDice} from './battle-dice.mjs';
 import {createRangedDicePlan, classifyRangedDicePlan} from './dice-plan.mjs';
 import {deriveStagedAncientsRangedBlockLoss} from './ranged-block-snapshot.mjs';
+import {planBaseAncientsRangedResolution} from './ranged-resolution-sequence.mjs';
 
 const APP_ID = 0x4343524c; // 'CCRL', distinct from the main CCWB SQLite app_id.
 const KEY = /^[a-zA-Z0-9_-]{8,80}$/;
@@ -318,6 +319,20 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
     });
   }
 
+  /**
+   * Read-only checklist for the next provisional post-dice resolution steps.
+   * Delegates to the same authenticated/revision-bound SQLite snapshot reader.
+   * It is NOT a command, effect application, or leader-dice executor.
+   */
+  function previewResolutionChecklist(request = {}) {
+    const snapshot = previewStagedBlockLoss(request);
+    if (snapshot.code !== 'BLOCK_LOSS_PREVIEW') return snapshot;
+    const checklist = planBaseAncientsRangedResolution({blockLoss:snapshot.preview});
+    return Object.freeze({status:200,code:'RANGED_RESOLUTION_CHECKLIST',
+      revision:snapshot.revision,checklist,
+      attackAuthorized:false,combatResolved:false,boardMutated:false});
+  }
+
   /** Restricted test-only inspection; intentionally not part of a network API. */
   const inspectFixture = ({matchId,sessionUserId} = {}) => {
     const entry=row.get(matchId);
@@ -326,7 +341,7 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
       events:events.all(matchId).map(x=>JSON.parse(x.payload))};
   };
   let closed=false;
-  return Object.freeze({seedFixture,reserve,cancel,stageDice,previewStagedBlockLoss,inspectFixture,
+  return Object.freeze({seedFixture,reserve,cancel,stageDice,previewStagedBlockLoss,previewResolutionChecklist,inspectFixture,
     unsafeTestDatabase:()=>db,
     close:()=>{if (!closed) {db.close();closed=true;}}});
 }
