@@ -71,6 +71,7 @@ export function openExperimentalSectionHistoryLab({file}={}){
  const get=db.prepare('SELECT * FROM history_matches WHERE id=?');
  const events=db.prepare('SELECT seq,private_payload,public_payload FROM history_events WHERE match_id=? ORDER BY seq');
  const existing=db.prepare('SELECT signature,committed_revision FROM history_commands WHERE match_id=? AND actor=? AND idem_key=?');
+ const commandHistory=db.prepare('SELECT actor,signature,committed_revision FROM history_commands WHERE match_id=? ORDER BY committed_revision');
  const writeState=db.prepare('UPDATE history_matches SET revision=?,private_json=? WHERE id=? AND revision=?');
  const insertEvent=db.prepare('INSERT INTO history_events(match_id,seq,private_payload,public_payload) VALUES(?,?,?,?)');
  const insertCommand=db.prepare('INSERT INTO history_commands(match_id,actor,idem_key,signature,committed_revision) VALUES(?,?,?,?,?)');
@@ -79,7 +80,8 @@ export function openExperimentalSectionHistoryLab({file}={}){
  const sideFor=(row,user)=>row.owner_id===user?'A':row.guest_id===user?'B':null;
  /** Replay all events; reject any mismatched/private public event or current projection. */
  function verify(row){
-  const ev=events.all(row.id);
+  const ev=events.all(row.id),commands=commandHistory.all(row.id);
+  if(commands.length!==row.revision)throw new Error('SECTION_HISTORY_COMMAND_COUNT_MISMATCH');
   if(ev.length!==row.revision+1||ev.length>257)throw new Error('SECTION_HISTORY_EVENT_COUNT_MISMATCH');
   if(ev[0]?.seq!==0)throw new Error('SECTION_HISTORY_BOOTSTRAP_MISSING');
   const seed=JSON.parse(ev[0].private_payload);
@@ -91,6 +93,9 @@ export function openExperimentalSectionHistoryLab({file}={}){
    if(ev[i].seq!==i)throw new Error('SECTION_HISTORY_EVENT_SEQUENCE');
    const saved=JSON.parse(ev[i].private_payload);
    if(saved.kind!=='SECTION_HISTORY_COMMAND'||!isRecord(saved.command))throw new Error('INVALID_HISTORY_COMMAND_EVENT');
+   if(commands[i-1]?.committed_revision!==i||commands[i-1].actor!==saved.command.actor||
+      commands[i-1].signature!==JSON.stringify(saved.command))
+     throw new Error('SECTION_HISTORY_COMMAND_EVENT_MISMATCH');
    const result=applySectionHistoryLabCommand(state,saved.command);
    if(!result.accepted||!closeEnough(result.publicEvent,JSON.parse(ev[i].public_payload)))
      throw new Error('SECTION_HISTORY_REPLAY_MISMATCH');
