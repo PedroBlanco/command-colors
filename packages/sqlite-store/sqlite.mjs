@@ -210,6 +210,18 @@ export function openSqliteComposition({file, clock = Date.now,
     const sectionHistory = createSqliteAncientsSectionBridge({
       db, matchId, atomic, getRow: id => getMatchRow.get(id)
     });
+    // The experimental bridge accepts a trusted side internally. This composition
+    // must derive that side from a live session and CCWB membership, never a request.
+    function resolveSectionLabActor(sessionToken) {
+      const session = sessions.resolveSession(sessionToken);
+      if (!session) return {error:{status:401,code:'UNAUTHENTICATED'}};
+      const member = getMember.get(matchId);
+      const actor = member && member.guest_id !== null
+        ? checkActor(member, session.userId) : null;
+      return actor ? {actor} : {error:{status:404,code:'NOT_FOUND'}};
+    }
+    const plainLabRequest = value => value !== null && typeof value === 'object'
+      && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
     return {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
@@ -223,19 +235,43 @@ export function openSqliteComposition({file, clock = Date.now,
         if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_MODE_ACTIVE'};
         return commandDeck.initialize(actor);
       },
-      /** Local laboratory entrypoint only; NOT exposed by HTTP routes. */
-      initializeExperimentalSectionHistory(actor, trustedSetup) {
-        rowOrThrow();
-        return sectionHistory.initialize(actor,trustedSetup);
-      },
       /**
-       * INTERNAL LAB ONLY: deliberately not connected to the generic
-       * HTTP command route, which must reject section-lab commands.
+       * TEST-ONLY, never an HTTP route. The trusted fixture is supplied by
+       * server code; an authenticated match owner must initialize it.
        */
-      dispatchExperimentalSectionHistory(request) {
+      initializeExperimentalSectionHistory(request = {}) {
+        if (!plainLabRequest(request) ||
+            Object.keys(request).some(k => !['sessionToken','trustedSetup'].includes(k)))
+          return {status:400,code:'INVALID_SECTION_LAB_REQUEST'};
+        const identity = resolveSectionLabActor(request.sessionToken);
+        if (identity.error) return identity.error;
+        rowOrThrow();
+        return sectionHistory.initialize(identity.actor, request.trustedSetup);
+      },
+      /** Private experimental projection bound to the live participant session. */
+      viewExperimentalSectionHistory(request = {}) {
+        if (!plainLabRequest(request) || Object.keys(request).some(k => k !== 'sessionToken'))
+          return {status:400,code:'INVALID_SECTION_LAB_REQUEST'};
+        const identity = resolveSectionLabActor(request.sessionToken);
+        if (identity.error) return identity.error;
         if (!hasExperimentalSectionHistory(rowOrThrow()))
           return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-        return sectionHistory.dispatch(request);
+        return {status:200,code:'SECTION_LAB_VIEW',view:sectionHistory.view(identity.actor)};
+      },
+      /**
+       * INTERNAL LAB ONLY, no HTTP route. The request contains a session
+       * token but must NEVER contain actor or a client-selected user ID.
+       */
+      dispatchExperimentalSectionHistory(request = {}) {
+        if (!plainLabRequest(request) ||
+            Object.hasOwn(request,'actor') || Object.hasOwn(request,'sessionUserId'))
+          return {status:400,code:'INVALID_SECTION_LAB_COMMAND'};
+        const {sessionToken,...command} = request;
+        const identity = resolveSectionLabActor(sessionToken);
+        if (identity.error) return identity.error;
+        if (!hasExperimentalSectionHistory(rowOrThrow()))
+          return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+        return sectionHistory.dispatch({...command,actor:identity.actor});
       },
       publicEvents(actor) {
         if (!['A','B'].includes(actor)) return null;
