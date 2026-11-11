@@ -247,3 +247,10 @@ La nueva integración `sqlite-section-ccwb-bridge.mjs` permite almacenar el **di
 La composición del diario experimental `CCWB` deja de aceptar el bando seleccionado como argumento de inicialización y de despacho: verifica en cada llamada una sesión válida y el vínculo del usuario con `matches.owner_id/guest_id`. Las proyecciones privadas experimentales también se pueden obtener desde la sesión, y el historial de eventos públicos se coteja antes de servirlo cuando el modo está activo. Se rechazan usuarios ajenos, sesiones cerradas, bandos declarados por el llamante e intentos del invitado de iniciar la partida experimental. No se añade ruta HTTP ni se concede autoridad reglamentaria a cartas u órdenes.
 
 **Pruebas escritas, pero pendientes de ejecución:** 4 casos nuevos en `ancients-section-history.test.mjs`, más los 3 de composición anteriores; las 63 suites del manifiesto siguen sin regresión completa. Las ejecuciones anteriores de 66/66 pertenecen a la base #85 y no validan esta modificación. Ver [autoridad de sesión del laboratorio](67-autoridad-sesion-historial-seccion-ancients.md).
+
+
+## Asociación auditable de idempotencia en el diario CCWB (R-03/R-04, experimental)
+
+Las nuevas entradas privadas del diario de cartas de sección conservan su clave de idempotencia y verifican esa relación frente a `game_commands.idem_key` durante el replay SQLite. La firma semántica del comando y los eventos públicos permanecen sin claves, por lo que no se alteran las proyecciones de los jugadores. Los registros anteriores a esta mejora, sin vínculo guardado, se aceptan para compatibilidad, **sin atribuirles retrospectivamente esa garantía**.
+
+**8/8 pruebas nativas PASS** del módulo puro `lab-idempotency-binding.test.mjs` en Linux/Node 22.16.0; **3 nuevas pruebas de integración SQLite pendientes de ejecución**, junto con las siete de composición ya preparadas en PR #86 y la regresión integral. Manifiesto: **64 suites** registradas, no ejecutadas juntas. R-03/R-04 continúan **sin implementación reglamentaria**. Ver [auditoría de idempotencia](68-vinculacion-idempotencia-diario-ancients.md).
