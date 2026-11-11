@@ -39,8 +39,8 @@ process.on('message', message=>{
 });
 `;
 
-function worker(file){
-  const child=spawn(process.execPath,['--input-type=module','-e',WORKER,file],
+function worker(file,source=WORKER){
+  const child=spawn(process.execPath,['--input-type=module','-e',source,file],
     {stdio:['ignore','ignore','pipe','ipc']});
   let stderr='';
   child.stderr.setEncoding('utf8');
@@ -84,6 +84,56 @@ test('CCWB: a revoked session cannot authorize a queued writer in another Node p
       assert.equal(a.prepare('SELECT valid FROM sessions WHERE token=?').get('live').valid,0);
     }finally{
       if(a.isTransaction)a.exec('ROLLBACK');
+      a.close();
+      if(task && task.child.exitCode===null)task.child.kill();
+      rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});
+    }
+  });
+
+// Inverse ordering: an already-authorized command holds the writer lock,
+// so logout must not silently revoke it *within* that committed transaction.
+const LOCK_FIRST_WORKER = `
+import {DatabaseSync} from 'node:sqlite';
+const db=new DatabaseSync(process.argv[1]);
+db.exec('PRAGMA busy_timeout=2000; PRAGMA journal_mode=WAL;');
+db.exec('BEGIN IMMEDIATE');
+const current=db.prepare('SELECT valid FROM sessions WHERE token=?').get('live');
+process.send({kind:'locked',authorized:current?.valid===1});
+process.on('message',message=>{
+  if(message!=='finish')return;
+  try {
+    if(current?.valid===1){
+      db.prepare('INSERT INTO writes(value) VALUES (?)').run('before-logout');
+      db.exec('COMMIT');
+      process.send({kind:'result',accepted:true});
+    }else{
+      db.exec('ROLLBACK');
+      process.send({kind:'result',accepted:false});
+    }
+  }catch(e){if(db.isTransaction)db.exec('ROLLBACK');process.send({kind:'error',message:String(e)});}
+  finally {db.close();process.disconnect();}
+});
+`;
+
+test('CCWB: logout waits for an already-authorized writer in another process',
+  {timeout:10000},async()=>{
+    const dir=mkdtempSync(join(tmpdir(),'ccw-lock-first-'));
+    const file=join(dir,'lab.sqlite');
+    const a=new DatabaseSync(file);
+    let task;
+    try{
+      a.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=50;');
+      a.exec("CREATE TABLE sessions(token TEXT PRIMARY KEY,valid INTEGER NOT NULL); CREATE TABLE writes(value TEXT NOT NULL); INSERT INTO sessions VALUES('live',1);");
+      task=worker(file,LOCK_FIRST_WORKER);
+      assert.deepEqual(await task.next(),{kind:'locked',authorized:true});
+      assert.throws(()=>a.prepare('UPDATE sessions SET valid=0 WHERE token=?').run('live'),
+        /SQLITE_BUSY|database is locked/i);
+      task.child.send('finish');
+      assert.deepEqual(await task.next(),{kind:'result',accepted:true});
+      assert.equal(a.prepare('SELECT COUNT(*) n FROM writes').get().n,1);
+      assert.equal(a.prepare('UPDATE sessions SET valid=0 WHERE token=?').run('live').changes,1);
+      assert.equal(a.prepare('SELECT valid FROM sessions WHERE token=?').get('live').valid,0);
+    }finally{
       a.close();
       if(task && task.child.exitCode===null)task.child.kill();
       rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});
