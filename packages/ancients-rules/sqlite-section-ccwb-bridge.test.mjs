@@ -162,3 +162,37 @@ test('CCWB: transaction rolls back state and idempotency after failed public eve
  root.db.exec('DROP TRIGGER fail_section_event');
  assert.equal(root.bridge.dispatch(req('PLAY_SECTION_CARD',0,{cardInstanceId:card})).code,'SECTION_LAB_APPLIED');
 }));
+
+test('CCWB: changing a persisted idempotency key cannot pass journal verification',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const before=JSON.parse(root.getRow(MATCH).private_state).ancientsSectionHistoryLab.commands[0];
+ assert.equal(typeof before.idempotencyKey,'string');
+ root.db.prepare('UPDATE game_commands SET idem_key=? WHERE match_id=?').run('altered_section_key_0001',MATCH);
+ assert.throws(()=>root.bridge.view('A'),/SECTION_CCWB_HISTORY_TAMPERED/);
+ assert.throws(()=>root.bridge.dispatch(req('ASSIGN_SECTION_ORDERS',1,{unitIds:['unitA'],leaderIds:[]})),
+   /SECTION_CCWB_HISTORY_TAMPERED/);
+}));
+
+test('CCWB: older keyless lab commands remain readable with explicit legacy limitation',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const state=JSON.parse(root.getRow(MATCH).private_state);
+ delete state.ancientsSectionHistoryLab.commands[0].idempotencyKey;
+ root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ assert.equal(root.bridge.view('A').revision,1);
+ order(root);
+ const stored=JSON.parse(root.getRow(MATCH).private_state).ancientsSectionHistoryLab.commands;
+ assert.equal(Object.hasOwn(stored[0],'idempotencyKey'),false);
+ assert.equal(stored[1].idempotencyKey,'section_lab_ASSIGN_SECTION_ORDERS_1');
+ assert.equal(root.bridge.view('A').revision,2);
+}));
+
+test('CCWB: persisted idempotency metadata remains private to the journal',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const journal=JSON.parse(root.getRow(MATCH).private_state).ancientsSectionHistoryLab;
+ const key=journal.commands[0].idempotencyKey;
+ assert.equal(typeof key,'string');
+ for(const v of [root.bridge.view('A'),root.bridge.view('B'),
+   ...root.db.prepare('SELECT payload FROM game_events').all().map(x=>JSON.parse(x.payload))]){
+   assert.equal(JSON.stringify(v).includes(key),false);
+ }
+}));
