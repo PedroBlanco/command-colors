@@ -47,7 +47,7 @@ function worker(file){
   child.stderr.on('data',s=>{stderr+=s;});
   const queue=[];let waiting=null;
   child.on('message',value=>{
-    if(waiting){const resolve=waiting;waiting=null;resolve(value);}else queue.pushhvalue);
+    if(waiting){const resolve=waiting;waiting=null;resolve(value);}else queue.push(value);
   });
   const next=async()=>{
     if(queue.length)return queue.shift();
@@ -55,6 +55,7 @@ function worker(file){
       const timeout=setTimeout(()=>{waiting=null;reject(new Error('worker timeout: '+stderr));},4000);
       waiting=value=>{clearTimeout(timeout);resolve(value);};
     });
+  };
   return {child,next,stderr:()=>stderr};
 }
 
