@@ -339,23 +339,37 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
    * MUST repeat all checks inside its own authorized write transaction.
    */
   function preflightDirectHits(request = {}) {
-    const snapshot=previewStagedBlockLoss(request);
-    if (snapshot.code!=='BLOCK_LOSS_PREVIEW') return snapshot;
-    const entry=row.get(request.matchId);
-    const side=entry && sideFor(entry,request.sessionUserId);
-    if (!side || entry.revision!==request.expectedRevision)
-      return denied(409,'STALE_REVISION');
-    const turnState=JSON.parse(entry.turn_json);
-    let proposal;
-    try {
-      proposal=preflightStagedAncientsRangedHits({
-        turnState,board:JSON.parse(entry.board_json),sessionSide:side,
-        reservationId:request.reservationId,expectedRevision:entry.revision
-      });
-    } catch {return denied(409,'PREFLIGHT_UNAVAILABLE');}
-    return Object.freeze({status:200,code:'DIRECT_HITS_PREFLIGHT',
-      revision:entry.revision,proposal,attackAuthorized:false,
-      commitPermitted:false,boardMutated:false});
+    const allowed=['matchId','sessionUserId','reservationId','expectedRevision'];
+    if (!request || typeof request!=='object' || Array.isArray(request) ||
+        Object.keys(request).some(key=>!allowed.includes(key)))
+      return denied(400,'INVALID_PREVIEW_REQUEST');
+    const {matchId,sessionUserId,reservationId,expectedRevision}=request;
+    if (!MATCH.test(String(matchId)) || typeof sessionUserId!=='string' || !sessionUserId ||
+        !MATCH.test(String(reservationId)) || !Number.isSafeInteger(expectedRevision) ||
+        expectedRevision<0) return denied(400,'INVALID_PREVIEW_REQUEST');
+    return inTransaction(()=>{
+      const entry=row.get(matchId);
+      const side=entry && sideFor(entry,sessionUserId);
+      if (!side) return denied(404,'NOT_FOUND');
+      if (entry.revision!==expectedRevision) return denied(409,'STALE_REVISION');
+      const turnState=JSON.parse(entry.turn_json),marker=turnState.pendingCombat;
+      if (turnState.revision!==entry.revision) throw new Error('LAB_REVISION_MISMATCH');
+      if (!marker || marker.actor!==side || marker.reservationId!==reservationId ||
+          marker.kind!=='RANGED_DICE_STAGED_OFFICIAL_PREVIEW' ||
+          typeof marker.boardSnapshotSha256!=='string' ||
+          marker.boardSnapshotSha256!==createHash('sha256').update(entry.board_json).digest('hex'))
+        return denied(409,'PREFLIGHT_UNAVAILABLE');
+      let proposal;
+      try {
+        proposal=preflightStagedAncientsRangedHits({
+          turnState,board:JSON.parse(entry.board_json),sessionSide:side,
+          reservationId,expectedRevision
+        });
+      } catch {return denied(409,'PREFLIGHT_UNAVAILABLE');}
+      return Object.freeze({status:200,code:'DIRECT_HITS_PREFLIGHT',
+        revision:entry.revision,proposal,attackAuthorized:false,
+        commitPermitted:false,boardMutated:false});
+    });
   }
 
   /** Restricted test-only inspection; intentionally not part of a network API. */
