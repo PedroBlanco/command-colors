@@ -6,6 +6,7 @@
 import {createHash} from 'node:crypto';
 import {validateLabPhysicalLeaderPreview} from './lab-physical-leader-agreement.mjs';
 import {inspectLabRerollConsent} from './lab-reroll-consent-state.mjs';
+import {inspectLabLeaderRerollAttempt} from './lab-leader-reroll-attempt-contract.mjs';
 
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const FACES=new Set(['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS']);
@@ -59,7 +60,7 @@ export function evaluateLabLeaderDiceGate({turnState,boardJson,reservationId}={}
     combatResolved:false,boardMutated:false,attackAuthorized:false};
   if(JSON.stringify(expected)!==JSON.stringify(saved.outcome)) return null;
 
-  let status, rerollConsentState=null;
+  let status, rerollConsentState=null, rerollAttemptState=null;
   const agreement=saved.physicalAgreement;
   if(roll.source==='DIGITAL') {
     if(agreement!==undefined) return null;
@@ -80,10 +81,21 @@ export function evaluateLabLeaderDiceGate({turnState,boardJson,reservationId}={}
         if(agreement.revision!==turnState.revision || saved.rerollConsent!==undefined) return null;
         status='PHYSICAL_OPPONENT_CONFIRMED';
       } else {
+        const hasRerollAttempt=saved.rerollAttempt!==undefined;
+        const consentRevision=agreement.revision+2;
         rerollConsentState=inspectLabRerollConsent({resolution:saved.rerollConsent,
           agreementRevision:agreement.revision,rollDigestSha256:agreement.rollDigestSha256,
-          currentRevision:turnState.revision,attackerSide:marker.actor});
+          currentRevision:hasRerollAttempt?consentRevision:turnState.revision,
+          attackerSide:marker.actor});
         if(!rerollConsentState) return null;
+        if(hasRerollAttempt) {
+          if(!rerollConsentState.unanimousConsent) return null;
+          rerollAttemptState=inspectLabLeaderRerollAttempt({attempt:saved.rerollAttempt,
+            reservationId,originalRollDigestSha256:agreement.rollDigestSha256,
+            attackerSide:marker.actor,diceCount:roll.diceCount,
+            consentRevision,currentRevision:turnState.revision});
+          if(!rerollAttemptState) return null;
+        }
         status='PHYSICAL_DISPUTED';
       }
     }
@@ -96,7 +108,9 @@ export function evaluateLabLeaderDiceGate({turnState,boardJson,reservationId}={}
     ...(rerollConsentState ? {rerollConsentStatus:rerollConsentState.status,
       rerollConsentVotes:rerollConsentState.recordedVotes,
       unanimousConsentForReroll:rerollConsentState.unanimousConsent,
-      rerollAllowed:false} : {}),
+      rerollAllowed:false,
+      ...(rerollAttemptState ? {rerollAttemptStatus:rerollAttemptState.status,
+        rerollDeclared:true,rerollPendingOpponentReview:true} : {})} : {}),
     combatAuthorized:false,leaderCasualtyApplied:false,
     evasionResolved:false,combatResolved:false,
     requiresCompleteRulesAuthorization:true});
