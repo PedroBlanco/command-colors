@@ -214,3 +214,8 @@ La suite `block-loss-preview.test.mjs` supera **24/24 pruebas nativas** aisladas
 La captura `ANCIENTS_BASE_LEADER_CASUALTY_CAPTURED` distingue los dados adicionales del líder de los dados originales del ataque. Permite modalidades digital/física sin presentar las segundas como verificadas y comprueba 2 cascos/2 dados o 1 casco/1 dado según la situación, **sin dar por muerto ni evadido al líder**. `previewResolutionChecklist()` devuelve la planificación desde la misma instantánea SQLite validada de PR #69, en **solo lectura**.
 
 **32 pruebas nativas nuevas correctas** para el planificador en Node.js 22.16.0/Linux. Se añaden además **6 pruebas de integración SQLite pendientes de ejecución**. El manifiesto registra **57 suites**, aún sin regresión integral/Windows/HTTP/SSE. Ninguna baja, bandera, comprobación de líder, evasión ni victoria se aplica a una partida: R-06/R-08/R-09/R-13 permanecen incompletas. Véase [secuencia y límites](57-secuencia-posdisparo-ancients.md).
+
+
+## Revalidación de disparos desde la instantánea de SQLite (R-06/R-09 parcial)
+
+El preflight de impactos repite ahora **perfil de ataque, número de pasos, ausencia de enemigos adyacentes, alcance, línea de visión y límite de dados por terreno** sobre el tablero y turno guardados; compara el plan de dados recalculado con el plan oficial que se persistió al reservar. Esto **no** valida carta, órdenes, excepciones de escenario ni efectos de combate; el permiso de aplicar impactos permanece expresamente bloqueado. Se añaden seis casos de regresión de cambios privilegiados de tablero/turno, incluido recálculo fraudulento de su huella, aún pendientes de ejecutar. Véase [revalidación de snapshot](59-revalidacion-posdisparo-snapshot.md).
