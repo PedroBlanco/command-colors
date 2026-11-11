@@ -31,8 +31,8 @@ const make=({physical=true,eliminated=false,withLeader=true,flagged=true}={})=>{
   const turn={schemaVersion:1,revision:8,status:'ACTIVE',turn:'A',phase:'COMBAT',labFixtureOnly:flagged,
     pendingCombat:{kind:'LAB_DIRECT_HITS_APPLIED_FIXTURE',fullValidationRequired:true,
       reservationId:RES,actor:'A',appliedFixture:{revision:7,unverifiedFullRules:true,
-        boardAfterSha256:hash(boardJson),summary:{leaderCheckRequired:withLeader,
-          nextRequiredStep:'LEADER_CASUALTY_CHECK',blocksRemoved:1,unitEliminated:eliminated}},
+      boardAfterSha256:hash(boardJson),summary:{leaderCheckRequired:withLeader,
+        nextRequiredStep:'LEADER_CASUALTY_CHECK',blocksRemoved:1,unitEliminated:eliminated}},
       fixtureLeaderCasualtyPreview:saved}};
   db.prepare('INSERT INTO lab_matches VALUES(?,?,?,?,?,?)').run(MATCH,'alice','bob',8,
     JSON.stringify(turn),boardJson);
