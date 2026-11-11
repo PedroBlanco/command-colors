@@ -79,3 +79,21 @@ El inventario crece a **65 suites registradas** (antes 64). **No representa una 
 ### Entrada maliciosa: nombres heredados de `Object.prototype`
 
 En la revisión final se corrigió un fallo adicional en `sqlite-section-ccwb-bridge.mjs`: `TYPES[request.type]` accedía a propiedades heredadas, y la expansión de una de ellas como lista de campos podía provocar una excepción antes de validar el tipo. La búsqueda de campos se hace ahora **solo tras verificar que el tipo es una propiedad propia** de la tabla de comandos. `__proto__`, `constructor` y `toString` deben responder `400 INVALID_SECTION_LAB_COMMAND` y no alterar SQLite. Estos casos se han añadido a la suite de integración **pendiente de ejecución**.
+
+
+### Ejecución conjunta de los módulos puros
+
+Se han ejecutado además **ambas suites puras juntas**, no solo por separado:
+
+```sh
+node --test --test-reporter=tap packages/ancients-rules/lab-idempotency-binding.test.mjs packages/ancients-rules/lab-command-signature.test.mjs
+```
+
+**19 PASS, 0 FAIL, 0 SKIP**, Node.js 22.16.0/Linux nativo. SHA-256 del TAP conjunto: `7170cce0fd02bee3652905dc1d72f7dfac73cc24ca8defd9b9480a966fc76386`. Los hashes Git locales de los cuatro archivos coincidieron con los publicados:
+
+- `lab-idempotency-binding.mjs`: `3ca405f395eb0953d4b859b198005ac4bdc6bbf7`
+- `lab-idempotency-binding.test.mjs`: `850f34d9a45b84958ef7d0c14a5ec3a5de550a58`
+- `lab-command-signature.mjs`: `e0f1d08f6e4a9bdac96253fc06f141da1f76fbe8`
+- `lab-command-signature.test.mjs`: `566007608618604c8c3983636796806e2f51ff99`
+
+Esta comprobación no ejecuta el puente SQLite ni ninguna otra de las 63 suites restantes del inventario total de 65.
