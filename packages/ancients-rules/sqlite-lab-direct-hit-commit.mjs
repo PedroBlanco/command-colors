@@ -9,6 +9,7 @@ import {prepareLabDirectHitEffect} from './lab-direct-hit-effect.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES} from './battle-dice.mjs';
 import {captureBaseAncientsLeaderCasualtyDice} from './ranged-resolution-sequence.mjs';
 import {makeLabLeaderAfterHitPreviewCommand} from './sqlite-leader-after-hit-fixture.mjs';
+import {makeLabPhysicalLeaderAgreementCommand} from './lab-physical-leader-agreement.mjs';
 
 const CCRL=0x4343524c;
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -80,6 +81,20 @@ export function openLabOnlyDirectHitCommit({file,deriveTrustedPreview,allowTestF
     eventInsert:event,commandInsert:insertCommand
   });
 
+  // Explicit second-player response to a PHYSICAL leader die declaration.
+  // This is fixture-only and cannot apply a casualty or resolve any combat.
+  const reviewLabPhysicalLeaderDice=makeLabPhysicalLeaderAgreementCommand({
+    inTransaction:operation=>{
+      db.exec('BEGIN IMMEDIATE');
+      try {const result=operation();db.exec('COMMIT');return result;}
+      catch(error){db.exec('ROLLBACK');throw error;}
+    },
+    row:match,previous:command,
+    sideFor:(entry,userId)=>entry.owner_id===userId?'A':
+      entry.guest_id===userId?'B':null,
+    updateTurn,eventInsert:event,commandInsert:insertCommand
+  });
+
   function apply(request={}) {
     if(!request || typeof request!=='object' || Array.isArray(request))
       return denied(400,'INVALID_LAB_HIT_REQUEST');
@@ -144,5 +159,5 @@ export function openLabOnlyDirectHitCommit({file,deriveTrustedPreview,allowTestF
     }catch(e){db.exec('ROLLBACK');throw e;}
   }
   function finish(value){db.exec('COMMIT');return value;}
-  return Object.freeze({apply,stageLeaderCasualtyPreview,close:()=>{if(!closed){db.close();closed=true;}}});
+  return Object.freeze({apply,stageLeaderCasualtyPreview,reviewLabPhysicalLeaderDice,close:()=>{if(!closed){db.close();closed=true;}}});
 }
