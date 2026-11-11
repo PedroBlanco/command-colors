@@ -19,8 +19,7 @@ export function inspectLabLeaderRerollReviewState({attempt,reservationId,attacke
   if(!exact(attempt,hasReview?[...expectedFields,'review']:expectedFields))return null;
   // Old immutable declaration contract is bound to the declaration's own
   // revision, not the later review revision.
-  const  */
-import =inspectLabLeaderRerollAttempt({
+  const declaration=inspectLabLeaderRerollAttempt({
     attempt:{kind:attempt.kind,createdRevision:attempt.createdRevision,
       originalRollDigestSha256:attempt.originalRollDigestSha256,roll:attempt.roll},
     reservationId,attackerSide,diceCount,consentRevision,
