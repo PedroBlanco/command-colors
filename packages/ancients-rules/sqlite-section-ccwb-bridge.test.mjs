@@ -114,7 +114,8 @@ test('CCWB: separate connections serialize updates and reject stale revision',()
 test('CCWB: unknown commands, oversized keys and extra authority fields fail closed',()=>fixture(({root})=>{
  root.bridge.initialize('A',setup());
  for(const invalid of [
-  req('pass_demo_turn',0),req('PLAY_SECTION_CARD',0,{cardInstanceId:'x',hands:{A:[]}}),
+  req('pass_demo_turn',0),req('__proto__',0),req('constructor',0),
+  req('toString',0),req('PLAY_SECTION_CARD',0,{cardInstanceId:'x',hands:{A:[]}}),
   {...req('PLAY_SECTION_CARD',0,{cardInstanceId:'x'}),idempotencyKey:'short'}
  ])assert.equal(root.bridge.dispatch(invalid).code,'INVALID_SECTION_LAB_COMMAND');
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,0);
