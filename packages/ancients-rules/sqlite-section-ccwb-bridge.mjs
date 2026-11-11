@@ -112,9 +112,10 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
   }
   function dispatch(request={}){
     if(!record(request)||!['A','B'].includes(request.actor))return denied(403,'FORBIDDEN');
-    const fields=TYPES[request.type];
-    const expected=['actor','type','expectedRevision','idempotencyKey',...(fields??[])];
-    if(!Object.hasOwn(TYPES,request.type)||Object.keys(request).length!==expected.length||
+    const fields=Object.hasOwn(TYPES,request.type) ? TYPES[request.type] : null;
+    if(!fields)return denied(400,'INVALID_SECTION_LAB_COMMAND');
+    const expected=['actor','type','expectedRevision','idempotencyKey',...fields];
+    if(Object.keys(request).length!==expected.length||
        !expected.every(key=>Object.hasOwn(request,key))||
        !Number.isSafeInteger(request.expectedRevision)||request.expectedRevision<0||
        typeof request.idempotencyKey!=='string'||!KEY.test(request.idempotencyKey))
