@@ -132,3 +132,93 @@ test('confirmed original dice cannot be replaced via the dispute protocol',()=>f
 test('the fixture-only marker is mandatory',()=>fixture(({declaration,newRoll})=>{
   assert.equal(declaration(newRoll({expectedRevision:9})).code,'REROLL_UNAVAILABLE');
 },{fixtureOnly:false}));
+test('same idempotency key replays the saved declaration without creating a second record',()=>fixture(({both,declaration,newRoll,counts})=>{
+  both();const original=declaration(newRoll()),replayed=declaration(newRoll());
+  assert.equal(replayed.code,'LAB_REROLL_ALREADY_DECLARED');
+  assert.deepEqual(replayed.roll,original.roll);assert.equal(replayed.revision,12);
+  assert.deepEqual(counts(),{commands:3,events:3});
+}));
+test('the original consent votes remain idempotently replayable after the declaration',()=>fixture(({both,command,req,declaration,newRoll,counts})=>{
+  both();declaration(newRoll());
+  assert.equal(command(req()).code,'REROLL_CONSENT_ALREADY_RECORDED');
+  assert.equal(command(req('B')).code,'REROLL_CONSENT_ALREADY_RECORDED');
+  assert.deepEqual(counts(),{commands:3,events:3});
+}));
+test('a different key cannot create an additional physical result',()=>fixture(({both,declaration,newRoll,counts})=>{
+  both();declaration(newRoll());
+  assert.equal(declaration(newRoll({expectedRevision:12,idempotencyKey:'another_new_roll_key_01'})).code,'REROLL_ALREADY_DECLARED');
+  assert.deepEqual(counts(),{commands:3,events:3});
+}));
+test('a changed declaration with the same key is a conflict',()=>fixture(({both,declaration,newRoll})=>{
+  both();declaration(newRoll());
+  assert.equal(declaration(newRoll({declaredFaces:['LEADER','LEADER']})).code,'IDEMPOTENCY_KEY_REUSED');
+  assert.equal(declaration(newRoll({expectedRevision:12})).code,'IDEMPOTENCY_KEY_REUSED');
+}));
+test('opponent cannot impersonate original attacker and outsiders see nothing',()=>fixture(({both,declaration,newRoll})=>{
+  both();
+  assert.equal(declaration(newRoll({sessionUserId:'bob'})).code,'REROLL_UNAVAILABLE');
+  assert.equal(declaration(newRoll({sessionUserId:'stranger'})).code,'NOT_FOUND');
+}));
+test('new declaration rejects externally chosen RNG, actor, dice count and verification',()=>fixture(({both,declaration,newRoll})=>{
+  both();for(const injected of [{mode:'DIGITAL'},{randomIndex:()=>2},{actor:'B'},
+    {diceCount:5},{verification:'SERVER_GENERATED'},{board:{}},{rollId:'forged'}])
+    assert.equal(declaration(newRoll(injected)).code,'INVALID_REROLL_DECLARATION');
+}));
+test('unknown physical faces and malformed request are invalid',()=>fixture(({both,declaration,newRoll})=>{
+  both();for(const bad of [{declaredFaces:['RED','FLAG']},{declaredFaces:'FLAG,LIGHT'},
+    {declaredFaces:[]},{idempotencyKey:'x'},{expectedRevision:1.5},
+    {reservationId:'bad'},{sessionUserId:null}])
+    assert.equal(declaration(newRoll(bad)).status,400);
+}));
+test('a stale revision cannot stage a new declaration',()=>fixture(({both,declaration,newRoll})=>{
+  both();assert.equal(declaration(newRoll({expectedRevision:10})).code,'STALE_REVISION');
+}));
+test('corrupted stored reroll faces cannot be presented as a valid administrative state',()=>fixture(({both,declaration,newRoll,db,status})=>{
+  both();declaration(newRoll());
+  const turn=JSON.parse(db.prepare('SELECT turn_json FROM lab_matches').get().turn_json);
+  turn.pendingCombat.fixtureLeaderCasualtyPreview.rerollAttempt.roll.results=['RED','FLAG'];
+  db.prepare('UPDATE lab_matches SET turn_json=?').run(JSON.stringify(turn));
+  assert.equal(status(12).code,'LEADER_GATE_UNAVAILABLE');
+  assert.equal(declaration(newRoll()).code,'REROLL_UNAVAILABLE');
+}));
+test('forged revision or original digest on new result fails closed',()=>fixture(({both,declaration,newRoll,db,status})=>{
+  both();declaration(newRoll());
+  const data=JSON.parse(db.prepare('SELECT turn_json FROM lab_matches').get().turn_json);
+  data.pendingCombat.fixtureLeaderCasualtyPreview.rerollAttempt.originalRollDigestSha256='f'.repeat(64);
+  db.prepare('UPDATE lab_matches SET turn_json=?').run(JSON.stringify(data));
+  assert.equal(status(12).code,'LEADER_GATE_UNAVAILABLE');
+}));
+test('a board change after unanimous consent prohibits new declaration',()=>fixture(({both,declaration,newRoll,db})=>{
+  both();db.prepare('UPDATE lab_matches SET board_json=?').run('{"forged":true}');
+  assert.equal(declaration(newRoll()).code,'REROLL_UNAVAILABLE');
+}));
+test('events never include faces, original identifiers, helmet counts or a result',()=>fixture(({both,declaration,newRoll,db})=>{
+  both();declaration(newRoll());
+  const events=db.prepare('SELECT payload FROM lab_events ORDER BY sequence').all();
+  const publicEvent=JSON.parse(events.at(-1).payload);
+  assert.deepEqual(publicEvent,{sequence:12,type:'LAB_LEADER_PHYSICAL_REROLL_DECLARED',
+    side:'A',source:'PHYSICAL',diceCount:2});
+  const s=JSON.stringify(publicEvent);
+  for(const term of [RES,'"results"','"helmetCount"','"rollId"','"leaderWouldBeEliminated"'])
+    assert.equal(s.includes(term),false);
+}));
+test('event failure atomically rolls back the declaration and idempotency key',()=>fixture(({both,declaration,newRoll,saved,db,counts})=>{
+  both();const before=saved();
+  db.exec("CREATE TRIGGER refuse_event BEFORE INSERT ON lab_events BEGIN SELECT RAISE(ABORT,'RETRY_ROLLBACK'); END");
+  assert.throws(()=>declaration(newRoll()),/RETRY_ROLLBACK/);
+  assert.deepEqual(saved(),before);assert.deepEqual(counts(),{commands:2,events:2});
+  db.exec('DROP TRIGGER refuse_event');
+  assert.equal(declaration(newRoll()).code,'LAB_REROLL_DECLARED');
+}));
+test('pure inspector validates a new identity but never interprets it as a resolved casualty',()=>fixture(({both,declaration,newRoll,saved})=>{
+  both();declaration(newRoll());const t=saved().turn;
+  const marker=t.pendingCombat,s=marker.fixtureLeaderCasualtyPreview;
+  const original=JSON.parse(JSON.stringify(s.rerollAttempt));
+  const result=inspectLabLeaderRerollAttempt({attempt:s.rerollAttempt,
+    reservationId:RES,attackerSide:marker.actor,diceCount:s.roll.diceCount,
+    consentRevision:11,currentRevision:12,
+    originalRollDigestSha256:s.physicalAgreement.rollDigestSha256});
+  assert.ok(result);assert.equal(Object.isFrozen(result),true);
+  assert.equal(result.opponentConfirmed,false);assert.equal(result.combatAuthorized,false);
+  assert.deepEqual(s.rerollAttempt,original);
+}));
