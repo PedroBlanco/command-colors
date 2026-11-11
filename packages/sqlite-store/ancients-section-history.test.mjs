@@ -58,7 +58,9 @@ test('CCWB composition: experimental history excludes synthetic commands and vie
  assert.equal(JSON.stringify(other).includes(owner.yourHand[0].instanceId),false);
  const pass=await store.dispatch({actor:'A',type:'pass_demo_turn',
    expectedRevision:0,idempotencyKey:'legacy_demo_refused'});
- assert.equal(pass.code,'INVALID_SECTION_LAB_COMMAND');
+ assert.equal(pass.code,'SECTION_LAB_INTERNAL_ONLY');
+ assert.equal(store.dispatchExperimentalSectionHistory({actor:'A',type:'pass_demo_turn',
+   expectedRevision:0,idempotencyKey:'lab_rejected_demo'}).code,'INVALID_SECTION_LAB_COMMAND');
  assert.equal(store.view('A').revision,0);
  assert.equal(store.publicEvents('A').length,0);
 }));
@@ -69,7 +71,9 @@ test('CCWB composition: logged section-card command survives restart and stays p
  const card=store.view('A').yourHand[0];
  const command={actor:'A',type:'PLAY_SECTION_CARD',expectedRevision:0,
    idempotencyKey:'persist_section_0001',cardInstanceId:card.instanceId};
- const recorded=await store.dispatch(command);
+ const generic=await store.dispatch(command);
+ assert.equal(generic.code,'SECTION_LAB_INTERNAL_ONLY');
+ const recorded=store.dispatchExperimentalSectionHistory(command);
  assert.equal(recorded.code,'SECTION_LAB_APPLIED');
  assert.equal(recorded.view.revision,1);
  assert.equal(store.publicEvents('B').length,1);
@@ -77,7 +81,7 @@ test('CCWB composition: logged section-card command survives restart and stays p
  const next=connect().getStore(matchId);
  assert.equal(next.view('B').revision,1);
  assert.equal(next.view('B').opponentCardCount,1);
- assert.equal((await next.dispatch(command)).code,'ALREADY_APPLIED');
+ assert.equal(next.dispatchExperimentalSectionHistory(command).code,'ALREADY_APPLIED');
  assert.equal(next.view('A').cardPlayAuthorized,false);
  assert.equal(next.view('A').attackAuthorized,false);
 }));
