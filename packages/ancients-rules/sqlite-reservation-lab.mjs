@@ -214,12 +214,12 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
       if (replay) {
         if (replay.signature!==signature) return denied(409,'IDEMPOTENCY_KEY_REUSED');
         const saved=turnState.pendingCombat;
-        if (!saved || !['RANGED_DICE_STAGED_SYNTHETIC','RANGED_DICE_STAGED_OFFICIAL_PREVIEW'].includes(saved.kind) ||
+        if (!saved || !['RANGED_DICE_STAGED_SYNTHETIC','RANGED_DICE_STAGED_OFFICIAL_PREVIEW','LAB_DIRECT_HITS_APPLIED_FIXTURE'].includes(saved.kind) ||
             saved.reservationId!==reservationId || saved.actor!==side || !saved.stagedDice)
           return denied(409,'DICE_REPLAY_UNAVAILABLE');
         return Object.freeze({status:200,code:'ALREADY_STAGED',revision:replay.committed_revision,
           reservationId,roll:structuredClone(saved.stagedDice),
-          ...(saved.kind==='RANGED_DICE_STAGED_OFFICIAL_PREVIEW'
+          ...(['RANGED_DICE_STAGED_OFFICIAL_PREVIEW','LAB_DIRECT_HITS_APPLIED_FIXTURE'].includes(saved.kind)
             ? {interpretation:structuredClone(saved.previewInterpretation),previewOnly:true} : {}),
           attackAuthorized:false,combatResolved:false});
       }
