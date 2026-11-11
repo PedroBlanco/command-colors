@@ -94,6 +94,7 @@ test('CCWB composition: untouched demo match retains ordinary demonstration comm
    expectedRevision:0,idempotencyKey:'untouched_demo_0001'});
  assert.equal(result.code,'APPLIED');
  assert.equal(store.view('B').revision,1);
+ assert.equal(store.publicEvents('B').length,1);
  assert.equal(store.initializeExperimentalSectionHistory({sessionToken:tokens.A,trustedSetup:setup()}).code,'SECTION_LAB_NOT_AVAILABLE');
 }));
 
@@ -159,4 +160,17 @@ test('CCWB composition: authenticated opponent can play only on their own turn',
  assert.equal(JSON.stringify(a).includes(second),false);
  assert.equal(a.attackAuthorized,false);
  assert.equal(b.combatResolved,false);
+}));
+
+test('CCWB composition: altered laboratory public events are never projected',()=>fixture(async({app,matchId,tokens})=>{
+ const store=app.getStore(matchId);
+ assert.equal(store.initializeExperimentalSectionHistory({sessionToken:tokens.A,trustedSetup:setup()}).status,201);
+ const card=store.viewExperimentalSectionHistory({sessionToken:tokens.A}).view.yourHand[0].instanceId;
+ const result=store.dispatchExperimentalSectionHistory({sessionToken:tokens.A,type:'PLAY_SECTION_CARD',
+   expectedRevision:0,idempotencyKey:'tamper_event_0001',cardInstanceId:card});
+ assert.equal(result.code,'SECTION_LAB_APPLIED');
+ assert.equal(store.publicEvents('B').length,1);
+ app.unsafeTestDatabase().prepare('UPDATE game_events SET payload=? WHERE match_id=?').run('{}',matchId);
+ assert.throws(()=>store.publicEvents('B'),/SECTION_CCWB_HISTORY_TAMPERED/);
+ assert.throws(()=>store.viewExperimentalSectionHistory({sessionToken:tokens.A}),/SECTION_CCWB_HISTORY_TAMPERED/);
 }));
