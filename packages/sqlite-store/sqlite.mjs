@@ -275,15 +275,13 @@ export function openSqliteComposition({file, clock = Date.now,
       },
       publicEvents(actor) {
         if (!['A','B'].includes(actor)) return null;
-        const row = rowOrThrow();
-        const read = () => db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
-          .all(matchId).map(x => decode(x.payload));
-        if (!hasExperimentalSectionHistory(row)) return read();
-        // Do not serve an altered public log even if a caller skips view().
-        // Lock the snapshot while verifying and reading the corresponding events.
+        // Mode selection, replay verification and event read share a snapshot:
+        // another SQLite connection cannot activate the lab between the checks.
         return atomic(() => {
-          sectionHistory.view(actor);
-          return read();
+          const row = rowOrThrow();
+          if (hasExperimentalSectionHistory(row)) sectionHistory.view(actor);
+          return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
+            .all(matchId).map(x => decode(x.payload));
         });
       },
       async dispatch(request = {}) {
