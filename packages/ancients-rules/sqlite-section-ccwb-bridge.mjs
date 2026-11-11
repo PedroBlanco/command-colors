@@ -6,6 +6,7 @@
  */
 import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
   assertSectionHistoryLab, projectSectionHistoryLab} from './section-history-journal.mjs';
+import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
@@ -37,7 +38,7 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
   if(!db||typeof matchId!=='string'||typeof getRow!=='function'||typeof atomic!=='function')
     throw new TypeError('INVALID_SECTION_BRIDGE_DEPENDENCIES');
   const events=db.prepare('SELECT sequence,visibility,payload FROM game_events WHERE match_id=? ORDER BY sequence');
-  const keys=db.prepare('SELECT actor,signature,committed_revision FROM game_commands WHERE match_id=? ORDER BY committed_revision');
+  const keys=db.prepare('SELECT actor,idem_key,signature,committed_revision FROM game_commands WHERE match_id=? ORDER BY committed_revision');
   const getKey=db.prepare('SELECT signature,committed_revision FROM game_commands WHERE match_id=? AND actor=? AND idem_key=?');
   const update=db.prepare('UPDATE matches SET private_state=?,game_revision=? WHERE id=? AND game_revision=?');
   const eventInsert=db.prepare('INSERT INTO game_events(match_id,sequence,visibility,payload) VALUES(?,?,?,?)');
@@ -59,14 +60,17 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     if(storedEvents.length!==row.game_revision||storedKeys.length!==row.game_revision)
       throw new Error('SECTION_CCWB_EVENT_COUNT');
     for(let i=0;i<journal.commands.length;i++){
-      const command=journal.commands[i],step=applySectionHistoryLabCommand(snapshot,command),revision=i+1;
+      const {command,idempotencyKey,legacyUnverified}=
+        readLabJournalIdempotency(journal.commands[i]);
+      const step=applySectionHistoryLabCommand(snapshot,command),revision=i+1;
       if(!step.accepted||step.nextState.revision!==revision)
         throw new Error('SECTION_CCWB_HISTORY_REPLAY_FAILED');
       const evt=storedEvents[i],saved=JSON.parse(evt.payload),key=storedKeys[i];
       if(evt.sequence!==revision||evt.visibility!=='public'||
          !exact(saved,{...step.publicEvent,visibility:'public'})||
          key.actor!==command.actor||key.committed_revision!==revision||
-         key.signature!==JSON.stringify(command))
+         key.signature!==JSON.stringify(command)||
+         (!legacyUnverified&&key.idem_key!==idempotencyKey))
         throw new Error('SECTION_CCWB_HISTORY_TAMPERED');
       snapshot=step.nextState;
     }
@@ -126,7 +130,9 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       if(!result.accepted)return denied(result.code==='NOT_YOUR_TURN'?403:409,result.code);
       const next=result.nextState;
       const updated={...persisted,ancientsSectionHistoryLab:{
-        initial:journal.initial,commands:[...journal.commands,command],state:next}};
+        initial:journal.initial,
+        commands:[...journal.commands,bindLabJournalIdempotency(command,request.idempotencyKey)],
+        state:next}};
       if(update.run(JSON.stringify(updated),next.revision,row.id,row.game_revision).changes!==1)
         throw new Error('SECTION_CCWB_CONCURRENT_UPDATE');
       eventInsert.run(row.id,next.revision,'public',JSON.stringify({...result.publicEvent,visibility:'public'}));
