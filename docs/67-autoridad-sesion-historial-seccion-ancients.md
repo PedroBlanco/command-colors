@@ -82,3 +82,10 @@ No fusionar las PR experimentales ni habilitar HTTP/combate hasta validar la reg
 La afirmación inicial de que la sesión se comprobaba al entrar en los métodos de composición no cubría una posible revocación concurrente **antes** de que SQLite adquiriera el bloqueo de escritura. La rama posterior `fix/i4-ancients-session-guard-in-transaction` añade una segunda resolución de sesión y membresía dentro de `BEGIN IMMEDIATE` para inicialización y comandos. La comprobación exige `DatabaseSync.isTransaction`, y cualquier denegación evita escribir el diario.
 
 Se han preparado **cinco pruebas de integración adicionales** (tres del puente y dos de composición). **No se han ejecutado todavía desde el checkout completo.** Esta modificación no sustituye las pruebas reales de concurrencia multiproceso, HTTP/SSE y dos usuarios. Documento: [revalidación transaccional de sesión](69-revalidacion-sesion-transaction-ccwb.md).
+
+
+### Límite de coherencia de lectura — actualización de PR #88
+
+Además del guard de escritura, `viewExperimentalSectionHistory({sessionToken})` revalida sesión y membresía dentro de una **transacción de lectura SQLite/WAL `BEGIN`**; la vista privada procede de la misma instantánea. `publicEvents(actor)` usa también una instantánea `BEGIN` para seleccionar modo, verificar el replay y recuperar eventos sin adquirir el bloqueo de escritor. Esta última interfaz sigue siendo **interna**, con autorización del actor a cargo de su llamante.
+
+Se añadieron 2 nuevos casos de integración de lectura (todavía pendientes) y una suite independiente reproducible del contrato SQLite/WAL con **5/5 PASS nativos** en Node.js 22.16.0, Linux sin WSL. La suite está en `packages/sqlite-store/wal-transaction-contract.test.mjs` y se han inventariado **66 suites**. La batería completa sigue pendiente. Véase [PR #88 y la documentación transaccional](69-revalidacion-sesion-transaction-ccwb.md).
