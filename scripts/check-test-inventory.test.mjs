@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readFileSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {LOCAL_TEST_FILES} from './check-browser-lab.mjs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {verifyTestInventory} from './check-test-inventory.mjs';
@@ -59,3 +62,17 @@ test('inventory: invalid manifest shape fails promptly',()=>withFiles(manifest,d
  for (const m of [null,{},'packages/a.test.mjs'])
    assert.throws(()=>verify(dir,{manifest:m}),TypeError);
 }));
+
+test('the native Node list command emits exactly the canonical test manifest',()=>{
+ const file=fileURLToPath(new URL('./list-test-files.mjs',import.meta.url));
+ const child=spawnSync(process.execPath,[file],{encoding:'utf8'});
+ assert.equal(child.status,0,child.stderr);
+ assert.deepEqual(child.stdout.trim().split(/\r?\n/).filter(Boolean),LOCAL_TEST_FILES);
+});
+test('PowerShell wrapper invokes both the inventory guard and canonical list',()=>{
+ const wrapper=readFileSync(new URL('./test-local.ps1',import.meta.url),'utf8');
+ assert.match(wrapper,/node scripts\/check-test-inventory\.mjs/);
+ assert.match(wrapper,/node scripts\/list-test-files\.mjs/);
+ assert.match(wrapper,/node --test @files/);
+ assert.doesNotMatch(wrapper,/packages\/[A-Za-z-]+\/[^\s"']+\.test\.mjs/);
+});
