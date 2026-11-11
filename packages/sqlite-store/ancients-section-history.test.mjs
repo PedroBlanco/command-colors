@@ -233,3 +233,46 @@ test('CCWB composition: command rechecks live session within write transaction',
  assert.equal(app.unsafeTestDatabase().prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,0);
  assert.equal(store.dispatchExperimentalSectionHistory(command).code,'SECTION_LAB_APPLIED');
 }));
+
+test('CCWB composition: private section view authenticates within a read snapshot',()=>fixture(async({app,matchId,tokens})=>{
+ const store=app.getStore(matchId);
+ assert.equal(store.initializeExperimentalSectionHistory({
+   sessionToken:tokens.A,trustedSetup:setup()
+ }).status,201);
+ const original=app.identity.resolveSession;
+ let checked=0;
+ try {
+   app.identity.resolveSession=(token)=>{
+     if(token===tokens.A) {
+       checked++;
+       assert.equal(app.unsafeTestDatabase().isTransaction,true);
+     }
+     return original(token);
+   };
+   const response=store.viewExperimentalSectionHistory({sessionToken:tokens.A});
+   assert.equal(response.status,200);
+   assert.equal(response.view.you,'A');
+   assert.equal(checked,1);
+ } finally {app.identity.resolveSession=original;}
+ assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB composition: private views and public events do not acquire a writer lock',()=>fixture(async({app,connect,matchId,tokens})=>{
+ const store=app.getStore(matchId);
+ assert.equal(store.initializeExperimentalSectionHistory({
+   sessionToken:tokens.A,trustedSetup:setup()
+ }).status,201);
+ // With WAL, a reader can see the last committed state even while another
+ // connection owns BEGIN IMMEDIATE. The former publicEvents implementation
+ // also used BEGIN IMMEDIATE and would fail with SQLITE_BUSY here.
+ const writer=connect().unsafeTestDatabase();
+ writer.exec('BEGIN IMMEDIATE');
+ try {
+   const viewed=store.viewExperimentalSectionHistory({sessionToken:tokens.A});
+   assert.equal(viewed.status,200);
+   assert.equal(viewed.view.revision,0);
+   assert.deepEqual(store.publicEvents('A'),[]);
+   assert.deepEqual(store.publicEvents('B'),[]);
+ } finally {writer.exec('ROLLBACK');}
+ assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
