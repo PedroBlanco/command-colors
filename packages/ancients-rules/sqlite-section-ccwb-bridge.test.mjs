@@ -248,3 +248,55 @@ test('CCWB v2: legacy entry followed by a new entry uses stronger signature',()=
  assert.ok(signatures[1].startsWith('CCW_SECTION_COMMAND_V2:'));
  assert.equal(root.bridge.view('B').revision,2);
 }));
+
+test('CCWB: initialization authorization runs inside SQLite write transaction',()=>fixture(({root})=>{
+ let checked=0;
+ const denied=root.bridge.initialize('A',setup(),()=>{
+   checked++;
+   assert.equal(root.db.isTransaction,true);
+   return {status:401,code:'UNAUTHENTICATED'};
+ });
+ assert.equal(denied.code,'UNAUTHENTICATED');
+ assert.equal(checked,1);
+ assert.equal(hasMode(root.getRow(MATCH)),false);
+ assert.equal(root.getRow(MATCH).lobby_revision,0);
+ assert.equal(root.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,0);
+ assert.equal(root.bridge.initialize('A',setup()).code,'SECTION_LAB_INITIALIZED');
+}));
+
+test('CCWB: revoked session guard prevents all command writes and idempotency rows',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());
+ const card=root.bridge.view('A').yourHand[0].instanceId;
+ const request=req('PLAY_SECTION_CARD',0,{cardInstanceId:card},'revoked_section_0001');
+ const before=root.getRow(MATCH);
+ let checked=0;
+ const denied=root.bridge.dispatch(request,()=>{
+   checked++;
+   assert.equal(root.db.isTransaction,true);
+   return {status:401,code:'UNAUTHENTICATED'};
+ });
+ assert.equal(denied.code,'UNAUTHENTICATED');
+ assert.equal(checked,1);
+ assert.deepEqual(root.getRow(MATCH),before);
+ assert.equal(root.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,0);
+ assert.equal(root.db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,0);
+ assert.equal(root.bridge.dispatch(request).code,'SECTION_LAB_APPLIED');
+}));
+
+test('CCWB: passing authorization guard is checked exactly once inside transaction',()=>fixture(({root})=>{
+ let calls=0;
+ assert.equal(root.bridge.initialize('A',setup(),()=>{
+   assert.equal(root.db.isTransaction,true);
+   calls++;
+   return true;
+ }).status,201);
+ const card=root.bridge.view('A').yourHand[0].instanceId;
+ const request=req('PLAY_SECTION_CARD',0,{cardInstanceId:card},'authorized_once_0001');
+ assert.equal(root.bridge.dispatch(request,()=>{
+   assert.equal(root.db.isTransaction,true);
+   calls++;
+   return true;
+ }).status,200);
+ assert.equal(calls,2);
+ assert.equal(root.bridge.view('A').revision,1);
+}));
