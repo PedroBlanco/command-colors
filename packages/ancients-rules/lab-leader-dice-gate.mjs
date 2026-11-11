@@ -6,7 +6,7 @@
 import {createHash} from 'node:crypto';
 import {validateLabPhysicalLeaderPreview} from './lab-physical-leader-agreement.mjs';
 import {inspectLabRerollConsent} from './lab-reroll-consent-state.mjs';
-import {inspectLabLeaderRerollAttempt} from './lab-leader-reroll-attempt-contract.mjs';
+import {inspectLabLeaderRerollReviewState} from './lab-leader-reroll-review-state.mjs';
 
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const FACES=new Set(['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS']);
@@ -90,7 +90,7 @@ export function evaluateLabLeaderDiceGate({turnState,boardJson,reservationId}={}
         if(!rerollConsentState) return null;
         if(hasRerollAttempt) {
           if(!rerollConsentState.unanimousConsent) return null;
-          rerollAttemptState=inspectLabLeaderRerollAttempt({attempt:saved.rerollAttempt,
+          rerollAttemptState=inspectLabLeaderRerollReviewState({attempt:saved.rerollAttempt,
             reservationId,originalRollDigestSha256:agreement.rollDigestSha256,
             attackerSide:marker.actor,diceCount:roll.diceCount,
             consentRevision,currentRevision:turnState.revision});
@@ -110,7 +110,9 @@ export function evaluateLabLeaderDiceGate({turnState,boardJson,reservationId}={}
       unanimousConsentForReroll:rerollConsentState.unanimousConsent,
       rerollAllowed:false,
       ...(rerollAttemptState ? {rerollAttemptStatus:rerollAttemptState.status,
-        rerollDeclared:true,rerollPendingOpponentReview:true} : {})} : {}),
+        rerollDeclared:true,rerollPendingOpponentReview:rerollAttemptState.opponentReviewPending,
+        rerollReviewDecision:rerollAttemptState.reviewDecision,
+        newRollAccepted:rerollAttemptState.newRollAccepted} : {})} : {}),
     combatAuthorized:false,leaderCasualtyApplied:false,
     evasionResolved:false,combatResolved:false,
     requiresCompleteRulesAuthorization:true});

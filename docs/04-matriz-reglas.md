@@ -256,3 +256,12 @@ La PR basada en **#71** añade `sqlite-leader-after-hit-fixture.mjs`, conectado 
 `lab-leader-reroll-attempt-contract.mjs` y `lab-physical-leader-reroll-attempt.mjs` permiten **solo en CCRL de laboratorio** registrar las caras de una nueva tirada física tras el consentimiento explícito de los dos jugadores ante una impugnación. Se conserva íntegra la tirada discutida, el desacuerdo y sus votos; el nuevo resultado tiene `rollId` propio y queda **pendiente de confirmación del adversario**. `lab-leader-dice-gate.mjs` conserva `PHYSICAL_DISPUTED`, `disputeBlocksContinuation:true` y `combatAuthorized:false` después de la declaración. No se generan dados digitales ni se aplican bajas, evasiones o victoria. El acuerdo de repetir no equivale a aceptar las nuevas caras.
 
 **23 pruebas nuevas** con SQLite real; batería conjunta **84/84 PASS** con Node.js 22.16.0/Linux, repetida tres veces. **67 suites registradas**, sin regresión integral del repositorio ni Windows/HTTP/SSE. Véase [protocolo de nueva declaración](63-redeclaracion-fisica-consentida-lider.md).
+
+
+## Revisión independiente de la segunda tirada física del líder (R-09/R-13 parcial)
+
+`lab-physical-leader-reroll-review.mjs` permite al **defensor** aceptar o impugnar las **nuevas caras físicas** que el atacante declaró después de dos votos favorables para repetir una tirada inicial impugnada. Se comprueban revisión, sesión, original y segundo `rollId`, resumen SHA-256, caras, revisor contrario e idempotencia; la tirada original, los dos votos y la nueva declaración quedan intactos. La operación está limitada a fixtures CCRL y solo añade revisión, evento público mínimo y una decisión privada. **El consentimiento para repetir una tirada no confirma las nuevas caras.**
+
+`lab-leader-dice-gate.mjs` distingue `PHYSICAL_REROLL_AWAITING_OPPONENT`, `PHYSICAL_REROLL_CONFIRMED` y `PHYSICAL_REROLL_DISPUTED`, manteniendo siempre `PHYSICAL_DISPUTED` como estado general y `combatAuthorized:false`: la aceptación del segundo resultado **no** aplica bajas ni resuelve el combate. Una nueva impugnación tampoco produce más dados automáticamente.
+
+**26 pruebas nuevas en la batería local**, **110/110 PASS** en tres ejecuciones nativas con SQLite real; **14 casos de contrato incorporados en GitHub** pendientes de ejecución exacta en checkout. El manifiesto del proyecto registra **68 suites**, todavía sin regresión integral ni Windows/HTTP/SSE. R-09/R-13 siguen incompletas. Véase [revisión de segundo resultado](64-revision-segunda-tirada-fisica.md).

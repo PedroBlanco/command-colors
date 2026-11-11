@@ -67,7 +67,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/sqlite-physical-leader-agreement-adapter.test.mjs',
   'packages/ancients-rules/lab-leader-dice-gate.test.mjs',
   'packages/ancients-rules/lab-leader-reroll-consent.test.mjs',
-  'packages/ancients-rules/lab-physical-leader-reroll-attempt.test.mjs'
+  'packages/ancients-rules/lab-physical-leader-reroll-attempt.test.mjs',
+  'packages/ancients-rules/lab-physical-leader-reroll-review.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
