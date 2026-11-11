@@ -52,6 +52,8 @@ El fixture utiliza un SQLite con los **seis nombres de tabla y columnas relevant
 
 SHA-256 del TAP reproducido: `ca181a5d7a6969f504f7c1ceb9071a50b541dd422dbfe727136023db62179393`.
 
+**Regresión conjunta adicional:** cuatro suites (19 pruebas de cartas de sección, 15 del diario puro, 18 del diario SQLite CCHL y 14 del adaptador CCWB) ejecutadas nativamente en una misma invocación con **66/66 PASS, 0 fallos, 0 omitidos**. SHA-256 del TAP combinado: `269be72bfaa19efee135b8cb2ec05be3d4fb2eafa7832da31ebee76b6139267d`. Se ejecutaron sobre copias locales equivalentes y los dos archivos nuevos idénticos por hash Git; **no** abarca la integración completa de `sqlite.mjs` ni las 63 suites.
+
 Los archivos publicados y comprobados por hash Git:
 - `sqlite-section-ccwb-bridge.mjs`: `447e2ba9059358aabdde8919610067af8a47b3dc`.
 - `sqlite-section-ccwb-bridge.test.mjs`: `ca8f03b4a334b36db52dbc43241bb00312fb1a15`.
