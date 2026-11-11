@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {checkLocalLab} from './check-browser-lab.mjs';
+import {checkLocalLab,LOCAL_TEST_FILES} from './check-browser-lab.mjs';
+import {verifyTestInventory} from './check-test-inventory.mjs';
 
 test('diagnóstico es de solo lectura, no crea base ni directorios', async() => {
  const root=await mkdtemp(join(tmpdir(), 'ccw-preflight-'));
@@ -12,7 +13,7 @@ test('diagnóstico es de solo lectura, no crea base ni directorios', async() => 
    assert.equal(result.ok,false);
    assert.ok(result.failures.some(x=>x.includes('Faltan')));
    assert.ok(result.warnings.some(x=>x.includes('No existe base')));
-   assert.equal(result.tests,43);
+   assert.equal(result.tests,LOCAL_TEST_FILES.length);
  } finally {await rm(root,{recursive:true,force:true});}
 });
 
@@ -106,3 +107,11 @@ test('log de regresión rechaza ruta exterior y padre simbólico fuera del proye
     await rm(outside, {recursive: true, force: true});
   }
 }));
+
+test('manifiesto canónico incluye cada suite real del checkout sin omisiones',()=>{
+ const inventory=verifyTestInventory();
+ assert.equal(inventory.ok,true,JSON.stringify(inventory));
+ assert.equal(inventory.actual,LOCAL_TEST_FILES.length);
+ assert.deepEqual(inventory.unlisted,[]);
+ assert.deepEqual(inventory.missing,[]);
+});
