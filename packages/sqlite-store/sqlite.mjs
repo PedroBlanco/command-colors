@@ -228,6 +228,15 @@ export function openSqliteComposition({file, clock = Date.now,
         rowOrThrow();
         return sectionHistory.initialize(actor,trustedSetup);
       },
+      /**
+       * INTERNAL LAB ONLY: deliberately not connected to the generic
+       * HTTP command route, which must reject section-lab commands.
+       */
+      dispatchExperimentalSectionHistory(request) {
+        if (!hasExperimentalSectionHistory(rowOrThrow()))
+          return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+        return sectionHistory.dispatch(request);
+      },
       publicEvents(actor) {
         if (!['A','B'].includes(actor)) return null;
         rowOrThrow();
@@ -238,7 +247,7 @@ export function openSqliteComposition({file, clock = Date.now,
         const {actor,type,expectedRevision,idempotencyKey} = request;
         if (!['A','B'].includes(actor)) return {status:403,code:'FORBIDDEN'};
         const row=rowOrThrow();
-        if (hasExperimentalSectionHistory(row)) return sectionHistory.dispatch(request);
+        if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
         if (hasCommandDeck(row)) return commandDeck.dispatch(request);
         if (type !== 'pass_demo_turn' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
