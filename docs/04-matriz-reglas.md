@@ -254,3 +254,10 @@ La composición del diario experimental `CCWB` deja de aceptar el bando seleccio
 Las nuevas entradas privadas del diario de cartas de sección conservan su clave de idempotencia y verifican esa relación frente a `game_commands.idem_key` durante el replay SQLite. La firma semántica del comando y los eventos públicos permanecen sin claves, por lo que no se alteran las proyecciones de los jugadores. Los registros anteriores a esta mejora, sin vínculo guardado, se aceptan para compatibilidad, **sin atribuirles retrospectivamente esa garantía**.
 
 **8/8 pruebas nativas PASS** del módulo puro `lab-idempotency-binding.test.mjs` en Linux/Node 22.16.0; **3 nuevas pruebas de integración SQLite pendientes de ejecución**, junto con las siete de composición ya preparadas en PR #86 y la regresión integral. Manifiesto: **64 suites** registradas, no ejecutadas juntas. R-03/R-04 continúan **sin implementación reglamentaria**. Ver [auditoría de idempotencia](68-vinculacion-idempotencia-diario-ancients.md).
+
+
+## Firma versionada del diario experimental (R-03/R-04, aún no reglamentarias)
+
+La PR #87 se endurece frente a una degradación detectada en su primera revisión: borrar únicamente la clave privada de un comando nuevo podía hacer que se tratara como registro `legacy`. Las nuevas firmas de `game_commands.signature` usan el prefijo `CCW_SECTION_COMMAND_V2:` y vinculan comando más clave. La reconstrucción exige esa vinculación para entradas v2 y permite el formato anterior exclusivamente como contrato histórico con una garantía menor. No se añaden datos privados a eventos públicos ni se modifica CCWB v1.
+
+**11 pruebas nativas PASS** del nuevo módulo puro en Node.js 22.16/Linux, comparadas por SHA Git con los archivos publicados. **4 casos nuevos SQLite preparados pero sin ejecutar**, y un caso legacy previo adaptado. **65 suites registradas** y aún no superadas como regresión integral. Ver [documentación de firma versionada](68-vinculacion-idempotencia-diario-ancients.md). R-03 y R-04 continúan sin validación oficial ni autorización reglamentaria completa.
