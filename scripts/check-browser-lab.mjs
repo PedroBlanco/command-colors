@@ -57,7 +57,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/sqlite-official-dice-preview.test.mjs',
   'packages/ancients-rules/block-loss-preview.test.mjs',
   'packages/ancients-rules/sqlite-block-loss-preview.test.mjs',
-  'packages/ancients-rules/ranged-resolution-sequence.test.mjs'
+  'packages/ancients-rules/ranged-resolution-sequence.test.mjs',
+  'packages/ancients-rules/ranged-hit-commit-preflight.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 

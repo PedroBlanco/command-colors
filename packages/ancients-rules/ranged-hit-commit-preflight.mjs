@@ -5,6 +5,8 @@
  */
 import {deriveStagedAncientsRangedBlockLoss} from './ranged-block-snapshot.mjs';
 import {planBaseAncientsRangedResolution} from './ranged-resolution-sequence.mjs';
+import {precheckAncientsRangedDeclaration} from './ranged-turn-precheck.mjs';
+import {createRangedDicePlan} from './dice-plan.mjs';
 
 const invalid=()=>{throw new TypeError('INVALID_RANGED_HIT_PREFLIGHT');};
 const record=x=>x!==null && typeof x==='object' && !Array.isArray(x);
@@ -24,6 +26,32 @@ export function preflightStagedAncientsRangedHits({turnState,board,sessionSide,
     checklist=planBaseAncientsRangedResolution({blockLoss:loss});
   } catch {invalid();}
   const marker=turnState.pendingCombat;
+  // The staged roll is bound to board bytes, but not by itself to *legal* LOS,
+  // range, movement or the correct terrain-limited dice count. Re-run the
+  // existing non-authorizing screening on a copy of this same saved snapshot.
+  // Replacing pendingCombat with null is for the screening contract ONLY:
+  // the original staged marker remains mandatory for dice/hit derivation.
+  const screeningTurn={...turnState,pendingCombat:null};
+  let screened,freshPlan;
+  try {
+    screened=precheckAncientsRangedDeclaration({
+      turnState:screeningTurn,board,sessionSide,
+      attackerId:marker.attackerId,targetId:marker.targetId,
+      expectedRevision
+    });
+    if (screened?.status!=='CANDIDATE' ||
+        screened.attackAuthorized!==false ||
+        screened.needsFullLegalityCheck!==true ||
+        screened.ranged?.status!=='CANDIDATE' ||
+        screened.ranged.attackAuthorized!==false ||
+        screened.ranged.lineOfSightChecked!==true ||
+        screened.ranged.rangedProfileChecked!==true) invalid();
+    freshPlan=createRangedDicePlan({
+      mode:'OFFICIAL_PREVIEW',screening:screened,board,targetId:marker.targetId
+    });
+    if (!freshPlan || JSON.stringify(freshPlan)!==JSON.stringify(marker.dicePlan)) invalid();
+  } catch {invalid();}
+
   if (!record(marker) || !Array.isArray(board.units) ||
       !Number.isSafeInteger(expectedRevision) || expectedRevision<0) invalid();
   const targets=board.units.filter(unit=>unit?.id===marker.targetId);
@@ -54,6 +82,10 @@ export function preflightStagedAncientsRangedHits({turnState,board,sessionSide,
     leaderCheckRequired:requiresLeaderCheck,
     leaderCheckDiceCount:loss.leaderCasualtyCheck?.diceCount??0,
     flagsStillPending:loss.effectiveFlagsPending,
+    // A fresh screening is useful evidence, NEVER an attack authorization.
+    screeningRechecked:true,
+    recheckedDiceCount:freshPlan.diceCount,
+    commandCardValidated:false,scenarioExceptionsChecked:false,
     fullRulesValidated:false,attackAuthorized:false,
     commitPermitted:false,boardMutated:false,unitRemoved:false,
     leaderRemoved:false,leaderCheckRolled:false,retreatResolved:false,
