@@ -6,6 +6,9 @@
 import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import {prepareLabDirectHitEffect} from './lab-direct-hit-effect.mjs';
+import {ANCIENTS_BATTLE_DIE_FACES} from './battle-dice.mjs';
+import {captureBaseAncientsLeaderCasualtyDice} from './ranged-resolution-sequence.mjs';
+import {makeLabLeaderAfterHitPreviewCommand} from './sqlite-leader-after-hit-fixture.mjs';
 
 const CCRL=0x4343524c;
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -58,9 +61,24 @@ export function openLabOnlyDirectHitCommit({file,deriveTrustedPreview,allowTestF
   const match=db.prepare('SELECT * FROM lab_matches WHERE id=?');
   const command=db.prepare('SELECT * FROM lab_commands WHERE match_id=? AND actor=? AND idem_key=?');
   const update=db.prepare('UPDATE lab_matches SET revision=?,turn_json=?,board_json=? WHERE id=? AND revision=?');
+  const updateTurn=db.prepare('UPDATE lab_matches SET revision=?,turn_json=? WHERE id=? AND revision=?');
   const event=db.prepare('INSERT INTO lab_events(match_id,sequence,payload) VALUES(?,?,?)');
   const insertCommand=db.prepare('INSERT INTO lab_commands(match_id,actor,idem_key,signature,reservation_id,committed_revision) VALUES(?,?,?,?,?,?)');
   let closed=false;
+  const stageLeaderCasualtyPreview=makeLabLeaderAfterHitPreviewCommand({
+    UUID,KEY,denied,
+    inTransaction:operation=>{
+      db.exec('BEGIN IMMEDIATE');
+      try {const result=operation();db.exec('COMMIT');return result;}
+      catch(error){db.exec('ROLLBACK');throw error;}
+    },
+    row:match,previous:command,
+    sideFor:(entry,userId)=>entry.owner_id===userId?'A':
+      entry.guest_id===userId?'B':null,
+    createHash,captureLeaderDice:captureBaseAncientsLeaderCasualtyDice,
+    allowedFaces:ANCIENTS_BATTLE_DIE_FACES,updateTurn,
+    eventInsert:event,commandInsert:insertCommand
+  });
 
   function apply(request={}) {
     if(!request || typeof request!=='object' || Array.isArray(request))
@@ -126,5 +144,5 @@ export function openLabOnlyDirectHitCommit({file,deriveTrustedPreview,allowTestF
     }catch(e){db.exec('ROLLBACK');throw e;}
   }
   function finish(value){db.exec('COMMIT');return value;}
-  return Object.freeze({apply,close:()=>{if(!closed){db.close();closed=true;}}});
+  return Object.freeze({apply,stageLeaderCasualtyPreview,close:()=>{if(!closed){db.close();closed=true;}}});
 }
