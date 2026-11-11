@@ -176,9 +176,17 @@ test('CCWB: changing a persisted idempotency key cannot pass journal verificatio
 test('CCWB: older keyless lab commands remain readable with explicit legacy limitation',()=>fixture(({root})=>{
  root.bridge.initialize('A',setup());play(root);
  const state=JSON.parse(root.getRow(MATCH).private_state);
+ // Simulate a genuinely older (pre-v2) database, not only a key deletion:
+ // old rows stored an unversioned JSON signature.
+ const first=state.ancientsSectionHistoryLab.commands[0];
+ const {idempotencyKey,...legacyCommand}=first;
  delete state.ancientsSectionHistoryLab.commands[0].idempotencyKey;
+ root.db.prepare('UPDATE game_commands SET signature=? WHERE match_id=?')
+   .run(JSON.stringify(legacyCommand),MATCH);
  root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
  assert.equal(root.bridge.view('A').revision,1);
+ const cardRequest=req('PLAY_SECTION_CARD',0,{cardInstanceId:legacyCommand.cardInstanceId});
+ assert.equal(root.bridge.dispatch(cardRequest).code,'ALREADY_APPLIED');
  order(root);
  const stored=JSON.parse(root.getRow(MATCH).private_state).ancientsSectionHistoryLab.commands;
  assert.equal(Object.hasOwn(stored[0],'idempotencyKey'),false);
@@ -195,4 +203,47 @@ test('CCWB: persisted idempotency metadata remains private to the journal',()=>f
    ...root.db.prepare('SELECT payload FROM game_events').all().map(x=>JSON.parse(x.payload))]){
    assert.equal(JSON.stringify(v).includes(key),false);
  }
+}));
+
+test('CCWB v2: new persisted signature binds the idempotency key',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const row=root.db.prepare('SELECT idem_key,signature FROM game_commands WHERE match_id=?').get(MATCH);
+ assert.ok(row.signature.startsWith('CCW_SECTION_COMMAND_V2:'));
+ assert.ok(row.signature.includes(row.idem_key));
+ assert.equal(root.bridge.view('B').revision,1);
+}));
+
+test('CCWB v2: deleting journal key alone fails closed, including retries',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());
+ const request=play(root);
+ const row=root.getRow(MATCH),state=JSON.parse(row.private_state);
+ delete state.ancientsSectionHistoryLab.commands[0].idempotencyKey;
+ root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ assert.throws(()=>root.bridge.view('A'),/SECTION_CCWB_HISTORY_TAMPERED/);
+ assert.throws(()=>root.bridge.dispatch(request),/SECTION_CCWB_HISTORY_TAMPERED/);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,1);
+}));
+
+test('CCWB v2: idempotent retry works with new versioned signature',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());
+ const request=play(root);
+ assert.equal(root.bridge.dispatch(request).code,'ALREADY_APPLIED');
+ assert.equal(root.bridge.dispatch({...request,cardInstanceId:'forged_card'}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events').get().n,1);
+}));
+
+test('CCWB v2: legacy entry followed by a new entry uses stronger signature',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const row=root.getRow(MATCH),state=JSON.parse(row.private_state);
+ const {idempotencyKey,...oldCommand}=state.ancientsSectionHistoryLab.commands[0];
+ delete state.ancientsSectionHistoryLab.commands[0].idempotencyKey;
+ root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ root.db.prepare('UPDATE game_commands SET signature=? WHERE match_id=?')
+   .run(JSON.stringify(oldCommand),MATCH);
+ order(root);
+ const signatures=root.db.prepare('SELECT signature FROM game_commands ORDER BY committed_revision')
+   .all().map(x=>x.signature);
+ assert.equal(signatures[0],JSON.stringify(oldCommand));
+ assert.ok(signatures[1].startsWith('CCW_SECTION_COMMAND_V2:'));
+ assert.equal(root.bridge.view('B').revision,2);
 }));
