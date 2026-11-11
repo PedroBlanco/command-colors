@@ -13,6 +13,7 @@ import {captureBaseAncientsRangedDice, interpretBaseAncientsRangedDice} from './
 import {createRangedDicePlan, classifyRangedDicePlan} from './dice-plan.mjs';
 import {deriveStagedAncientsRangedBlockLoss} from './ranged-block-snapshot.mjs';
 import {planBaseAncientsRangedResolution} from './ranged-resolution-sequence.mjs';
+import {preflightStagedAncientsRangedHits} from './ranged-hit-commit-preflight.mjs';
 
 const APP_ID = 0x4343524c; // 'CCRL', distinct from the main CCWB SQLite app_id.
 const KEY = /^[a-zA-Z0-9_-]{8,80}$/;
@@ -333,6 +334,30 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
       attackAuthorized:false,combatResolved:false,boardMutated:false});
   }
 
+  /**
+   * Propose the exact target-block delta without applying it. A future commit
+   * MUST repeat all checks inside its own authorized write transaction.
+   */
+  function preflightDirectHits(request = {}) {
+    const snapshot=previewStagedBlockLoss(request);
+    if (snapshot.code!=='BLOCK_LOSS_PREVIEW') return snapshot;
+    const entry=row.get(request.matchId);
+    const side=entry && sideFor(entry,request.sessionUserId);
+    if (!side || entry.revision!==request.expectedRevision)
+      return denied(409,'STALE_REVISION');
+    const turnState=JSON.parse(entry.turn_json);
+    let proposal;
+    try {
+      proposal=preflightStagedAncientsRangedHits({
+        turnState,board:JSON.parse(entry.board_json),sessionSide:side,
+        reservationId:request.reservationId,expectedRevision:entry.revision
+      });
+    } catch {return denied(409,'PREFLIGHT_UNAVAILABLE');}
+    return Object.freeze({status:200,code:'DIRECT_HITS_PREFLIGHT',
+      revision:entry.revision,proposal,attackAuthorized:false,
+      commitPermitted:false,boardMutated:false});
+  }
+
   /** Restricted test-only inspection; intentionally not part of a network API. */
   const inspectFixture = ({matchId,sessionUserId} = {}) => {
     const entry=row.get(matchId);
@@ -341,7 +366,7 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
       events:events.all(matchId).map(x=>JSON.parse(x.payload))};
   };
   let closed=false;
-  return Object.freeze({seedFixture,reserve,cancel,stageDice,previewStagedBlockLoss,previewResolutionChecklist,inspectFixture,
+  return Object.freeze({seedFixture,reserve,cancel,stageDice,previewStagedBlockLoss,previewResolutionChecklist,preflightDirectHits,inspectFixture,
     unsafeTestDatabase:()=>db,
     close:()=>{if (!closed) {db.close();closed=true;}}});
 }
