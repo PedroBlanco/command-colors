@@ -368,3 +368,67 @@ test('SQLite: planning is idempotent and cannot append events or alter a board',
   assert.deepEqual(db.prepare('SELECT board_json,turn_json,revision FROM lab_matches').get(),before);
   assert.equal(first.boardMutated,false);
 }));
+
+test('SQLite: preflight proposes precise direct-hit delta without committing',()=>fixture(({store})=>{
+  const id=reserveAndStage(store),db=store.unsafeTestDatabase();
+  const before=db.prepare('SELECT revision,turn_json,board_json FROM lab_matches').get();
+  const events=db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n;
+  const result=store.preflightDirectHits(preview(id));
+  assert.equal(result.code,'DIRECT_HITS_PREFLIGHT');
+  assert.equal(result.proposal.previousBlocks,3);
+  assert.equal(result.proposal.proposedBlocksAfterHits,2);
+  assert.equal(result.proposal.proposedBlocksRemoved,1);
+  assert.equal(result.proposal.matchRevision,6);
+  assert.equal(result.proposal.proposedNextRevision,7);
+  assert.equal(result.proposal.commitPermitted,false);
+  assert.equal(result.proposal.attackAuthorized,false);
+  assert.equal(result.proposal.boardMutated,false);
+  assert.deepEqual(db.prepare('SELECT revision,turn_json,board_json FROM lab_matches').get(),before);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n,events);
+}));
+
+test('SQLite: last block with attached leader proposes check but no removal or banner',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  const p=store.preflightDirectHits(preview(id)).proposal;
+  assert.equal(p.proposedBlocksAfterHits,0);
+  assert.equal(p.unitWouldBeEliminated,true);
+  assert.equal(p.leaderCheckRequired,true);
+  assert.equal(p.leaderCheckDiceCount,1);
+  assert.equal(p.proposedNextPhase,'LEADER_CASUALTY_CHECK');
+  assert.equal(p.unitRemoved,false);
+  assert.equal(p.leaderRemoved,false);
+  assert.equal(p.victoryBannerAwarded,false);
+},{blocksRemaining:1,leaders:attached()}));
+
+test('SQLite: surviving unit without leader with flags proposes defender morale',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  const p=store.preflightDirectHits(preview(id)).proposal;
+  assert.equal(p.proposedNextPhase,'DEFENDER_MORALE_CHOICE');
+  assert.equal(p.flagsStillPending,1);
+  assert.equal(p.leaderCheckRequired,false);
+}));
+
+test('SQLite: no direct hits still yields an uncommittable, non-mutating preflight',()=>fixture(({store})=>{
+  const id=reserveAndStage(store,['FLAG','SWORDS']);
+  const p=store.preflightDirectHits(preview(id)).proposal;
+  assert.equal(p.proposedBlocksRemoved,0);
+  assert.equal(p.previousBlocks,p.proposedBlocksAfterHits);
+  assert.equal(p.commitPermitted,false);
+  assert.equal(p.proposedNextPhase,'DEFENDER_MORALE_CHOICE');
+}));
+
+test('SQLite: preflight blocks unauthorized user, stale revision and caller-supplied blocks',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  assert.equal(store.preflightDirectHits(preview(id,{sessionUserId:'mallory'})).code,'NOT_FOUND');
+  assert.equal(store.preflightDirectHits(preview(id,{sessionUserId:'bob'})).code,'PREFLIGHT_UNAVAILABLE');
+  assert.equal(store.preflightDirectHits(preview(id,{expectedRevision:5})).code,'STALE_REVISION');
+  assert.equal(store.preflightDirectHits(preview(id,{blocksRemaining:0})).code,'INVALID_PREVIEW_REQUEST');
+}));
+
+test('SQLite: altered board after staging fails closed and does not advance revision',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyBoard:b=>b.units[1].blocksRemaining=1});
+  const p=store.preflightDirectHits(preview(id));
+  assert.equal(p.code,'PREFLIGHT_UNAVAILABLE');
+  assert.equal(store.inspectFixture({matchId:MATCH,sessionUserId:'alice'}).revision,6);
+}));
