@@ -20,9 +20,9 @@ La respuesta positiva añade `screeningRechecked:true`, `recheckedDiceCount`, `c
 
 Este reexamen es **defensa en profundidad, no autorización final**. No garantiza que la carta, las órdenes, la trayectoria de movimiento, las excepciones de escenario o los efectos especiales sean legales. El futuro comando de impactos deberá verificarlo todo dentro de su propia transacción antes de actualizar el almacén principal `CCWB`.
 
-## Regresiones preparadas
+## Regresiones preparadas y ejecución aislada
 
-Se añaden seis casos a `packages/ancients-rules/sqlite-block-loss-preview.test.mjs`:
+Se añaden seis casos de integración a `packages/ancients-rules/sqlite-block-loss-preview.test.mjs`:
 
 1. Plan almacenado legítimo: preselección repetida y dos dados correctos.
 2. Un actor privilegiado modifica el hexágono del objetivo y también recalcula su huella: queda fuera de alcance y el nuevo reexamen rechaza el plan.
@@ -33,7 +33,11 @@ Se añaden seis casos a `packages/ancients-rules/sqlite-block-loss-preview.test.
 
 Los casos 2–5 están diseñados para mostrar que la previsualización básica aún puede leer los resultados originales, mientras que la nueva revalidación rechaza un ataque que ha dejado de cumplir el perfil y el plan guardado.
 
-**Estado real:** pruebas escritas, todavía no ejecutadas en esta sesión. No se han ejecutado las **57 suites** del repositorio ni una verificación nativa en Windows. Por tanto, la PR sigue en borrador y no debe fusionarse ni desplegarse.
+Se incorpora además la nueva suite pura `packages/ancients-rules/ranged-hit-commit-preflight.test.mjs`, con **8 casos**: escenario válido y ausencia de efectos, alcance, enemigo adyacente, bosque y límite de dados, movimiento, terreno inválido, objetivo del mismo bando e idempotencia del cálculo sin mutaciones. La suite está registrada en `scripts/check-browser-lab.mjs`: el total pasa a **58 suites**.
+
+**Verificación realizada:** los **8/8 casos de la nueva suite pura** pasan en un arnés JavaScript V8 aislado, compilando los módulos *tal como fueron recuperados de GitHub* (16 módulos evaluados). Se sustituyeron solo los servicios del ejecutor de pruebas, las aserciones, `structuredClone` y las funciones de tirada de dados no invocadas durante esos casos. **No es una ejecución nativa de `node --test` ni prueba SQLite**, y no permite afirmar que la suite pase bajo Node.js con todas las dependencias.
+
+**Estado pendiente:** los seis casos SQLite añadidos en esta PR todavía **no se han ejecutado nativamente**. Tampoco se ha ejecutado la regresión integral de **58 suites** ni la verificación en Windows. La PR debe mantenerse en borrador, sin fusionar ni desplegar.
 
 ## Próximo hito
 
