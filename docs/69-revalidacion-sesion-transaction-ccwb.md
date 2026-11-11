@@ -76,3 +76,28 @@ $LASTEXITCODE
 .\scripts\test-local.ps1
 $LASTEXITCODE
 ```
+
+
+## Reproducción multiproceso real — orden de confirmación de sesión
+
+Para no confundir el contrato de dos conexiones en un proceso con un conflicto real entre procesos, se añadió `packages/sqlite-store/wal-cross-process-revocation.test.mjs`. La suite abre la misma base SQLite/WAL desde **dos procesos distintos de Node.js** y coordina sus operaciones mediante IPC:
+
+1. **Revocación primero.** El proceso A invalida la sesión mientras mantiene `BEGIN IMMEDIATE`. El proceso B intenta obtener el bloqueo; cuando A confirma y B comienza su transacción, lee la sesión revocada y **no escribe el comando**.
+2. **Comando autorizado primero.** B obtiene `BEGIN IMMEDIATE` y verifica la sesión aún válida. La revocación concurrente de A recibe `SQLITE_BUSY` y no interrumpe la operación ya autorizada. B confirma el comando, y solo entonces A puede revocar la sesión.
+
+La suite contiene **2 pruebas, ambas PASS**, Node.js 22.16.0 sobre Linux nativo, sin WSL y sin GitHub Actions; se ejecutó además **10 veces seguidas sin fallos** para comprobar estabilidad básica. Blob SHA Git del archivo ensayado y publicado: `90d876673d94b003a390eee5f854d87771795424`.
+
+**Ejecución nativa conjunta:** `lab-idempotency-binding.test.mjs`, `lab-command-signature.test.mjs`, `wal-transaction-contract.test.mjs`, `wal-cross-process-revocation.test.mjs`: **26 PASS, 0 FAIL, 0 SKIP**, código de salida 0. SHA-256 del TAP: `00a27bbfb986952e67cab797cc40b13e07aecbf0447c04d666186646374cbfbf`.
+
+El manifiesto contiene ahora **67 suites únicas**. Este ensayo multiproceso verifica directamente el contrato de serialización de SQLite y el momento de validar la sesión, pero **no sustituye** la integración de identidad, invitaciones y comandos del juego: los tests `sqlite-section-ccwb-bridge.test.mjs` y `ancients-section-history.test.mjs` y la regresión de 67 suites siguen pendientes de ejecutar desde un checkout completo.
+
+### Comandos de reproducción — Windows 11 sin WSL
+
+```powershell
+node --test --test-reporter=tap packages/sqlite-store/wal-transaction-contract.test.mjs packages/sqlite-store/wal-cross-process-revocation.test.mjs
+$LASTEXITCODE
+node --test --test-reporter=tap packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs packages/sqlite-store/ancients-section-history.test.mjs
+$LASTEXITCODE
+.\scripts\test-local.ps1
+$LASTEXITCODE
+```
