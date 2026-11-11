@@ -10,6 +10,7 @@ import {dirname} from 'node:path';
 import {initializeSchema, CCW_SCHEMA_SQL} from './schema-version.mjs';
 import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqlite-game.mjs';
 import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
+import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
 
 const scrypt = promisify(callbackScrypt);
 const KDF = Object.freeze({N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024});
@@ -236,12 +237,9 @@ export function openSqliteComposition({file, clock = Date.now,
     // insufficient for mutations: another SQLite connection can revoke the
     // session before the bridge acquires its write lock.
     function mutationSessionGuard(sessionToken, originalActor) {
-      return () => {
-        if (!db.isTransaction) throw new Error('SECTION_LAB_AUTH_REQUIRES_TRANSACTION');
-        const current=resolveSectionLabActor(sessionToken);
-        if (current.error) return current.error;
-        return current.actor===originalActor ? true : {status:404,code:'NOT_FOUND'};
-      };
+      return makeSectionMutationSessionGuard({
+        db, resolveActor:resolveSectionLabActor, sessionToken, expectedActor:originalActor
+      });
     }
     return {
       // Once the synthetic deck is initialized, the legacy fixture hands
