@@ -9,6 +9,7 @@ import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {initializeSchema, CCW_SCHEMA_SQL} from './schema-version.mjs';
 import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqlite-game.mjs';
+import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
 
 const scrypt = promisify(callbackScrypt);
 const KDF = Object.freeze({N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024});
@@ -206,16 +207,26 @@ export function openSqliteComposition({file, clock = Date.now,
     const commandDeck = createSqliteCommandDeckStore({
       db, matchId, atomic, getRow: id => getMatchRow.get(id)
     });
+    const sectionHistory = createSqliteAncientsSectionBridge({
+      db, matchId, atomic, getRow: id => getMatchRow.get(id)
+    });
     return {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
       view(actor) {
         const row = rowOrThrow();
+        if (hasExperimentalSectionHistory(row)) return sectionHistory.view(actor);
         return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
       },
       initializeCommandDeck(actor) {
-        rowOrThrow();
+        const row=rowOrThrow();
+        if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_MODE_ACTIVE'};
         return commandDeck.initialize(actor);
+      },
+      /** Local laboratory entrypoint only; NOT exposed by HTTP routes. */
+      initializeExperimentalSectionHistory(actor, trustedSetup) {
+        rowOrThrow();
+        return sectionHistory.initialize(actor,trustedSetup);
       },
       publicEvents(actor) {
         if (!['A','B'].includes(actor)) return null;
@@ -226,7 +237,9 @@ export function openSqliteComposition({file, clock = Date.now,
       async dispatch(request = {}) {
         const {actor,type,expectedRevision,idempotencyKey} = request;
         if (!['A','B'].includes(actor)) return {status:403,code:'FORBIDDEN'};
-        if (hasCommandDeck(rowOrThrow())) return commandDeck.dispatch(request);
+        const row=rowOrThrow();
+        if (hasExperimentalSectionHistory(row)) return sectionHistory.dispatch(request);
+        if (hasCommandDeck(row)) return commandDeck.dispatch(request);
         if (type !== 'pass_demo_turn' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
         return atomic(() => {
