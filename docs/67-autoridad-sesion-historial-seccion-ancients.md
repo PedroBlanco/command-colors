@@ -75,3 +75,10 @@ $LASTEXITCODE
 ```
 
 No fusionar las PR experimentales ni habilitar HTTP/combate hasta validar la regresión y revisar la identidad de los dos usuarios en todas las rutas de acceso. Se mantiene pendiente el conjunto de reglas oficiales de *Ancients*, líderes, retiradas, escenarios y victoria.
+
+
+## Actualización: control dentro de la transacción (PR posterior)
+
+La afirmación inicial de que la sesión se comprobaba al entrar en los métodos de composición no cubría una posible revocación concurrente **antes** de que SQLite adquiriera el bloqueo de escritura. La rama posterior `fix/i4-ancients-session-guard-in-transaction` añade una segunda resolución de sesión y membresía dentro de `BEGIN IMMEDIATE` para inicialización y comandos. La comprobación exige `DatabaseSync.isTransaction`, y cualquier denegación evita escribir el diario.
+
+Se han preparado **cinco pruebas de integración adicionales** (tres del puente y dos de composición). **No se han ejecutado todavía desde el checkout completo.** Esta modificación no sustituye las pruebas reales de concurrencia multiproceso, HTTP/SSE y dos usuarios. Documento: [revalidación transaccional de sesión](69-revalidacion-sesion-transaction-ccwb.md).
