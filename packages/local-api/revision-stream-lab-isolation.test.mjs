@@ -92,3 +92,22 @@ test('SSE closes if revision becomes invalid rather than sending corrupted state
   await until(()=>f.res.ended);
   assert.doesNotMatch(f.res.text,/wrong|SECRET/);
 });
+
+
+test('SSE requests a deny-on-read snapshot and closes on internal lab sentinel',async t=>{
+  const res=new TestResponse(),calls=[];
+  const stop=startRevisionStream({
+    res,token:TOKEN,matchId:ID,intervalMs:20,
+    identity:{resolveSession:()=>({handle:'alice'})},
+    invitations:{getMatch:()=>({ok:true,status:'READY',revision:1,
+      players:[{handle:'alice',side:'A'}]})},
+    getStore:async()=>({view:(actor,options)=>{
+      calls.push({actor,deny:options?.denyExperimentalLab});
+      return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+    }})
+  });
+  t.after(()=>{stop();if(!res.ended)res.end();});
+  await until(()=>res.ended);
+  assert.deepEqual(calls,[{actor:'A',deny:true}]);
+  assert.doesNotMatch(res.text,/event: revision|gameRevision|SECRET/);
+});
