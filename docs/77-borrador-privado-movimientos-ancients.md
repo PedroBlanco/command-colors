@@ -28,10 +28,10 @@ El contexto `trustedContext={unitTypes,terrain}` se suministra por código confi
 ## Pruebas, evidencia y pendientes
 
 Esta ampliación añade:
-- **9 casos** en `movement-draft-contract.test.mjs` (reintento, colisión de clave, revisión, privacidad, caducidad por juego, corrupción, validación e inmutabilidad). Los **9/9** se evaluaron en un **aislamiento V8** con digest sustituido por un simulador determinista para probar la lógica de transición; **NO se probó así el SHA-256 nativo**.
+- **9 casos** en `movement-draft-contract.test.mjs` (reintento, colisión de clave, revisión, privacidad, caducidad por juego, corrupción, validación e inmutabilidad). Los **9/9** se superaron con **Node.js 22.16.0 nativo (Linux, sin WSL)** y el SHA-256 real de `node:crypto`. Se copiaron al entorno aislado los **tres blobs Git exactos** del módulo, de su suite y de `hex-grid/hex.mjs`; sus hashes coincidieron con GitHub antes de la ejecución. Informe TAP SHA-256: `507d4c960f934b25934fc782adb8b2f9da2c5c49f8bc12ace3f570ba8822b600`. La primera evaluación V8 con digest simulado queda como control auxiliar, no como sustituto.
 - **6 casos SQLite de integración preparados** en `sqlite-store/ancients-section-history.test.mjs`: persistencia tras reabrir la conexión, ausencia de eventos y mutaciones de tablero, idempotencia, rechazo de rutas/entradas, revocación y aislamiento del rival, caducidad al terminar el turno y autenticación bajo bloqueo de escritura/lectura WAL concurrente. **Pendientes de ejecución nativa sobre el código exacto de la PR**.
 
-Total de la PR #95: **49 casos nuevos preparados** (34 previos + 15 de borrador). El manifiesto de su rama pasa a **74 suites**, incluidas dos suites de líder/secuencia y una nueva de contrato de borrador. Como comprobación aislada, la suite pura del borrador pasa 9/9 y el trío previo de líder/secuencia/órdenes pasó 38/38; **no son una regresión de Node.js/SQLite**. Los nuevos casos SQLite de toda la PR están sin ejecutar (12: tres de líder, tres de secuencia y seis del borrador).
+Total de la PR #95: **49 casos nuevos preparados** (34 previos + 15 de borrador). El manifiesto de su rama pasa a **74 suites**, incluidas dos suites de líder/secuencia y una nueva de contrato de borrador. La suite pura del borrador pasa **9/9 con Node.js nativo** y el trío previo de líder/secuencia/órdenes pasó **38/38 en V8 aislado**; **estos resultados no constituyen una regresión de SQLite/HTTP ni de las 74 suites**. Los nuevos casos SQLite de toda la PR están sin ejecutar (12: tres de líder, tres de secuencia y seis del borrador).
 
 ### Siguientes hitos y bloqueo de seguridad
 
@@ -41,3 +41,14 @@ Total de la PR #95: **49 casos nuevos preparados** (34 previos + 15 de borrador)
 4. Revisar contra las reglas de la edición física y realizar aceptación con dos jugadores y navegadores PC/móvil.
 
 **No fusionar PR #95 a `main`, no exponer los métodos internos por HTTP y no confundir `CANDIDATE_SEQUENCE` o `SECTION_LAB_DRAFT_SAVED` con un movimiento ejecutado.**
+
+
+### Identificación de archivos contrastados en la ejecución nativa
+
+| Archivo | Blob Git SHA-1 | Resultado |
+|---|---|---|
+| `packages/ancients-rules/movement-draft-contract.mjs` | `1bbbdf90b0961574855efba3e025b648e5517cc0` | Exacto |
+| `packages/ancients-rules/movement-draft-contract.test.mjs` | `417ce42486f6ec459a5d09546b39503994a5f5e5` | Exacto |
+| `packages/hex-grid/hex.mjs` | `ae0e4526b8e91c4c0d5d94aebc52077b60f410da` | Exacto |
+
+`node --test --test-reporter=tap packages/ancients-rules/movement-draft-contract.test.mjs` finalizó **9 PASS / 0 FAIL / 0 SKIP**, salida 0, tras reconstruir estos tres archivos en un árbol aislado. **Esta ejecución sí usa Node.js y SHA-256 nativo**, pero no llega a SQLite ni valida el servidor HTTP.
