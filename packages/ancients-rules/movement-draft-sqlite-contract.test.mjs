@@ -154,3 +154,16 @@ test('native SQLite: invalid candidate causes transaction rollback and preserves
   assert.equal(row(first).private_state,original);
   assert.equal(first.isTransaction,false);
 }));
+
+
+test('native SQLite: stored draft revision tampering is rejected even without changing moves',()=>fixture(({first})=>{
+  store(first,proposal());
+  const state=JSON.parse(row(first).private_state);
+  state.draft.draftRevision=2;
+  first.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(state),MATCH);
+  assert.throws(()=>projectMovementDraft({
+    draft:savedDraft(first),matchId:MATCH,actor:'A',gameRevision:2
+  }),/SECTION_LAB_MOVEMENT_DRAFT_CORRUPT/);
+  assert.equal(first.isTransaction,false);
+}));
