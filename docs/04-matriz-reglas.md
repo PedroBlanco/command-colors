@@ -340,7 +340,7 @@ Las cinco mutaciones del lobby `createMatch`, `issueInvitation`,
 sesión, la propiedad o pertenencia de la partida y el estado de invitación
 **dentro de la transacción `BEGIN IMMEDIATE`**, no durante una precomprobación
 que podría volverse obsoleta. Las operaciones existentes conservan sus
-códigos de error, semántica de invitación e idempotencia, sin migraciones
+códigos de error y semántica de invitación, sin migraciones
 ni rutas nuevas. Se añaden dos pruebas en `sqlite.test.mjs` para comprobar
 la existencia del bloqueo durante la autenticación y la negativa tras un
 logout confirmado desde otra conexión WAL. **Pendientes ejecución nativa y
