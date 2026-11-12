@@ -385,3 +385,25 @@ tampoco se ejecutó la regresión completa. El manifiesto contiene
 la PR #95 es **57** (49 anteriores y 8 nuevos). Requisito CCW-014 y
 el bloqueo de fusión siguen abiertos. Referencia:
 [borrador privado y evidencia nativa](77-borrador-privado-movimientos-ancients.md).
+
+
+## LAB-ANC — versión protegida del borrador y purga al avanzar el diario (12/11/2026)
+
+El checksum de `movement-draft-contract.mjs` incorpora ahora
+`draftRevision`, evitando que un cambio arbitrario del contador de
+concurrencia quede fuera de la verificación. La secuencia de acciones
+se codifica con campos ordenados para idempotencia estable ante JSON
+equivalente. En la composición experimental,
+`sqlite-section-ccwb-bridge.mjs` purga el borrador privado **de forma
+atómica** cuando avanza el diario; los intentos rechazados no lo borran.
+Nunca se confirma movimiento ni se añade un nuevo evento.
+
+**19/19 PASS con Node.js 22.16.0 y SQLite/WAL nativo** para las suites
+`movement-draft-contract.test.mjs` y
+`movement-draft-sqlite-contract.test.mjs`, con archivos idénticos a los
+blobs Git de la rama. SHA-256 del TAP:
+`b87335b82b9d88195c2f95c01f969f087165d3f8f1fca485b234b5a840d123c6`.
+El puente e integración ampliada pasan análisis sintáctico, pero
+**13 casos nuevos de integración CCWB+SQLite siguen sin ejecutar**.
+PR #95: **60 nuevos casos preparados, 75 suites**. No completar CCW-014,
+no publicar métodos internos ni fusionar en `main`.
