@@ -70,6 +70,7 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/movement-draft-contract.test.mjs',
   'packages/ancients-rules/movement-draft-sqlite-contract.test.mjs',
   'packages/ancients-rules/movement-candidate-journal.test.mjs',
+  'packages/ancients-rules/movement-commit-intent-screen.test.mjs',
   'packages/ancients-rules/lab-command-signature.test.mjs',
   'packages/ancients-rules/lab-idempotency-binding.test.mjs',
   'packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs',
