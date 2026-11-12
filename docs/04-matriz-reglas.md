@@ -322,3 +322,34 @@ correctas. **Los 3 casos SQLite y las 72 suites nativas siguen
 pendientes**. Conservar la rama y PR en borrador sin prometer legalidad
 ni cambiar `main`. Véase
 [prevalidación de líderes](75-preflight-lideres-ancients.md).
+
+
+## R-04/R-05 — orden temporal simulado de unidades y líderes (LAB-ANC, 12/11/2026)
+
+Las reglas verificadas de tercera edición (2009) permiten separar un líder
+de una unidad **antes** de que esta se mueva; si se mueve con ella ya no puede
+separarse en ese turno. Una unidad a la que llega un líder no puede moverse
+más, aunque puede seguir combatiendo si se cumplen los requisitos restantes.
+Se implementa **simulación de secuencias hipotéticas sin persistencia**,
+con bloqueo de doble movimiento por pieza, validación de orden de los
+movimientos y aplicación sobre copias exclusivamente.
+
+**Código:** `leader-unit-sequence-preflight.mjs` (reglas temporales
+sobre estado provisional); `staged-movement-preflight.mjs` (sesión,
+revisión y órdenes); `sqlite-section-ccwb-bridge.mjs` (replay
+privado íntegro); `sqlite-store/sqlite.mjs` (instantánea WAL
+autenticada para método estrictamente interno). **No** hay endpoint,
+acción ejecutable, cambio de base de datos ni autorización.
+
+**Pruebas:** +10 nuevos casos puros en una suite nueva, +5 en la suite
+staged y +3 casos de composición SQLite todavía **sin ejecutar**.
+Comprobación aislada del código de GitHub: **38/38** resultados correctos
+(8 de movimiento individual, 10 de secuencia, 20 staged, estos últimos
+incluyen pruebas previas); sintaxis de SQLite/bridge comprobada, sin
+ejecución nativa de la regresión. El inventario actual de la PR #95
+contiene **73 suites**; el incremento de #95 es de **34 casos nuevos**
+(16 anteriores + 18 de secuencia). La norma R-04/R-05 y CCW-014
+permanecen **incompletas** hasta tener un reductor de movimiento
+reglamentario, diario persistente de movimientos, pruebas nativas y
+validación contra escenarios. Véase
+[secuencia líder–unidad](76-secuencia-temporal-lider-unidades-ancients.md).
