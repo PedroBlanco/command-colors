@@ -897,3 +897,100 @@ test('CCWB draft: a denied or stale journal command preserves the private draft 
     sessionToken:tokens.A}).draft.draftRevision,1);
   assert.equal(db.isTransaction,false);
 }));
+
+
+const evidenceRequest=(sessionToken,changes={})=>({
+  sessionToken,expectedRevision:2,actions:[sequenceLeader(),sequenceUnit()],
+  ...changes
+});
+
+test('CCWB candidate evidence: bound to session, replay and WAL, leaves all game tables unchanged',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const tableSnapshot=()=>({
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  });
+  const before=tableSnapshot();
+  const first=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A),movementContext());
+  assert.equal(first.status,200);
+  assert.equal(first.code,'SECTION_LAB_CANDIDATE_EVIDENCE');
+  assert.equal(first.evidence.status,'CANDIDATE_EVIDENCE');
+  assert.equal(first.evidence.journal.matchId,matchId);
+  assert.equal(first.evidence.journal.baseRevision,2);
+  assert.equal(first.evidence.journal.entries.length,2);
+  assert.equal(first.movementAuthorized,false);
+  assert.equal(first.boardChanged,false);
+  assert.equal(first.evidence.stateChanged,false);
+  const second=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A),movementContext());
+  assert.deepEqual(second,first);
+  assert.deepEqual(tableSnapshot(),before);
+  assert.equal(db.isTransaction,false);
+  assert.equal(JSON.stringify(first).includes('card_a_left'),false);
+  assert.equal(JSON.stringify(store.publicEvents('B')).includes('captain'),false);
+}));
+
+test('CCWB candidate evidence: foreign, outsider and revoked sessions never receive a trace',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const rival=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.B),movementContext());
+  assert.equal(rival.status,200);
+  assert.equal(rival.evidence.status,'BLOCKED');
+  assert.equal(rival.evidence.journal,null);
+  assert.equal(rival.evidence.reason,'NOT_ACTING_PLAYER');
+  assert.equal(store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.outsider),movementContext()).code,'NOT_FOUND');
+  connect().identity.logOut(tokens.A);
+  assert.equal(store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A),movementContext()).code,'UNAUTHENTICATED');
+}));
+
+test('CCWB candidate evidence: forged client fields, invalid paths or stale revision cannot create trace',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),trusted=movementContext();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  for(const request of [
+    evidenceRequest(tokens.A,{actor:'B'}),
+    evidenceRequest(tokens.A,{matchId}),
+    evidenceRequest(tokens.A,{actions:[]}),
+    evidenceRequest(tokens.A,{actions:[{...sequenceLeader(),actor:'B'}]}),
+    evidenceRequest(tokens.A,{actions:[{...sequenceLeader(),path:[{col:2,row:5,actor:'B'}]}]}),
+    evidenceRequest(tokens.A,{expectedRevision:-1}),
+    evidenceRequest(tokens.A,{expectedRevision:1.5})
+  ])
+    assert.equal(store.precheckExperimentalSectionMovementEvidence(
+      request,trusted).code,'INVALID_SECTION_LAB_EVIDENCE_REQUEST');
+  const stale=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A,{expectedRevision:1}),trusted);
+  assert.equal(stale.evidence.status,'BLOCKED');
+  assert.equal(stale.evidence.journal,null);
+  assert.equal(stale.evidence.reason,'STALE_REVISION');
+  const reversed=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A,{actions:[sequenceUnit(),sequenceLeader()]}),trusted);
+  assert.equal(reversed.evidence.status,'BLOCKED');
+  assert.equal(reversed.evidence.journal,null);
+  assert.throws(()=>store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A),{}),/INVALID_STAGED_MOVEMENT_CONTEXT/);
+}));
+
+test('CCWB candidate evidence: WAL read remains available during another writer lock',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const writer=connect().unsafeTestDatabase();
+  writer.exec('BEGIN IMMEDIATE');
+  try{
+    const response=store.precheckExperimentalSectionMovementEvidence(
+      evidenceRequest(tokens.A),movementContext());
+    assert.equal(response.status,200);
+    assert.equal(response.evidence.status,'CANDIDATE_EVIDENCE');
+    assert.equal(response.evidence.journal.entries.length,2);
+  } finally {writer.exec('ROLLBACK');}
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
