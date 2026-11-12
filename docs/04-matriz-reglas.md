@@ -353,3 +353,10 @@ permanecen **incompletas** hasta tener un reductor de movimiento
 reglamentario, diario persistente de movimientos, pruebas nativas y
 validación contra escenarios. Véase
 [secuencia líder–unidad](76-secuencia-temporal-lider-unidades-ancients.md).
+
+
+## LAB-ANC — borrador privado de movimientos, revisión independiente (12/11/2026)
+
+El nuevo contrato `movement-draft-contract.mjs` admite guardar una **propuesta hipotética**, no ejecutar movimiento. La composición SQLite comprueba dentro de `BEGIN IMMEDIATE` la sesión y pertenencia, el replay privado de cartas y órdenes y `CANDIDATE_SEQUENCE`; solo entonces guarda `ancientsSectionMovementDraft` en `matches.private_state`. No altera tablero, revisión de juego, eventos públicos ni claves de comandos del juego. La consulta usa un snapshot WAL y solo proyecta la propuesta a su bando en la revisión de origen; la propuesta caduca tras avanzar el diario.
+
+La versión del borrador y su clave de idempotencia controlan ediciones/reintentos sin crear órdenes nuevas. Se verificó **9/9** de lógica de contrato en V8 con un digest simulado (no prueba del SHA-256 nativo). Se prepararon **6 pruebas de integración SQLite** para persistencia, privacidad, revocación, inmutabilidad, idempotencia, cierre de turno y bloqueos, pendientes de ejecución real. La PR #95 acumula **49 casos nuevos**, con **74 suites registradas y presentes**; su regresión completa sigue pendiente. La propuesta nunca concede movimiento legal. Documento: [contrato de borrador privado](77-borrador-privado-movimientos-ancients.md).
