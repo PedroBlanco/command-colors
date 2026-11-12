@@ -177,3 +177,23 @@ test('repeated independent simulations are deterministic and no original state i
   assert.deepEqual(state,before);
   assert.equal(state.revision,2);
 });
+
+test('private board metadata is never copied into the simulated public board',()=>{
+  const state=ready();
+  state.board.internalNote='PRIVATE_SERVER_ONLY';
+  state.board.hiddenPieceMap={unitA:'SECRET_MAP'};
+  state.board.units[0].privateHand=['HIDDEN_UNIT_INFO'];
+  state.board.units[1].serverAuthToken='NOT_PUBLIC';
+  const before=structuredClone(state);
+  const r=reduce({state,actor:'A',expectedRevision:state.revision,
+    actions:[action('unitA',3,4)],serverContext:context(),policy:policy()});
+  assert.equal(r.status,'LAB_REDUCTION_CANDIDATE');
+  assert.deepEqual(Object.keys(r.simulatedBoard).sort(),['leaders','units']);
+  for(const u of r.simulatedBoard.units)
+    assert.deepEqual(Object.keys(u).sort(),['col','id','row','side']);
+  for(const secret of ['PRIVATE_SERVER_ONLY','SECRET_MAP',
+    'HIDDEN_UNIT_INFO','NOT_PUBLIC'])
+    assert.equal(JSON.stringify(r).includes(secret),false);
+  assert.deepEqual(state,before);
+  assert.equal(r.canCommit,false);
+});
