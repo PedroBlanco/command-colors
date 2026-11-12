@@ -49,7 +49,7 @@ Se añade `packages/ancients-rules/clear-lab-movement-reducer.test.mjs` con **11
 - Atomicidad de la **proyección**: si falla la segunda ruta no queda un primer movimiento parcial.
 - Resultado determinista en evaluaciones independientes.
 
-**Evidencia actual:** **11/11** evaluaciones correctas al reconstruir dependencias puras y la suite desde los archivos reales recuperados de GitHub dentro de V8 aislado. Blobs Git SHA-1: módulo `e5eda99473411fc74beacac25a93cef4b130a906`, suite `71743ea6c38563a89bba9c0b97ff473ee0138e4e`. El digest SHA-256 se sustituyó en una dependencia de auditoría no utilizada por el reductor. **Esta comprobación no equivale a Node.js nativo, SQLite ni a la regresión total.** Se ha registrado como suite **78** en la rama consolidada, junto a las 13 pruebas del contrato de entrada de PR #99.
+**Evidencia actual:** **11/11** evaluaciones correctas al reconstruir dependencias puras y la suite desde los archivos reales recuperados de GitHub dentro de V8 aislado. Blobs Git SHA-1: módulo `e5eda99473411fc74beacac25a93cef4b130a906`, suite `71743ea6c38563a89bba9c0b97ff473ee0138e4e`. El digest SHA-256 se sustituyó en una dependencia de auditoría no utilizada por el reductor. **Esta comprobación no equivale a Node.js nativo, SQLite ni a la regresión total.** Quedó registrada inicialmente como suite **78** tras la consolidación con las 13 pruebas del contrato de entrada; la posterior composición privada registra la **79**.
 
 ## Próximo hito
 
@@ -60,4 +60,4 @@ Conservar este reductor como contrato reducido para pruebas de movimiento; despu
 
 ## Consolidación experimental de PR #98 y #99
 
-El código del reductor y sus 11 pruebas se conservó sin modificar los blobs originales de PR #98, junto al filtro independiente de intención y sus 13 pruebas de PR #99. La documentación se renumeró a `82` porque ambos desarrollos paralelos utilizaban `docs/81-*` y se necesitan nombres distintos para los dos contratos. El manifiesto combinado declara **78 suites**. La evidencia nativa de 13 casos del filtro no debe atribuirse a las 11 pruebas del reductor, que continúan pendientes de ejecución nativa. No se crea ruta HTTP ni movimiento real.
+El código del reductor y sus 11 pruebas se conservó sin modificar los blobs originales de PR #98, junto al filtro independiente de intención y sus 13 pruebas de PR #99. La documentación se renumeró a `82` porque ambos desarrollos paralelos utilizaban `docs/81-*` y se necesitan nombres distintos para los dos contratos. El manifiesto actual declara **79 suites**, al incluir la posterior composición privada (11 nuevos casos no ejecutados). La evidencia nativa de 13 casos del filtro no debe atribuirse a las 11 pruebas del reductor, que continúan pendientes de ejecución nativa. No se crea ruta HTTP ni movimiento real.
