@@ -177,3 +177,35 @@ test('SQLite: a fresh Node.js process reads durable game state from disk',()=>lo
  assert.equal(child.status,0,child.stderr);
  assert.deepEqual(JSON.parse(child.stdout.trim()),{revision:1,turn:'B',eventCount:1});
 }));
+
+
+test('SEC-001: lobby read keeps session, membership and players in one closed WAL snapshot',()=>local(async open=>{
+  const first=open(),alice=await account(first,'alice'),bob=await account(first,'bob');
+  const id=invite(first,alice,bob);
+  const second=open();
+  const initial=first.invitations.getMatch({sessionToken:bob,matchId:id});
+  assert.equal(initial.ok,true);
+  assert.equal(initial.status,'READY');
+  assert.deepEqual(initial.players.map(p=>p.side),['A','B']);
+  assert.equal(first.unsafeTestDatabase().isTransaction,false);
+  // A committed change on a second connection must be visible to the
+  // next snapshot: never publish stale membership or a stale participant list.
+  second.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL, lobby_revision=lobby_revision+1 WHERE id=?').run(id);
+  assert.deepEqual(first.invitations.getMatch({sessionToken:bob,matchId:id}),
+    {ok:false,code:'NOT_FOUND'});
+  const owner=first.invitations.getMatch({sessionToken:alice,matchId:id});
+  assert.equal(owner.status,'INVITING');
+  assert.deepEqual(owner.players.map(p=>p.side),['A']);
+  assert.equal(first.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('SEC-001: lobby read denies session revoked by a second WAL connection',()=>local(async open=>{
+  const first=open(),alice=await account(first,'alice'),bob=await account(first,'bob');
+  const id=invite(first,alice,bob),other=open();
+  assert.equal(first.invitations.getMatch({sessionToken:alice,matchId:id}).status,'READY');
+  other.identity.logOut(alice);
+  assert.deepEqual(first.invitations.getMatch({sessionToken:alice,matchId:id}),
+    {ok:false,code:'UNAUTHENTICATED'});
+  assert.equal(first.invitations.getMatch({sessionToken:bob,matchId:id}).ok,true);
+  assert.equal(first.unsafeTestDatabase().isTransaction,false);
+}));
