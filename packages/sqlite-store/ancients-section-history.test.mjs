@@ -658,3 +658,42 @@ test('SEC-001: command deck writer rechecks session inside BEGIN IMMEDIATE',()=>
     {status:401,code:'UNAUTHENTICATED'});
   assert.equal(db.isTransaction,false);
 }));
+
+
+test('SEC-001: public session reads reject actor injection and malformed DTO without opening WAL',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  const invalid=[null,[],{},Object.create(null),
+    {sessionToken:tokens.A,actor:'B'},
+    {sessionToken:tokens.A,sessionUserId:'forged'},
+    {sessionToken:tokens.A,serverContext:{}},
+    {sessionToken:123}];
+  for(const request of invalid){
+    assert.deepEqual(store.viewForSession(request),
+      {status:400,code:'INVALID_PUBLIC_VIEW_REQUEST'});
+    assert.deepEqual(store.publicEventsForSession(request),
+      {status:400,code:'INVALID_PUBLIC_EVENTS_REQUEST'});
+    assert.equal(db.isTransaction,false);
+  }
+  assert.equal(store.viewForSession({sessionToken:tokens.A}).you,'A');
+  assert.equal(store.viewForSession({sessionToken:tokens.B}).you,'B');
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+}));
+
+test('SEC-001: command-deck initialization refuses extra session-side fields before transaction',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  for(const request of [null,{},[],Object.create(null),
+    {sessionToken:tokens.A,actor:'B'},
+    {sessionToken:tokens.A,sessionUserId:'forged'},
+    {sessionToken:tokens.A,trustedSetup:{}},
+    {sessionToken:false}]){
+    assert.deepEqual(store.initializeCommandDeckForSession(request),
+      {status:400,code:'INVALID_DECK_INIT_REQUEST'});
+    assert.equal(db.isTransaction,false);
+  }
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(store.initializeCommandDeckForSession({sessionToken:tokens.B}).status,403);
+  assert.equal(store.initializeCommandDeckForSession({sessionToken:tokens.A}).status,201);
+  assert.equal(db.isTransaction,false);
+}));
