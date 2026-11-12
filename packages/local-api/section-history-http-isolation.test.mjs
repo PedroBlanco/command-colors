@@ -247,3 +247,72 @@ test('HTTP: match, events and commands request a deny-on-read private lab snapsh
   }
   assert.deepEqual(readFlags,[true,true,true]);
 }));
+
+
+test('SEC-001 HTTP: authenticated SQLite reader is used instead of actor-scoped view',()=>fixture(async({app,tokens,matchId,start})=>{
+  const real=app.getStore(matchId);
+  const readRequests=[];
+  const wrapper={
+    view:()=>{throw new Error('ACTOR_SCOPED_PUBLIC_READ_USED');},
+    viewForSession:request=>{
+      readRequests.push(Object.keys(request));
+      return real.viewForSession(request);
+    },
+    publicEventsForSession:request=>{
+      readRequests.push(Object.keys(request));
+      return real.publicEventsForSession(request);
+    }
+  };
+  const {origin}=await start({storeFactory:()=>wrapper});
+  for(const [token,side] of [[tokens.alice,'A'],[tokens.bob,'B']]){
+    const result=await api(origin,`/api/matches/${matchId}`,token);
+    assert.equal(result.status,200);
+    assert.equal(result.body.state.you,side);
+    assert.equal(result.body.state.matchId,matchId);
+    const events=await api(origin,`/api/matches/${matchId}/events`,token);
+    assert.equal(events.status,200);
+    assert.deepEqual(events.body.events,[]);
+  }
+  assert.deepEqual(readRequests,[['sessionToken'],['sessionToken'],['sessionToken'],['sessionToken']]);
+}));
+
+test('SEC-001 HTTP: token revoked after lobby preflight cannot obtain match view',()=>fixture(async({app,tokens,matchId,start})=>{
+  const {origin}=await start({storeFactory:()=>{
+    app.identity.logOut(tokens.alice); // after invitations.getMatch, before WAL read
+    return app.getStore(matchId);
+  }});
+  const result=await api(origin,`/api/matches/${matchId}`,tokens.alice);
+  assert.equal(result.status,401);
+  assert.deepEqual(result.body,{code:'UNAUTHENTICATED'});
+  assert.doesNotMatch(result.raw,/PRIVATE_A_|PRIVATE_B_|yourHand/);
+}));
+
+test('SEC-001 HTTP: token revoked after lobby preflight cannot obtain public events',()=>fixture(async({app,tokens,matchId,start})=>{
+  const {origin}=await start({storeFactory:()=>{
+    app.identity.logOut(tokens.alice);
+    return app.getStore(matchId);
+  }});
+  const result=await api(origin,`/api/matches/${matchId}/events`,tokens.alice);
+  assert.equal(result.status,401);
+  assert.deepEqual(result.body,{code:'UNAUTHENTICATED'});
+  assert.equal(result.raw.includes('events'),false);
+}));
+
+test('SEC-001 HTTP browser SSE: logout after lobby preflight aborts handshake',()=>fixture(async({app,matchId,start})=>{
+  let issuedCookieToken=null;
+  const {origin}=await start({browser:true,storeFactory:()=>{
+    assert.ok(issuedCookieToken);
+    app.identity.logOut(issuedCookieToken);
+    return app.getStore(matchId);
+  }});
+  const login=await fetch(origin+'/api/session',{
+    method:'POST',headers:{'content-type':'application/json',origin,'x-ccw-request':'1'},
+    body:JSON.stringify({handle:'alice',password:PASSWORD})
+  });
+  assert.equal(login.status,200);
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  issuedCookieToken=cookie.split('=')[1];
+  const sse=await fetch(origin+`/api/matches/${matchId}/updates`,{headers:{cookie}});
+  assert.equal(sse.status,401);
+  assert.deepEqual(await sse.json(),{code:'UNAUTHENTICATED'});
+}));
