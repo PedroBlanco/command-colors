@@ -233,3 +233,59 @@ El laboratorio aislado añade `previewSectionOrderProof`, lectura de solo consul
 El laboratorio separado `CCHL` incorpora ya un **diario SQLite reconstruible**: reparto con RNG criptográfico desde un mazo de prueba, conservación de todas las instancias, manos por bando, carta jugada, órdenes y sectores derivados de una posición de tablero inicial controlada por servidor, descarte, robo y avance de turno **solo experimental**. Los eventos privados y comandos permiten reconstruir la fotografía de la partida y cotejarla con su versión guardada; se verifican revisiones e idempotencia y solo se muestran proyecciones privadas por jugador y eventos públicos sanitizados.
 
 **No está integrado en CCWB ni autoriza cartas, órdenes o combates reales.** Se han superado **33/33 pruebas nativas** sobre los dos módulos nuevos (Node.js 22.16.0/Linux); el manifiesto registra **61 suites**, pendiente ejecutar la regresión integral y verificar Windows/HTTP/SSE. No existe todavía prueba autenticada del mazo/escenario oficial, y el salto de fin de turno se limita al laboratorio. Véase [diario de cartas de sección](61-diario-cartas-seccion-ancients.md).
+
+
+## Puente a la base principal CCWB para historial privado (R-03/R-04, experimental)
+
+La nueva integración `sqlite-section-ccwb-bridge.mjs` permite almacenar el **diario privado y reconstruible de cartas de sección** dentro de `matches.private_state` del SQLite principal **CCWB v1**, correlacionado transaccionalmente con `game_events` (solo público) y `game_commands` (revisión/idempotencia). La composición `sqlite.mjs` cambia a este modo **solo tras inicialización interna explícita**, impide mezclarlo con el mazo sintético y reserva sus operaciones a `dispatchExperimentalSectionHistory`: **la ruta genérica `dispatch` responde `SECTION_LAB_INTERNAL_ONLY`**. Sigue sin autorización de cartas oficiales, escenarios, órdenes definitivas ni combates.
+
+**Regresión nativa 66/66 PASS** en cuatro suites de reglas e historial (Node.js 22.16.0/Linux), incluida la nueva batería CCWB con rollback e integridad; **3 pruebas adicionales de composición completa pendientes de ejecución**, como lo están las **63 suites** del manifiesto y Windows/HTTP/SSE. No se migró el esquema principal y no se añadieron rutas HTTP. Documentación: [puente CCWB](62-puente-ccwb-diario-cartas-ancients.md).
+
+
+## Autoridad de sesión del puente CCWB (R-03/R-04, sin cobertura reglamentaria)
+
+La composición del diario experimental `CCWB` deja de aceptar el bando seleccionado como argumento de inicialización y de despacho: verifica en cada llamada una sesión válida y el vínculo del usuario con `matches.owner_id/guest_id`. Las proyecciones privadas experimentales también se pueden obtener desde la sesión, y el historial de eventos públicos se coteja antes de servirlo cuando el modo está activo. Se rechazan usuarios ajenos, sesiones cerradas, bandos declarados por el llamante e intentos del invitado de iniciar la partida experimental. No se añade ruta HTTP ni se concede autoridad reglamentaria a cartas u órdenes.
+
+**Pruebas escritas, pero pendientes de ejecución:** 4 casos nuevos en `ancients-section-history.test.mjs`, más los 3 de composición anteriores; las 63 suites del manifiesto siguen sin regresión completa. Las ejecuciones anteriores de 66/66 pertenecen a la base #85 y no validan esta modificación. Ver [autoridad de sesión del laboratorio](67-autoridad-sesion-historial-seccion-ancients.md).
+
+
+## Asociación auditable de idempotencia en el diario CCWB (R-03/R-04, experimental)
+
+Las nuevas entradas privadas del diario de cartas de sección conservan su clave de idempotencia y verifican esa relación frente a `game_commands.idem_key` durante el replay SQLite. La firma semántica del comando y los eventos públicos permanecen sin claves, por lo que no se alteran las proyecciones de los jugadores. Los registros anteriores a esta mejora, sin vínculo guardado, se aceptan para compatibilidad, **sin atribuirles retrospectivamente esa garantía**.
+
+**8/8 pruebas nativas PASS** del módulo puro `lab-idempotency-binding.test.mjs` en Linux/Node 22.16.0; **3 nuevas pruebas de integración SQLite pendientes de ejecución**, junto con las siete de composición ya preparadas en PR #86 y la regresión integral. Manifiesto: **64 suites** registradas, no ejecutadas juntas. R-03/R-04 continúan **sin implementación reglamentaria**. Ver [auditoría de idempotencia](68-vinculacion-idempotencia-diario-ancients.md).
+
+
+## Firma versionada del diario experimental (R-03/R-04, aún no reglamentarias)
+
+La PR #87 se endurece frente a una degradación detectada en su primera revisión: borrar únicamente la clave privada de un comando nuevo podía hacer que se tratara como registro `legacy`. Las nuevas firmas de `game_commands.signature` usan el prefijo `CCW_SECTION_COMMAND_V2:` y vinculan comando más clave. La reconstrucción exige esa vinculación para entradas v2 y permite el formato anterior exclusivamente como contrato histórico con una garantía menor. No se añaden datos privados a eventos públicos ni se modifica CCWB v1.
+
+**11 pruebas nativas PASS** del nuevo módulo puro en Node.js 22.16/Linux, comparadas por SHA Git con los archivos publicados. **4 casos nuevos SQLite preparados pero sin ejecutar**, y un caso legacy previo adaptado. **65 suites registradas** y aún no superadas como regresión integral. Ver [documentación de firma versionada](68-vinculacion-idempotencia-diario-ancients.md). R-03 y R-04 continúan sin validación oficial ni autorización reglamentaria completa.
+
+
+## Revalidación de sesión en la misma transacción (R-03/R-04, solo laboratorio)
+
+El control experimental de carta y órdenes ahora vuelve a consultar la sesión y la membresía del actor **después de iniciar `BEGIN IMMEDIATE` y antes de modificar el diario**. Esto elimina la ventana en la que otro proceso podía revocar la sesión después de la prevalidación pero antes de adquirir el bloqueo de escritura. Un resultado negativo deniega la operación sin escribir estado, eventos ni claves de idempotencia. La vista privada por sesión pasa a una instantánea de lectura `BEGIN` que comprende identidad, membresía, estado y proyección. La lectura interna de eventos públicos utiliza el mismo tipo de instantánea WAL en lugar de reservar un bloqueo `BEGIN IMMEDIATE`. Las rutas HTTP no cambian; no se autoriza combate.
+
+**Integración SQLite ejecutada el 12/11/2026:** 24/24 PASS en `sqlite-section-ccwb-bridge.test.mjs` y 11/11 PASS en `ancients-section-history.test.mjs` (total **35/35 PASS conjunto**, 0 fallos, 0 omitidas; informe SHA-256 `2a3b4afb5a95de359eb41da58dc66ad7ce95ab20d856176f779a9ff04010d82b`). Se reconstruyeron y verificaron por hash Git los **18 archivos exactos** del árbol de la PR #88, y se ejecutaron con `node:sqlite`, cuentas e invitaciones reales del laboratorio. Las 7 pruebas de integración añadidas por #88 están incluidas y pasan. La guardia transaccional `section-mutation-session-guard.mjs` sigue integrada en `sqlite.mjs`. **34/34 PASS adicionales** en cinco suites independientes puras/SQLite de una ejecución anterior; no se suman a una única sesión de 69 pruebas. Inventario: **68 suites** registradas; regresión completa, Windows 11, HTTP/SSE y dos navegadores reales pendientes. Ver [revalidación de sesión y transacción](69-revalidacion-sesion-transaction-ccwb.md).
+
+
+## R-04 → R-05: movimiento candidato limitado a órdenes registradas (12/11/2026)
+
+La función pura `precheckStagedAncientsMovement` utiliza el `orderSnapshot` privado del diario de cartas de sección, exige unidad ordenada, actor y revisión correctos y **perfiles/terreno de procedencia exclusiva del servidor**, y reutiliza `precheckAncientsMovementPath` para geometría, ocupación, líderes, terreno y distancias básicas. No añade transición ni modifica SQLite. Una propuesta `CANDIDATE` significa únicamente que el filtro preliminar no ha detectado impedimentos: **`movementAuthorized:false`, `attackAuthorized:false`, `needsFullLegalityCheck:true`**. No implica habilitar movimiento oficial, cartas especiales, combates ni HTTP.
+
+**Evidencia nativa conjunta:** **46/46 PASS, 0 FAIL, 0 SKIP** con Node.js 22.16.0/Linux sin WSL: 10 pruebas de nueva prevalidación, 25 del puente SQLite (incluida ausencia de efectos al consultar órdenes persistidas) y 11 de composición real con cuentas e invitaciones. SHA-256 TAP: `72cd68388c5f2f4f188c306543d73cbe1f95d652ac827fb7cdfa5eba880fcc21`. **69 suites inventariadas**, no significa regresión completa ejecutada. Pendientes Windows, HTTP/SSE, reglas oficiales y pruebas de dos navegadores. Ver [documentación del filtro de movimiento desde órdenes](70-preflight-movimiento-ordenes-ancients.md).
+
+
+## R-04 → R-05: previsualización vinculada a sesión y diario SQLite (12/11/2026)
+
+La consulta interna `precheckExperimentalSectionMovement({sessionToken,expectedRevision,unitId,path},trustedContext)` deriva actor y pertenencia de la sesión, fija una instantánea WAL coherente para identidad y partida, verifica el replay del diario CCWB y ejecuta únicamente el filtro de ruta desde unidades ordenadas de la PR #89. Los perfiles y terrenos se pasan **por separado desde datos de servidor**. El cliente no puede inyectar actor, usuario ni contexto del escenario en la petición. No hay HTTP, escritura de movimiento ni autorización de combate. **`CANDIDATE` nunca significa movimiento reglamentariamente legal**.
+
+**Evidencia integrada real:** seis nuevos casos de sesiones, suplantación, privacidad, concurrencia WAL, adulteración de eventos, validación estricta y ausencia de escrituras; ejecución conjunta del filtro, puente y composición de identidad **52/52 PASS (0 FAIL, 0 SKIP)** con Node.js 22.16.0/Linux sin WSL. TAP SHA-256 `0244d48c9bbd5d44f38310234ebe15cc295417f15c9a9951252e85b2927659c2`. Se mantienen **69 suites** en el manifiesto, sin ejecutar todavía la regresión total. Pendientes Windows, HTTP/SSE, dos navegadores, escenarios oficiales y transacciones que apliquen movimientos. Véase [previsualización privada autenticada](71-previsualizacion-privada-movimiento-ancients.md).
+
+
+## Cierre de exposición indirecta en HTTP y SSE — CCW-015 (12/11/2026)
+
+La vista experimental de CCWB se obtenía también desde `getStore(matchId).view(actor)`, que era utilizado por la ruta **preexistente** `GET /api/matches/:id`. Por tanto, la afirmación histórica «sin una nueva ruta HTTP» no garantizaba el aislamiento del laboratorio. La rama `fix/i4-ccwb-lab-http-read-boundary` devuelve ahora `409 SECTION_LAB_INTERNAL_ONLY` para estado y eventos HTTP cuando se detecta `LAB_ONLY`, bloquea comandos genéricos y suscripciones SSE al laboratorio, y cierra los SSE antiguos al activarlo. Las lecturas de eventos HTTP se protegen dentro de su propia instantánea WAL, no solo en una comprobación previa.
+
+Además, el comando sintético `pass_demo_turn` vuelve a comprobar la modalidad bajo `BEGIN IMMEDIATE`, impidiendo que una activación concurrente inserte eventos demo en el diario experimental. **Dos nuevas pruebas SQLite superadas**: lectura tras activación en otra conexión y escritura demo tras activación entre precheck y bloqueo; **54/54 PASS conjuntos** en tres suites nativas, sin WSL. **Seis pruebas HTTP/SSE preparadas y NO ejecutadas**; quedan pendientes antes de fusionar la corrección fuera de la cadena experimental. Inventario **70 suites**, sin regresión total ejecutada. Véase [aislamiento HTTP del laboratorio](72-limite-http-laboratorio-ancients.md). No autoriza movimiento ni combate oficiales.

@@ -26,6 +26,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/local-api/deck-controls.test.mjs',
   'packages/local-api/browser-deck-ui.test.mjs',
   'packages/local-api/command-deck-sse.test.mjs',
+  'packages/local-api/section-history-http-isolation.test.mjs',
+  'packages/local-api/revision-stream-lab-isolation.test.mjs',
   'packages/dice-roller/dice.test.mjs',
   'packages/order-validator/validator.test.mjs',
   'packages/order-validator/server-context.test.mjs',
@@ -61,7 +63,15 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/ranged-hit-commit-preflight.test.mjs',
   'packages/ancients-rules/section-card-order-screen.test.mjs',
   'packages/ancients-rules/section-history-journal.test.mjs',
-  'packages/ancients-rules/sqlite-section-history-lab.test.mjs'
+  'packages/ancients-rules/sqlite-section-history-lab.test.mjs',
+  'packages/ancients-rules/staged-movement-preflight.test.mjs',
+  'packages/ancients-rules/lab-command-signature.test.mjs',
+  'packages/ancients-rules/lab-idempotency-binding.test.mjs',
+  'packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs',
+  'packages/sqlite-store/wal-transaction-contract.test.mjs',
+  'packages/sqlite-store/wal-cross-process-revocation.test.mjs',
+  'packages/sqlite-store/section-mutation-session-guard.test.mjs',
+  'packages/sqlite-store/ancients-section-history.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
