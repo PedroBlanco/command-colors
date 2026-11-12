@@ -261,7 +261,7 @@ export function openSqliteComposition({file, clock = Date.now,
       return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
         .all(matchId).map(x => decode(x.payload));
     }
-    return {
+    const store = {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
       view(actor, {denyExperimentalLab = false} = {}) {
@@ -283,6 +283,13 @@ export function openSqliteComposition({file, clock = Date.now,
         const row=rowOrThrow();
         if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_MODE_ACTIVE'};
         return commandDeck.initialize(actor);
+      },
+      /** Authenticated HTTP setup, rechecked after BEGIN IMMEDIATE. */
+      initializeCommandDeckForSession({sessionToken} = {}) {
+        const identity = resolveSectionLabActor(sessionToken);
+        if (identity.error) return identity.error;
+        return commandDeck.initialize(identity.actor,
+          mutationSessionGuard(sessionToken,identity.actor));
       },
       /**
        * TEST-ONLY, never an HTTP route. The trusted fixture is supplied by
@@ -369,15 +376,27 @@ export function openSqliteComposition({file, clock = Date.now,
           return eventsForActor(identity.actor,true);
         });
       },
-      async dispatch(request = {}) {
+      /** HTTP command: never accept a side supplied by the caller. */
+      async dispatchForSession(request = {}) {
+        const {sessionToken,...command} = request;
+        const identity = resolveSectionLabActor(sessionToken);
+        if (identity.error) return identity.error;
+        return store.dispatch({...command,actor:identity.actor},
+          mutationSessionGuard(sessionToken,identity.actor));
+      },
+      async dispatch(request = {}, authGuard = null) {
         const {actor,type,expectedRevision,idempotencyKey} = request;
         if (!['A','B'].includes(actor)) return {status:403,code:'FORBIDDEN'};
         const row=rowOrThrow();
         if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
-        if (hasCommandDeck(row)) return commandDeck.dispatch(request);
+        if (hasCommandDeck(row)) return commandDeck.dispatch(request,authGuard);
         if (type !== 'pass_demo_turn' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
         return atomic(() => {
+          if (authGuard) {
+            const allowed = authGuard();
+            if (allowed !== true) return allowed;
+          }
           const row = rowOrThrow();
           // A second SQLite process may initialize the private section lab
           // after our preflight but before BEGIN IMMEDIATE. Do not append a
@@ -407,6 +426,7 @@ export function openSqliteComposition({file, clock = Date.now,
         });
       }
     };
+    return store;
   }
 
   let closed = false;
