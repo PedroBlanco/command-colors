@@ -154,11 +154,12 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
       if (req.method === 'GET' && !resource) {
         if (lobby.status !== 'READY') return reply(res, 200, {matchId, status: lobby.status, players: lobby.players});
         const store = await getStore(matchId);
-        const state = store.view(actor);
+        // Refuse the private section lab inside the store's WAL snapshot,
+        // before ever constructing its private projection.
+        const state = store.view(actor,{denyExperimentalLab:true});
+        if (state?.code === 'SECTION_LAB_INTERNAL_ONLY' || state?.status === 'LAB_ONLY')
+          return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
         if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
-        // The internal Ancients section-card lab is NEVER a public HTTP state.
-        // Access through the generic match GET must not bypass lab-only guards.
-        if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
         return reply(res, 200, {matchId, status: lobby.status, players: lobby.players, state});
       }
       if (req.method === 'POST' && resource === 'invitations') {
@@ -171,8 +172,11 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         // every tick, so activation after subscription closes the stream.
         if (lobby.status === 'READY') {
           const store = await getStore(matchId);
-          if (store.view(actor)?.status === 'LAB_ONLY')
-            return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
+          const state = store.view(actor,{denyExperimentalLab:true});
+          if (state?.code === 'SECTION_LAB_INTERNAL_ONLY' || state?.status === 'LAB_ONLY')
+            return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
+          if (!state || state.matchId !== matchId)
+            return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
         }
         if (revisionStreams >= MAX_REVISION_STREAMS) return reply(res, 429, {code: 'TOO_MANY_STREAMS'});
         revisionStreams++;
@@ -194,9 +198,10 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
       if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
       if (req.method === 'GET' && resource === 'events') {
         const store = await getStore(matchId);
-        const state = store.view(actor);
-        if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
-        if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
+        const state = store.view(actor,{denyExperimentalLab:true});
+        if (state?.code === 'SECTION_LAB_INTERNAL_ONLY' || state?.status === 'LAB_ONLY')
+          return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
+        if (!state || state.matchId !== matchId) return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
         // Recheck the lab mode inside the event read's own SQLite snapshot:
         // another writer can activate the lab after store.view(actor).
         const events = store.publicEvents(actor,{denyExperimentalLab:true});
@@ -211,9 +216,10 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
       if (req.method === 'POST' && resource === 'commands') {
         const body = await jsonRequest(req);
         const store = await getStore(matchId);
-        const state = store.view(actor);
-        if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
-        if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
+        const state = store.view(actor,{denyExperimentalLab:true});
+        if (state?.code === 'SECTION_LAB_INTERNAL_ONLY' || state?.status === 'LAB_ONLY')
+          return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
+        if (!state || state.matchId !== matchId) return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
         const result = await store.dispatch({actor, type: body.type,
           expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey,
           cardRef: body.cardRef, unitIds: body.unitIds,
