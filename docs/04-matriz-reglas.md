@@ -448,3 +448,25 @@ composición SQLite. No se han ejecutado las cuatro pruebas nuevas
 SQLite ni la regresión de las 76 suites. No se autorizan ni aplican
 movimientos. Véase
 [consulta CCWB autenticada](79-evidencia-movimientos-ccwb-autenticada.md).
+
+
+## R-05 — primer cálculo reproducible de un tablero reducido (LAB-ANC, 12/11/2026)
+
+Se introduce `clear-lab-movement-reducer.mjs`, que calcula una **proyección
+inmutable de tablero** para una o varias unidades de infantería
+explícitamente ordenadas que se desplazan un único hexágono por
+terreno totalmente abierto en el laboratorio. Rechaza todos los líderes,
+terrenos especiales, unidades fuera de perfiles admitidos,
+comportamientos de cartas especiales, órdenes inexistentes, duplicadas,
+revisiones obsoletas y rutas no adyacentes. Una acción bloqueada hace
+que no exista **ningún** tablero ni lista de movimientos parciales.
+
+No es un movimiento reglamentario ejecutado: `canCommit:false`,
+`movementAuthorized:false`, `stateChanged:false`, sin DB, eventos,
+API ni cambios de estado real. **11/11** comprobaciones aisladas V8
+sobre archivos GitHub correctas; la nueva suite se registra como **77**
+del manifiesto, pendiente de ejecución nativa Node.js y de regresión
+integral. El siguiente hito es la transición oficial segura y
+reproducible, con validación de escenario, revisión, órdenes, efectos,
+comandos y transacción de persistencia. Véase
+[contrato del reductor de laboratorio](80-reductor-movimientos-lab-un-hexagono.md).
