@@ -65,7 +65,14 @@ export function reduceOneHexClearLab({
     return refuse(screened.reason??'REQUIRES_RULE_EXCEPTION');
   // Reconstruct the result from the original board only after EVERY route
   // has passed staged order, movement, occupancy and terrain checks.
-  const board=structuredClone(state.board);
+  // Strict PUBLIC-ONLY board projection. The replay-verified lab setup may
+  // retain extra server/private metadata on board or piece records; cloning
+  // the entire state.board would leak that metadata to preview callers.
+  // Only the four public identity/position attributes are needed here.
+  const board={
+    units:state.board.units.map(({id,side,col,row})=>({id,side,col,row})),
+    leaders:[]
+  };
   const moves=[];
   for(const move of screened.steps){
     const unit=board.units.find(x=>x.id===move.id&&x.side===actor);
