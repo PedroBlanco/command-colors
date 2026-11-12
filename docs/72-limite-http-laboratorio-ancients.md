@@ -103,3 +103,25 @@ Para ampliar a **todas las suites inventariadas** solo si las cinco prioritarias
 ```
 
 Este modo genera dos informes independientes —prioritario y global— y nunca sobrescribe uno anterior; `.local-test-reports/` está excluido de Git. El resultado **solo debe considerarse validado** cuando lo ejecute un entorno real Windows/Node con los módulos descargados y se revisen los códigos de salida. La creación del script no demuestra que hayan pasado estas pruebas en Windows.
+
+
+## Resultado de validación comunicado desde Windows y corrección de un test obsoleto (12/11/2026)
+
+El usuario ha ejecutado el validador en el *worktree* Windows `T:\\Github\\command-colors-ccwb-91`, creado desde la rama `origin/fix/i4-ccwb-lab-http-read-boundary` de esta PR. **Resultado comunicado**: las pruebas prioritarias finalizaron con **67 tests correctos**. En la regresión global, el único fallo comunicado fue el **subtest 819**, `diagnóstico es de solo lectura, no crea base ni directorios` de `scripts/check-browser-lab.test.mjs`: `71 !== 43`. No se detectó una regresión de cartas, SQLite o HTTP en ese mensaje.
+
+**Causa comprobada en GitHub:** el diagnóstico `checkLocalLab` devuelve correctamente `LOCAL_TEST_FILES.length` (71 en esta rama), pero la prueba de diagnóstico contenía todavía `assert.equal(result.tests,43)`, valor fijo de un inventario anterior.
+
+**Corrección incorporada:** importar `LOCAL_TEST_FILES` en `check-browser-lab.test.mjs` y sustituir la expectativa obsoleta por `assert.equal(result.tests,LOCAL_TEST_FILES.length)`; se mantiene la comprobación de que la lista no está vacía. Los tests no se omiten ni se reduce su número. La solución es válida para futuras ampliaciones del inventario.
+
+**Verificación estática tras el commit:** la versión remota deja de incluir la comparación con 43 y usa el manifiesto actualizado; el archivo del test tiene blob Git `31a0f80504c89cdaaaff6b4c5994348decdcd80a`. Se revisaron las suites de scripts para detectar otras comparaciones de `result.tests` con recuentos fijos y no se encontraron otras. Esta corrección **todavía debe ejecutarse con Node en el worktree Windows** antes de afirmar que la regresión total pasa.
+
+En ese worktree, cuya referencia original puede estar en *HEAD desacoplado* porque se creó desde una referencia remota:
+
+```powershell
+Set-Location 'T:\Github\command-colors-ccwb-91'
+git fetch origin
+git switch --detach origin/fix/i4-ccwb-lab-http-read-boundary
+node --test --test-reporter=tap scripts/check-browser-lab.test.mjs
+```
+
+Si la suite corregida pasa, la repetición de regresión global puede ejecutarse con `.\scripts\validate-ccwb-http.ps1 -FullRegression` o con el ejecutor `node scripts/run-test-suite.mjs --log=.local-test-reports/ccwb-global-tras-fix.tap` (usar un nombre de informe nuevo). **No se solicita iniciar el servidor manualmente, probar navegadores ni usar WSL** para validar este cambio de aserción.
