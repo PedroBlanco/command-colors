@@ -296,7 +296,7 @@ Además, el comando sintético `pass_demo_turn` vuelve a comprobar la modalidad 
 La inicialización ordinaria del mazo debía rechazar `ancientsSectionHistoryLab` **dentro de su propia transacción SQLite**, no solo en el preflight de la composición: otra conexión podía activar el diario entre ambos. Se añade ese guard bajo `BEGIN IMMEDIATE` y bloqueos equivalentes para `dispatch` y `view` del mazo ante estados mixtos. **Cuatro nuevos casos de integración SQLite** repartidos en `packages/command-deck/sqlite-game.test.mjs` y `packages/sqlite-store/ancients-section-history.test.mjs`; pendientes de ejecución nativa en esta rama. Se han superado **5/5 comprobaciones aisladas con transacción simulada** sobre el código Git exacto, que no sustituyen los tests SQLite. Total inventariado: **71 suites**. Documento: [exclusión atómica de modos](73-exclusion-atomica-mazo-laboratorio.md). Las reglas y combates oficiales no se habilitan.
 
 
-## Instantánea WAL de las vistas HTTP de partida (CCW-015, 12/11/2026)
+## Instantánea WAL de las vistas HTTP de partida (SEC-001, 12/11/2026)
 
 La consulta `getStore(matchId).view(actor,{denyExperimentalLab:true})` reúne selección de modo y proyección en un snapshot SQLite/WAL de solo lectura, para impedir incoherencias entre consultas y evitar construir manos del laboratorio privado en respuestas públicas. El gateway usa la opción de rechazo temprano en vistas, eventos, comandos y negociación SSE; el SSE la utiliza en cada tick. Se mantienen los controles internos de eventos dentro de su propio snapshot y las revalidaciones de escritura.
 
