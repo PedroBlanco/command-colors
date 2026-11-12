@@ -530,3 +530,18 @@ no autoriza movimientos oficiales ni fusionar `main`.
 Detalles en [documentos 82](82-reductor-movimientos-lab-un-hexagono.md),
 [83](83-preview-privada-intencion-un-hexagono.md) y
 [84](84-composicion-ccwb-simulacion-autenticada.md).
+
+
+## SEC-001 / R-05 — prohibir acceso HTTP al laboratorio de simulación (13/11/2026)
+
+Se han registrado **dos nuevas pruebas de interfaz HTTP** en la suite
+existente `packages/local-api/gateway.test.mjs`. Comprueban que las
+rutas inventadas hacia la simulación interna de un hexágono devuelvan
+**404** sin abrir el almacén, y que la vista, los eventos y el endpoint
+de comandos de una partida `LAB_ONLY` respondan **409** sin llamar a
+los métodos privados ni al despacho general. La suite reúne **10 casos**
+(con sintaxis V8 comprobada), pero **no se ha ejecutado nativamente**
+en el SHA vigente. El manifiesto no cambia: **79 suites**.
+
+No se introduce ningún endpoint ni movimiento reglamentario confirmado.
+Véase [contrato de integración y frontera HTTP](84-composicion-ccwb-simulacion-autenticada.md).
