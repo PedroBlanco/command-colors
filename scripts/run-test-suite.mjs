@@ -46,7 +46,8 @@ export function auditLocalTestManifest(rootDir, manifest) {
   const observed=[];
   function visit(absolute, relativePath) {
     for (const entry of readdirSync(absolute, {withFileTypes:true})) {
-      // Dirent.isDirectory() and isFile() both reject symbolic links.
+      // Do not follow symbolic links, including directory junctions.
+      if (entry.isSymbolicLink()) continue;
       const path = relativePath + '/' + entry.name;
       const file = resolve(absolute,entry.name);
       if (entry.isDirectory()) visit(file,path);
