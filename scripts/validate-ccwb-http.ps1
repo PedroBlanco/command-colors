@@ -15,6 +15,8 @@ $fullLog = "$reports/ccwb-all-$stamp.tap"
 # These are exact paths in LOCAL_TEST_FILES, not dynamically supplied commands.
 $suites = @(
   'packages/local-api/section-history-http-isolation.test.mjs',
+  'packages/local-api/browser-sqlite-smoke.test.mjs',
+  'packages/local-api/command-deck-sse.test.mjs',
   'packages/local-api/revision-stream-lab-isolation.test.mjs',
   'packages/sqlite-store/ancients-section-history.test.mjs',
   'packages/command-deck/sqlite-game.test.mjs',
@@ -31,7 +33,7 @@ try {
 
   foreach ($file in $suites) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
-      throw "Falta la suite $file. Ejecuta esta validación desde la rama de la PR #91."
+      throw "Falta la suite $file. Actualiza el worktree de la rama experimental antes de validar."
     }
   }
 
