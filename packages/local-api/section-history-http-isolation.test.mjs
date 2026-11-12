@@ -194,7 +194,7 @@ test('HTTP browser SSE subscription opened before lab activation closes on first
       done=next.done;
       if(!done) {
         const chunk=new TextDecoder().decode(next.value);
-        assert.equal(chunk.includes('gameRevision":0'),false);
+        assert.equal(chunk.includes('card_a_left'),false);
       }
     }
     assert.equal(done,true);
