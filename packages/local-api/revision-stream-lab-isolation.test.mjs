@@ -111,3 +111,25 @@ test('SSE requests a deny-on-read snapshot and closes on internal lab sentinel',
   assert.deepEqual(calls,[{actor:'A',deny:true}]);
   assert.doesNotMatch(res.text,/event: revision|gameRevision|SECRET/);
 });
+
+
+test('SEC-001 SSE: revocation inside authenticated WAL reader closes stream',async t=>{
+  const res=new TestResponse(),requests=[];
+  const stop=startRevisionStream({
+    res,token:TOKEN,matchId:ID,intervalMs:20,
+    identity:{resolveSession:()=>({handle:'alice'})},
+    invitations:{getMatch:()=>({ok:true,status:'READY',revision:1,
+      players:[{handle:'alice',side:'A'}]})},
+    getStore:async()=>({
+      view:()=>{throw new Error('ACTOR_SCOPED_VIEW_MUST_NOT_RUN');},
+      viewForSession:request=>{
+        requests.push(request);
+        return {status:401,code:'UNAUTHENTICATED'};
+      }
+    })
+  });
+  t.after(()=>{stop();if(!res.ended)res.end();});
+  await until(()=>res.ended);
+  assert.deepEqual(requests,[{sessionToken:TOKEN}]);
+  assert.doesNotMatch(res.text,/event: revision|gameRevision|SECRET/);
+});
