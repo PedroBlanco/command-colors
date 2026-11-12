@@ -11,7 +11,8 @@ import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
-  precheckStagedAncientsMovementSequence} from './staged-movement-preflight.mjs';
+  precheckStagedAncientsMovementSequence,
+  precheckStagedAncientsMovementEvidence} from './staged-movement-preflight.mjs';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
@@ -199,6 +200,22 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     });
     return Object.freeze({status:200,code:'SECTION_LAB_SEQUENCE_PREVIEW',preview});
   }
+  /** INTERNAL LAB ONLY. Replay verifies the private journal under the
+   *  caller's WAL snapshot before building immutable audit evidence.
+   *  Never persist or broadcast this trace as an executed movement. */
+  function previewMovementEvidence(actor,request,trustedContext) {
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const evidence=precheckStagedAncientsMovementEvidence({
+      matchId,actor,state:snapshot,expectedRevision:request.expectedRevision,
+      actions:request.actions,serverContext:trustedContext
+    });
+    return Object.freeze({
+      status:200,code:'SECTION_LAB_CANDIDATE_EVIDENCE',
+      evidence,movementAuthorized:false,attackAuthorized:false,
+      boardChanged:false
+    });
+  }
   return Object.freeze({initialize,view,dispatch,previewMovement,
-    previewLeaderMovement,previewMovementSequence});
+    previewLeaderMovement,previewMovementSequence,previewMovementEvidence});
 }
