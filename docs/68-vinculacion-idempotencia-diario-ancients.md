@@ -1,4 +1,4 @@
-# CCW-015 — Vincular las claves de idempotencia al diario privado de cartas
+# LAB-ANC — Vincular las claves de idempotencia al diario privado de cartas
 
 **Fecha:** 11/11/2026. **Base:** PR #86. **Alcance:** adaptador de laboratorio CCWB para cartas de sección de *Ancients*. Sin HTTP nuevo, migraciones, efectos de combate ni cambios en partidas oficiales.
 
@@ -97,3 +97,6 @@ node --test --test-reporter=tap packages/ancients-rules/lab-idempotency-binding.
 - `lab-command-signature.test.mjs`: `566007608618604c8c3983636796806e2f51ff99`
 
 Esta comprobación no ejecuta el puente SQLite ni ninguna otra de las 63 suites restantes del inventario total de 65.
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `LAB-ANC` (laboratorio privado de cartas, órdenes o movimiento de *Ancients*).
