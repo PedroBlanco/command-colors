@@ -16,3 +16,6 @@
 *.restore-partial
 *.restore-partial-shm
 *.restore-partial-wal
+
+# Informes locales de validación (pueden incluir trazas de sesiones sintéticas)
+.local-test-reports/
