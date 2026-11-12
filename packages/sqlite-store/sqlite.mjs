@@ -11,6 +11,7 @@ import {initializeSchema, CCW_SCHEMA_SQL} from './schema-version.mjs';
 import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqlite-game.mjs';
 import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
+import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
 const KDF = Object.freeze({N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024});
@@ -297,6 +298,31 @@ export function openSqliteComposition({file, clock = Date.now,
           return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
         return sectionHistory.dispatch({...command,actor:identity.actor},
           mutationSessionGuard(sessionToken, identity.actor));
+      },
+      /** INTERNAL LAB ONLY. Session is the sole source of actor identity;
+       *  server-owned unit profiles/terrain are passed separately from request.
+       *  No new HTTP route, no game mutation, no raw private journal returned. */
+      precheckExperimentalSectionMovement(request = {},trustedContext) {
+        if (!plainLabRequest(request) ||
+            Object.keys(request).length!==4 ||
+            !['sessionToken','expectedRevision','unitId','path'].every(k => Object.hasOwn(request,k)) ||
+            typeof request.sessionToken!=='string' ||
+            !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision<0 ||
+            typeof request.unitId!=='string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(request.unitId) ||
+            !Array.isArray(request.path) || request.path.length<1 || request.path.length>32 ||
+            !request.path.every(cell => plainLabRequest(cell) &&
+              Object.keys(cell).length===2 && Object.hasOwn(cell,'col') &&
+              Object.hasOwn(cell,'row') && inBounds(cell)))
+          return {status:400,code:'INVALID_SECTION_LAB_MOVEMENT_REQUEST'};
+        // One WAL snapshot binds identity, match membership, CCWB replay and
+        // the read-only movement filter; a concurrent logout cannot interleave.
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(request.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewMovement(identity.actor,request,trustedContext);
+        });
       },
       publicEvents(actor) {
         if (!['A','B'].includes(actor)) return null;
