@@ -5,6 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createSqliteAncientsSectionBridge as create,hasExperimentalSectionHistory as hasMode} from './sqlite-section-ccwb-bridge.mjs';
+import {precheckStagedAncientsMovement} from './staged-movement-preflight.mjs';
 
 const MATCH='123e4567-e89b-42d3-a456-426614174000';
 const setup=()=>({cardInstances:[
@@ -246,5 +247,84 @@ test('CCWB v2: legacy entry followed by a new entry uses stronger signature',()=
    .all().map(x=>x.signature);
  assert.equal(signatures[0],JSON.stringify(oldCommand));
  assert.ok(signatures[1].startsWith('CCW_SECTION_COMMAND_V2:'));
+ assert.equal(root.bridge.view('B').revision,2);
+}));
+
+test('CCWB: initialization authorization runs inside SQLite write transaction',()=>fixture(({root})=>{
+ let checked=0;
+ const denied=root.bridge.initialize('A',setup(),()=>{
+   checked++;
+   assert.equal(root.db.isTransaction,true);
+   return {status:401,code:'UNAUTHENTICATED'};
+ });
+ assert.equal(denied.code,'UNAUTHENTICATED');
+ assert.equal(checked,1);
+ assert.equal(hasMode(root.getRow(MATCH)),false);
+ assert.equal(root.getRow(MATCH).lobby_revision,0);
+ assert.equal(root.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,0);
+ assert.equal(root.bridge.initialize('A',setup()).code,'SECTION_LAB_INITIALIZED');
+}));
+
+test('CCWB: revoked session guard prevents all command writes and idempotency rows',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());
+ const card=root.bridge.view('A').yourHand[0].instanceId;
+ const request=req('PLAY_SECTION_CARD',0,{cardInstanceId:card},'revoked_section_0001');
+ const before=root.getRow(MATCH);
+ let checked=0;
+ const denied=root.bridge.dispatch(request,()=>{
+   checked++;
+   assert.equal(root.db.isTransaction,true);
+   return {status:401,code:'UNAUTHENTICATED'};
+ });
+ assert.equal(denied.code,'UNAUTHENTICATED');
+ assert.equal(checked,1);
+ assert.deepEqual(root.getRow(MATCH),before);
+ assert.equal(root.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,0);
+ assert.equal(root.db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,0);
+ assert.equal(root.bridge.dispatch(request).code,'SECTION_LAB_APPLIED');
+}));
+
+test('CCWB: passing authorization guard is checked exactly once inside transaction',()=>fixture(({root})=>{
+ let calls=0;
+ assert.equal(root.bridge.initialize('A',setup(),()=>{
+   assert.equal(root.db.isTransaction,true);
+   calls++;
+   return true;
+ }).status,201);
+ const card=root.bridge.view('A').yourHand[0].instanceId;
+ const request=req('PLAY_SECTION_CARD',0,{cardInstanceId:card},'authorized_once_0001');
+ assert.equal(root.bridge.dispatch(request,()=>{
+   assert.equal(root.db.isTransaction,true);
+   calls++;
+   return true;
+ }).status,200);
+ assert.equal(calls,2);
+ assert.equal(root.bridge.view('A').revision,1);
+}));
+
+test('CCWB: staged movement screen reads private persisted orders without mutations',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);order(root);
+ const rowBefore=root.getRow(MATCH);
+ const eventsBefore=root.db.prepare('SELECT * FROM game_events ORDER BY sequence').all();
+ const commandsBefore=root.db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all();
+ const state=JSON.parse(rowBefore.private_state).ancientsSectionHistoryLab.state;
+ const trusted={unitTypes:{unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'},terrain:[]};
+ const proposal=precheckStagedAncientsMovement({
+   state,actor:'A',expectedRevision:2,unitId:'unitA',
+   path:[{col:3,row:4}],serverContext:trusted
+ });
+ assert.equal(proposal.status,'CANDIDATE');
+ assert.equal(proposal.movementAuthorized,false);
+ assert.equal(proposal.attackAuthorized,false);
+ assert.equal(proposal.stateChanged,false);
+ const denied=precheckStagedAncientsMovement({
+   state,actor:'A',expectedRevision:2,unitId:'unitB',
+   path:[{col:9,row:4}],serverContext:trusted
+ });
+ assert.equal(denied.reason,'UNIT_NOT_ORDERED');
+ assert.deepEqual(root.getRow(MATCH),rowBefore);
+ assert.deepEqual(root.db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),eventsBefore);
+ assert.deepEqual(root.db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all(),commandsBefore);
+ assert.equal(root.bridge.view('A').revision,2);
  assert.equal(root.bridge.view('B').revision,2);
 }));

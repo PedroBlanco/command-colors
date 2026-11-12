@@ -9,6 +9,7 @@ import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
 import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
+import {precheckStagedAncientsMovement} from './staged-movement-preflight.mjs';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
@@ -87,9 +88,15 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       status:'LAB_ONLY',...projectSectionHistoryLab(snapshot,actor)});
   }
   /** Explicit TEST-ONLY server setup. Never accept browser-supplied setup. */
-  function initialize(actor,setup){
+  function initialize(actor,setup,authorizeInTransaction=()=>true){
     if(actor!=='A')return denied(403,'FORBIDDEN');
+    if(typeof authorizeInTransaction!=='function')
+      throw new TypeError('INVALID_SECTION_LAB_AUTH_GUARD');
     return atomic(()=>{
+      // Recheck live session and membership after BEGIN IMMEDIATE, not only
+      // before entering this bridge. Another connection may have revoked it.
+      const authorization=authorizeInTransaction();
+      if(authorization!==true)return authorization;
       const row=resultRow(),persisted=parse(row);
       if(row.game_revision!==0||Object.hasOwn(persisted,'commandSession')||
          Object.hasOwn(persisted,'ancientsSectionHistoryLab')||
@@ -110,8 +117,10 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     if(!['A','B'].includes(actor))return null;
     return safeView(resultRow(),actor);
   }
-  function dispatch(request={}){
+  function dispatch(request={},authorizeInTransaction=()=>true){
     if(!record(request)||!['A','B'].includes(request.actor))return denied(403,'FORBIDDEN');
+    if(typeof authorizeInTransaction!=='function')
+      throw new TypeError('INVALID_SECTION_LAB_AUTH_GUARD');
     const fields=Object.hasOwn(TYPES,request.type) ? TYPES[request.type] : null;
     if(!fields)return denied(400,'INVALID_SECTION_LAB_COMMAND');
     const expected=['actor','type','expectedRevision','idempotencyKey',...fields];
@@ -121,6 +130,10 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
        typeof request.idempotencyKey!=='string'||!KEY.test(request.idempotencyKey))
       return denied(400,'INVALID_SECTION_LAB_COMMAND');
     return atomic(()=>{
+      // Mutating command: revalidate the original session under the same SQLite
+      // write transaction that records revision, events and command.
+      const authorization=authorizeInTransaction();
+      if(authorization!==true)return authorization;
       const row=resultRow(),{persisted,journal,snapshot}=verify(row);
       const command={type:request.type,actor:request.actor,expectedRevision:request.expectedRevision};
       for(const field of fields)command[field]=structuredClone(request[field]);
@@ -146,5 +159,16 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
         cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,combatResolved:false});
     });
   }
-  return Object.freeze({initialize,view,dispatch});
+  /** Verified, private CCWB snapshot. Caller MUST authenticate actor and hold
+   *  the session/membership read transaction; no raw journal leaves the bridge. */
+  function previewMovement(actor,request,trustedContext){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const preview=precheckStagedAncientsMovement({
+      state:snapshot,actor,expectedRevision:request.expectedRevision,
+      unitId:request.unitId,path:request.path,serverContext:trustedContext
+    });
+    return Object.freeze({status:200,code:'SECTION_LAB_MOVEMENT_PREVIEW',preview});
+  }
+  return Object.freeze({initialize,view,dispatch,previewMovement});
 }
