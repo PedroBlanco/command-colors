@@ -22,9 +22,14 @@ const validActions=xs=>Array.isArray(xs)&&xs.length>=1&&xs.length<=117&&xs.every
   typeof a.id==='string'&&ID.test(a.id)&&a.id!=='__proto__'&&
   Array.isArray(a.path)&&a.path.length>=1&&a.path.length<=32&&
   a.path.every(c=>exactKeys(c,['col','row'])&&inBounds(c)));
-const signature=({matchId,actor,gameRevision,idempotencyKey,actions})=>
+// Include the draft revision in the checksum: changing the CAS version
+// alone must be detectable, not merely a change to moves or ownership.
+// Encode action fields in a fixed order so equivalent JSON key order yields
+// the same idempotency fingerprint.
+const signature=({matchId,actor,gameRevision,draftRevision,idempotencyKey,actions})=>
   createHash('sha256').update(JSON.stringify([
-    MOVEMENT_DRAFT_KIND,matchId,actor,gameRevision,idempotencyKey,actions
+    MOVEMENT_DRAFT_KIND,matchId,actor,gameRevision,draftRevision,idempotencyKey,
+    actions.map(a=>[a.kind,a.id,a.path.map(c=>[c.col,c.row])])
   ])).digest('hex');
 const denied=code=>Object.freeze({ok:false,code});
 
@@ -56,12 +61,12 @@ export function proposeMovementDraft({previous=null,matchId,actor,gameRevision,
   if(previous!==null)assertMovementDraft(previous,matchId);
   const normalized=structuredClone(actions);
   const req={matchId,actor,gameRevision,idempotencyKey,actions:normalized};
-  const fingerprint=signature(req);
   // A draft tied to an older game revision or another player's turn
   // does not carry authority forward. Do not expose it to the new actor.
   const live=previous!==null&&previous.gameRevision===gameRevision&&
     previous.actor===actor ? previous : null;
   if(live && live.idempotencyKey===idempotencyKey) {
+    const fingerprint=signature({...req,draftRevision:live.draftRevision});
     return live.signature===fingerprint
       ? Object.freeze({ok:true,code:'ALREADY_APPLIED',draft:structuredClone(live)})
       : denied('IDEMPOTENCY_KEY_REUSED');
@@ -69,9 +74,11 @@ export function proposeMovementDraft({previous=null,matchId,actor,gameRevision,
   const revision=live?.draftRevision??0;
   if(expectedDraftRevision!==revision)return denied('STALE_DRAFT_REVISION');
   if(revision===Number.MAX_SAFE_INTEGER)return denied('DRAFT_REVISION_EXHAUSTED');
+  const draftRevision=revision+1;
   const draft={
-    kind:MOVEMENT_DRAFT_KIND,matchId,actor,gameRevision,draftRevision:revision+1,
-    idempotencyKey,actions:normalized,signature:fingerprint
+    kind:MOVEMENT_DRAFT_KIND,matchId,actor,gameRevision,draftRevision,
+    idempotencyKey,actions:normalized,
+    signature:signature({...req,draftRevision})
   };
   return Object.freeze({ok:true,code:'DRAFT_STORED',draft:Object.freeze(draft)});
 }
