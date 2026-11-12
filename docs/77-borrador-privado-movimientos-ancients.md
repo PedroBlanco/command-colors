@@ -52,3 +52,55 @@ Total de la PR #95: **49 casos nuevos preparados** (34 previos + 15 de borrador)
 | `packages/hex-grid/hex.mjs` | `ae0e4526b8e91c4c0d5d94aebc52077b60f410da` | Exacto |
 
 `node --test --test-reporter=tap packages/ancients-rules/movement-draft-contract.test.mjs` finalizó **9 PASS / 0 FAIL / 0 SKIP**, salida 0, tras reconstruir estos tres archivos en un árbol aislado. **Esta ejecución sí usa Node.js y SHA-256 nativo**, pero no llega a SQLite ni valida el servidor HTTP.
+
+
+## Evidencia SQLite/WAL nativa adicional (12/11/2026)
+
+Se añade `packages/ancients-rules/movement-draft-sqlite-contract.test.mjs`,
+una suite independiente que ejecuta el **contrato puro del borrador contra
+`node:sqlite` REAL** con archivo en disco, WAL, múltiples conexiones y
+transacciones `BEGIN IMMEDIATE`. El archivo se reconstruyó exactamente
+desde el blob `a686c5822c1045a45901d442c752f51266c816c0` de GitHub;
+los blobs del contrato y la geometría son los mismos que en la prueba
+nativa de nueve casos.
+
+Los **8 casos nuevos** cubren:
+
+1. Persistencia real tras abrir una segunda conexión, sin modificar
+   `game_revision`, tablero ni tabla de eventos de la muestra.
+2. Reintentos idempotentes, conflicto de clave y rechazo de revisión
+   obsoleta sin sobrescribir los bytes anteriores.
+3. Snapshot WAL antiguo estable mientras otra conexión confirma una
+   actualización de borrador.
+4. Exclusión entre escritores con `BEGIN IMMEDIATE` y ausencia de
+   pérdida de actualización.
+5. Caducidad del borrador tras avanzar la revisión del juego.
+6. Detección de contenido alterado en la fila almacenada.
+7. Lectura WAL del último valor confirmado mientras otra conexión
+   mantiene un bloqueo de escritura y una modificación sin confirmar.
+8. Rollback real al intentar almacenar un borrador inválido.
+
+**Ejecución conjunta exacta:** `node --test --test-reporter=tap
+packages/ancients-rules/movement-draft-contract.test.mjs
+packages/ancients-rules/movement-draft-sqlite-contract.test.mjs`
+con Node.js 22.16.0 nativo. Resultado: **17 PASS, 0 FAIL, 0 SKIP**,
+código de salida **0**. Informe TAP SHA-256:
+`278c4034328c38a5244a15e51740f1424a0284f77d6f66c1d2adf83333ef07b9`.
+Hashes Git: contrato `1bbbdf90b0961574855efba3e025b648e5517cc0`,
+test del contrato `417ce42486f6ec459a5d09546b39503994a5f5e5`,
+geometría `ae0e4526b8e91c4c0d5d94aebc52077b60f410da`,
+suite SQLite `a686c5822c1045a45901d442c752f51266c816c0`.
+
+**Distinción importante de alcance:** esta suite contiene un esquema mínimo
+`matches/public_events` y un adaptador de prueba para guardar el
+contrato. **No ejecuta `openSqliteComposition` ni el servicio completo**,
+por lo que **no valida** autorización real, invitaciones, reconstrucción
+de cartas, integración de sesiones, ni las 12 pruebas SQLite agregadas
+a `ancients-section-history.test.mjs`. Estas 12 pruebas y la regresión
+completa siguen pendientes de ejecución. Tampoco se prueba HTTP/SSE.
+
+**Estado acumulado de PR #95 en esta fecha:** **57 casos nuevos preparados**
+(49 anteriores + 8 de SQLite/WAL nativo), **75 suites inventariadas y presentes**,
+**17 casos nativos aprobados** en el subcontrato de borrador, 38 verificaciones
+aisladas del movimiento/órdenes y 12 nuevos casos de composición SQLite sin
+ejecutar. Ninguna acción de juego está autorizada ni se ha fusionado `main`.
