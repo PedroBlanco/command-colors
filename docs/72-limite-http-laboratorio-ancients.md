@@ -32,7 +32,7 @@ Se han añadido dos casos de integración en `packages/sqlite-store/ancients-sec
 - `packages/sqlite-store/sqlite.mjs`: `3b9b23d67f4cec80218ce0e591330848fc126bf7`
 - `packages/sqlite-store/ancients-section-history.test.mjs`: `ed68d2c04a67c2d5dd7bfd34255aaf52a114e645`
 
-También se han redactado **seis casos HTTP/SSE** en `packages/local-api/section-history-http-isolation.test.mjs`: lectura normal previa, bloqueo de vista privada para A y B, eventos y comandos sin escrituras, doble inicialización, nueva suscripción SSE rechazada y cierre de SSE preexistente tras activar el laboratorio. **Estos seis casos todavía NO se han ejecutado de extremo a extremo** y deben pasar antes de considerar resuelto el cierre HTTP.
+También se han redactado **siete casos HTTP/SSE** en `packages/local-api/section-history-http-isolation.test.mjs`: lectura normal previa, bloqueo de vista privada para A y B, eventos y comandos sin escrituras, doble inicialización, nueva suscripción SSE rechazada y cierre de SSE preexistente tras activar el laboratorio. **Estos siete casos todavía NO se han ejecutado de extremo a extremo** y deben pasar antes de considerar resuelto el cierre HTTP.
 
 El inventario local pasa de 69 a **70 suites** (el nuevo archivo HTTP es una suite; los dos casos SQLite amplían una existente). Las 70 suites **no han sido ejecutadas** en conjunto.
 
@@ -50,3 +50,14 @@ $LASTEXITCODE
 Después comprobar con dos navegadores que una partida ordinaria sigue funcionando y que una partida experimental nunca presenta cartas en la interfaz genérica, eventos ni avisos SSE. Auditar especialmente la frontera en el modo de cookies, el reinicio del servidor y la revocación de la sesión.
 
 **No fusionar esta corrección en `main` ni habilitar el laboratorio en HTTP mientras no se complete esa validación.** Si se permite fusionar la PR en su rama experimental antecesora, mantenerla en borrador dentro de la cadena hasta disponer de la evidencia de regresión.
+
+
+## Revisión adicional del contrato HTTP (12/11/2026)
+
+Se añadió una **protección de tipo de respuesta**: `GET /events` solo publica un array de eventos (o el array vacío de compatibilidad). Si una implementación de almacenamiento devuelve inesperadamente un objeto de resultado interno —por ejemplo, `{privateJournal: {...}}`—, la puerta HTTP responde `503 SERVICE_UNAVAILABLE` y **nunca serializa** ese objeto. El código `SECTION_LAB_INTERNAL_ONLY` sigue produciendo el `409` anterior, sin introducir un cambio de contrato para partidas ordinarias.
+
+La suite `section-history-http-isolation.test.mjs` dispone ahora de **7 casos**, incluido un test que induce un almacén accidentalmente incorrecto con claves privadas y comprueba que la respuesta HTTP no contiene dichas claves.
+
+Se ejecutaron **seis comprobaciones aisladas** del código exacto de `gateway.mjs`, cargado desde el blob Git `e15befeea957506747e4db9fca6d506629ec94ef`, con un servidor y servicios simulados en el proceso de evaluación JS (no socket TCP ni SQLite). **6/6 comportamiento esperado**: GET laboratorio 409, eventos laboratorio 409, comandos laboratorio 409, resultado de eventos interno inesperado 503 sin campo privado, bloqueo 409 al detectar modalidad de laboratorio en la lectura final y array normal de eventos 200. No se llamó al ejecutor de comandos. También se ejercitó aisladamente el `startRevisionStream` auténtico (blob `bc24e384a2610028d0e0e3d5c5c0ea166b52953a`) con planificador y respuesta falsos: al pasar a `LAB_ONLY`, cierra la conexión y no transmite manos.
+
+Estas comprobaciones son **revisiones funcionales aisladas**, no un resultado del ejecutor Node `node --test` ni prueba de extremo a extremo. La suite HTTP/SSE con Node real y la regresión global de 70 suites **siguen pendientes**.
