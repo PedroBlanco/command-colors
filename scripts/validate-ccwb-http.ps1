@@ -17,6 +17,7 @@ $suites = @(
   'packages/local-api/section-history-http-isolation.test.mjs',
   'packages/local-api/revision-stream-lab-isolation.test.mjs',
   'packages/sqlite-store/ancients-section-history.test.mjs',
+  'packages/command-deck/sqlite-game.test.mjs',
   'packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs',
   'packages/ancients-rules/staged-movement-preflight.test.mjs'
 )
