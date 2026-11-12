@@ -60,9 +60,9 @@ export function buildAncientsCandidateJournal({
     const entry={
       sequence:i+1,
       pieceKind:source.kind,pieceId:source.id,
-      from:{...screened.from},
+      from:{col:screened.from.col,row:screened.from.row},
       path:source.path.map(cell=>({col:cell.col,row:cell.row})),
-      to:{...screened.to},
+      to:{col:screened.to.col,row:screened.to.row},
       leaderCarried:screened.leaderCarried??null,
       attachedLeader:screened.attachedLeader??null,
       detachedFromUnit:screened.detachedFromUnit??null,
@@ -96,11 +96,17 @@ export function verifyAncientsCandidateJournal({
   journal,matchId,actor,baseRevision,units,leaders,orderedUnitIds,
   orderedLeaderIds,terrain,actions
 }={}) {
-  const rebuilt=buildAncientsCandidateJournal({
-    matchId,actor,baseRevision,units,leaders,orderedUnitIds,orderedLeaderIds,
-    terrain,actions
-  });
-  return rebuilt.status==='CANDIDATE_EVIDENCE'&&
-    journal!==null&&typeof journal==='object'&&!Array.isArray(journal)&&
-    JSON.stringify(journal)===JSON.stringify(rebuilt.journal);
+  try {
+    const rebuilt=buildAncientsCandidateJournal({
+      matchId,actor,baseRevision,units,leaders,orderedUnitIds,orderedLeaderIds,
+      terrain,actions
+    });
+    return rebuilt.status==='CANDIDATE_EVIDENCE'&&
+      journal!==null&&typeof journal==='object'&&!Array.isArray(journal)&&
+      JSON.stringify(journal)===JSON.stringify(rebuilt.journal);
+  } catch {
+    // A corrupt or stale trusted snapshot can never be considered matching
+    // evidence. Never promote a failed verification into authorization.
+    return false;
+  }
 }
