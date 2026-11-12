@@ -24,9 +24,9 @@ El lector WAL puede consultar el estado previo a una revocación que aún no se 
 
 ## Pruebas por nivel
 
-**Composición pura:** 11/11 casos evaluados sobre los módulos exactos recuperados de GitHub en un entorno **V8 aislado en modo estricto**. Se cargaron 14 módulos reales de geometría, perfiles, carta y órdenes, movimiento, reductor e intención. Se utilizó un sustituto JSON para `structuredClone` y dobles para imports `node:crypto`/`node:util` no invocados en esta suite; **no equivale a ejecutar `node:test` nativo**. Un primer intento en V8 sin modo estricto obtuvo 10/11 (una asignación a objeto congelado no lanzaba excepción); después se corrigió el arnés de comprobación y el resultado final fue 11/11, 0 fallos.
+**Composición pura (primera versión):** 11/11 casos evaluados sobre los módulos exactos recuperados de GitHub en un entorno **V8 aislado en modo estricto**. Se cargaron 14 módulos reales de geometría, perfiles, carta y órdenes, movimiento, reductor e intención. Se utilizó un sustituto JSON para `structuredClone` y dobles para imports `node:crypto`/`node:util` no invocados en esta suite; **no equivale a ejecutar `node:test` nativo**. Un primer intento en V8 sin modo estricto obtuvo 10/11 (una asignación a objeto congelado no lanzaba excepción); después se corrigió el arnés de comprobación y el resultado final fue 11/11, 0 fallos.
 
-**Composición SQLite real:** se han escrito siete casos nuevos en la suite ya existente `packages/sqlite-store/ancients-section-history.test.mjs`:
+**Composición SQLite real:** se han escrito ocho casos nuevos en la suite ya existente `packages/sqlite-store/ancients-section-history.test.mjs`:
 
 1. Autenticación + replay, respuestas privadas y conservación exacta de `matches`, `game_events` y `game_commands` entre dos conexiones.
 2. Usuario externo, bando rival y sesión revocada sin tablero autorizado.
@@ -35,8 +35,9 @@ El lector WAL puede consultar el estado previo a una revocación que aún no se 
 5. Lectura WAL bajo bloqueo escritor y revocación de sesión tras confirmación.
 6. Alteración de eventos del diario: error y cierre correcto de la transacción.
 7. Partida sin laboratorio: denegación en lugar de ejecutar juego normal.
+8. Metadatos privados añadidos al tablero y a las unidades del escenario persistido: exclusión rigurosa en la proyección.
 
-**Los siete casos SQLite están preparados pero NO ejecutados con Node.js/SQLite real.** Tampoco se ha ejecutado la regresión completa del manifiesto de **79 suites** sobre el SHA final. Se ha verificado la sintaxis de los cinco archivos JS modificados o relevantes; la sintaxis no acredita funcionamiento integrado.
+**Los ocho casos SQLite están preparados pero NO ejecutados con Node.js/SQLite real.** Tampoco se ha ejecutado la regresión completa del manifiesto de **79 suites** sobre el SHA final. Se ha verificado la sintaxis de los cinco archivos JS modificados o relevantes; la sintaxis no acredita funcionamiento integrado.
 
 ## Condiciones de consolidación
 
