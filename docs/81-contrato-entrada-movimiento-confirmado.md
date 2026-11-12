@@ -59,7 +59,7 @@ Suite nueva: `packages/ancients-rules/movement-commit-intent-screen.test.mjs`,
 extra, identidad, tokens, revisiones, claves, coordenadas, rutas no legales
 sin autorizar, huecos de arrays, prototipos, símbolos, accesores, proxy
 hostil y determinismo de parseo). Añadida a `LOCAL_TEST_FILES`:
-**77 suites** en esta rama.
+**78 suites** en esta rama consolidada (13 casos de entrada y 11 casos del reductor sintético independiente).
 
 Ejecución en **Node.js 22.16.0 nativo**, reconstruyendo tres archivos de
 blobs GitHub y contrastando con `git hash-object`:
@@ -74,6 +74,11 @@ Resultado **13 PASS / 0 FAIL / 0 SKIP, salida 0**, TAP SHA-256
 
 **Límites de esta evidencia:** se ejecuta exactamente la nueva suite
 con sus dos dependencias reales; **no** se ejecuta el repositorio completo,
-la composición CCWB/SQLite, el gateway HTTP/SSE ni la regresión de 77 suites.
+la composición CCWB/SQLite, el gateway HTTP/SSE ni la regresión de 78 suites.
 No permite fusionar esta rama ni desplegar. No se usaron WSL, Docker
 ni GitHub Actions; `main` no se modifica.
+
+
+## Convivencia con reductor sintético
+
+La rama experimental incluye también, procedente de PR #98, un reductor puro de **un hexágono** que genera únicamente tableros simulados, con 11 casos evaluados en V8 aislado. Véase [documento 82](82-reductor-movimientos-lab-un-hexagono.md). **Ni la validación de entrada ni este reductor confieren permiso de movimiento**. Las pruebas de uno no demuestran las del otro.
