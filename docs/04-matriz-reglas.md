@@ -284,7 +284,7 @@ La consulta interna `precheckExperimentalSectionMovement({sessionToken,expectedR
 **Evidencia integrada real:** seis nuevos casos de sesiones, suplantación, privacidad, concurrencia WAL, adulteración de eventos, validación estricta y ausencia de escrituras; ejecución conjunta del filtro, puente y composición de identidad **52/52 PASS (0 FAIL, 0 SKIP)** con Node.js 22.16.0/Linux sin WSL. TAP SHA-256 `0244d48c9bbd5d44f38310234ebe15cc295417f15c9a9951252e85b2927659c2`. Se mantienen **69 suites** en el manifiesto, sin ejecutar todavía la regresión total. Pendientes Windows, HTTP/SSE, dos navegadores, escenarios oficiales y transacciones que apliquen movimientos. Véase [previsualización privada autenticada](71-previsualizacion-privada-movimiento-ancients.md).
 
 
-## Cierre de exposición indirecta en HTTP y SSE — CCW-015 (12/11/2026)
+## Cierre de exposición indirecta en HTTP y SSE — SEC-001 (12/11/2026)
 
 La vista experimental de CCWB se obtenía también desde `getStore(matchId).view(actor)`, que era utilizado por la ruta **preexistente** `GET /api/matches/:id`. Por tanto, la afirmación histórica «sin una nueva ruta HTTP» no garantizaba el aislamiento del laboratorio. La rama `fix/i4-ccwb-lab-http-read-boundary` devuelve ahora `409 SECTION_LAB_INTERNAL_ONLY` para estado y eventos HTTP cuando se detecta `LAB_ONLY`, bloquea comandos genéricos y suscripciones SSE al laboratorio, y cierra los SSE antiguos al activarlo. Las lecturas de eventos HTTP se protegen dentro de su propia instantánea WAL, no solo en una comprobación previa.
 
@@ -313,7 +313,21 @@ HTTP y SSE rechazan el modo `LAB_ONLY` antes de construir manos internas.
 el bando después de adquirir `BEGIN IMMEDIATE`, también en el mazo sintético.
 
 Se añaden **12 casos** (6 SQLite, 4 HTTP, 2 SSE), además de los 5 casos iniciales
-de #93. **Solo consta verificación de sintaxis del código actualizado**; las
+de #93. La lectura `invitations.getMatch()` también valida identidad, pertenencia
+y lista de participantes dentro de una instantánea WAL; incorpora **2 casos SQLite**
+adicionales de revocación y actualización de membresía. Total nuevo en #93: **19 casos**.
+**Solo consta verificación de sintaxis del código actualizado**; las
 pruebas nativas y la regresión completa siguen pendientes. Se mantiene `main`
 sin cambios, la PR en borrador y la prohibición de despliegue. Consultar
 [SEC-001: contrato de lecturas y escrituras autenticadas](74-lecturas-publicas-snapshot-sqlite.md).
+
+
+## Referencias de tareas: LAB-ANC, SEC-001 y CCW-015 (12/11/2026)
+
+Se corrigen los encabezados de los documentos 60–62 y 67–73. `LAB-ANC`
+identifica trabajo interno de cartas/órdenes y prevalidaciones; `SEC-001` y
+[issue #94](https://github.com/PedroBlanco/command-colors/issues/94) identifican
+aislamiento, sesiones y seguridad transaccional. **`CCW-015` queda reservado
+a dados digitales con azar del servidor**, conforme a la [issue #15](https://github.com/PedroBlanco/command-colors/issues/15).
+Los PR históricos conservan su numeración original; la reclasificación
+documental no cambia funcionalidad, pruebas ni las reglas oficiales.
