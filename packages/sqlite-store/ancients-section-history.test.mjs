@@ -826,3 +826,33 @@ test('CCWB draft: advancing the journal invalidates old candidate without exposi
   assert.equal(store.saveExperimentalSectionMovementDraft(
     saveDraftRequest(tokens.A),movementContext()).code,'STALE_REVISION');
 }));
+
+
+test('CCWB draft: session is revalidated under BEGIN IMMEDIATE and a WAL reader does not lock writer',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const original=app.identity.resolveSession;
+  let checks=0;
+  try {
+    app.identity.resolveSession=token=>{
+      if(token===tokens.A){
+        checks++;
+        assert.equal(db.isTransaction,true,'auth must be inside the draft transaction');
+      }
+      return original(token);
+    };
+    assert.equal(store.saveExperimentalSectionMovementDraft(
+      saveDraftRequest(tokens.A),movementContext()).code,'SECTION_LAB_DRAFT_SAVED');
+    assert.equal(checks,1);
+    const writer=connect().unsafeTestDatabase();
+    writer.exec('BEGIN IMMEDIATE');
+    try {
+      const read=store.viewExperimentalSectionMovementDraft({sessionToken:tokens.A});
+      assert.equal(read.status,200);
+      assert.equal(read.draft.draftRevision,1);
+      assert.equal(checks,2);
+    } finally {writer.exec('ROLLBACK');}
+  } finally {app.identity.resolveSession=original;}
+  assert.equal(db.isTransaction,false);
+}));
