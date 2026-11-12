@@ -606,3 +606,55 @@ test('SEC-001: session-bound public APIs never project a laboratory hand',()=>fi
   assert.equal(store.viewExperimentalSectionHistory({sessionToken:tokens.A}).status,200);
   assert.equal(app.unsafeTestDatabase().isTransaction,false);
 }));
+
+
+test('SEC-001: public demo command rechecks authorization while holding writer lock',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  let checked=0;
+  const result=await store.dispatch({
+    actor:'A',type:'pass_demo_turn',expectedRevision:0,
+    idempotencyKey:'guard_demo_command_001'
+  },()=>{
+    checked++;
+    assert.equal(db.isTransaction,true);
+    return {status:401,code:'UNAUTHENTICATED'};
+  });
+  assert.equal(checked,1);
+  assert.deepEqual(result,{status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.prepare('SELECT count(*) n FROM game_commands WHERE match_id=?').get(matchId).n,0);
+  assert.deepEqual(await store.dispatchForSession({
+    sessionToken:tokens.outsider,actor:'A',type:'pass_demo_turn',
+    expectedRevision:0,idempotencyKey:'forged_outsider_command_001'
+  }),{status:404,code:'NOT_FOUND'});
+  assert.equal(db.isTransaction,false);
+}));
+
+test('SEC-001: command deck writer rechecks session inside BEGIN IMMEDIATE',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  assert.equal(store.initializeCommandDeckForSession({sessionToken:tokens.B}).code,'FORBIDDEN');
+  assert.equal(store.initializeCommandDeckForSession({sessionToken:tokens.A}).status,201);
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  let checked=0;
+  const attempt=await store.dispatch({
+    actor:'A',type:'play_synthetic_card',cardRef:'synthetic_card_01',
+    expectedRevision:0,idempotencyKey:'guard_deck_command_001'
+  },()=>{
+    checked++;
+    assert.equal(db.isTransaction,true);
+    return {status:401,code:'UNAUTHENTICATED'};
+  });
+  assert.equal(checked,1);
+  assert.deepEqual(attempt,{status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.prepare('SELECT count(*) n FROM game_commands WHERE match_id=?').get(matchId).n,0);
+  app.identity.logOut(tokens.A);
+  assert.deepEqual(await store.dispatchForSession({
+    sessionToken:tokens.A,type:'play_synthetic_card',cardRef:'synthetic_card_01',
+    expectedRevision:0,idempotencyKey:'revoked_deck_command_001'
+  }),{status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(store.initializeCommandDeckForSession({sessionToken:tokens.A}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.equal(db.isTransaction,false);
+}));
