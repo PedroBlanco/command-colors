@@ -205,8 +205,12 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         if (Object.keys(body).length !== 0) return reply(res, 400, {code: 'INVALID_SETUP'});
         if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
         const store = await getStore(matchId);
-        if (typeof store.initializeCommandDeck !== 'function') return reply(res, 404, {code: 'NOT_FOUND'});
-        const result = await store.initializeCommandDeck(actor);
+        if (typeof store.initializeCommandDeckForSession !== 'function' &&
+            typeof store.initializeCommandDeck !== 'function')
+          return reply(res, 404, {code: 'NOT_FOUND'});
+        const result = typeof store.initializeCommandDeckForSession === 'function'
+          ? await store.initializeCommandDeckForSession({sessionToken:token})
+          : await store.initializeCommandDeck(actor);
         return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
       }
       if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
@@ -236,11 +240,15 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const readError = publicReadError(state);
         if (readError) return reply(res, readError.status, {code:readError.code});
         if (!state || state.matchId !== matchId) return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
-        const result = await store.dispatch({actor, type: body.type,
-          expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey,
-          cardRef: body.cardRef, unitIds: body.unitIds,
-          unitId: body.unitId, path: body.path,
-          targetUnit: body.targetUnit, choice: body.choice});
+        const command = {type:body.type,
+          expectedRevision:body.expectedRevision, idempotencyKey:body.idempotencyKey,
+          cardRef:body.cardRef, unitIds:body.unitIds,
+          unitId:body.unitId, path:body.path,
+          targetUnit:body.targetUnit, choice:body.choice};
+        // SQLite checks session and membership again under its writer lock.
+        const result = typeof store.dispatchForSession === 'function'
+          ? await store.dispatchForSession({sessionToken:token,...command})
+          : await store.dispatch({actor,...command});
         if (result.view && result.view.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
       }
