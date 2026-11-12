@@ -197,7 +197,11 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const state = store.view(actor);
         if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
-        const events = store.publicEvents(actor);
+        // Recheck the lab mode inside the event read's own SQLite snapshot:
+        // another writer can activate the lab after store.view(actor).
+        const events = store.publicEvents(actor,{denyExperimentalLab:true});
+        if (events?.code === 'SECTION_LAB_INTERNAL_ONLY')
+          return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
         return reply(res, 200, {events: events ?? []});
       }
       if (req.method === 'POST' && resource === 'commands') {
