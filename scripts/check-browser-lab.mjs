@@ -26,6 +26,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/local-api/deck-controls.test.mjs',
   'packages/local-api/browser-deck-ui.test.mjs',
   'packages/local-api/command-deck-sse.test.mjs',
+  'packages/local-api/section-history-http-isolation.test.mjs',
+  'packages/local-api/revision-stream-lab-isolation.test.mjs',
   'packages/dice-roller/dice.test.mjs',
   'packages/order-validator/validator.test.mjs',
   'packages/order-validator/server-context.test.mjs',

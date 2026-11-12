@@ -45,6 +45,9 @@ export function startRevisionStream({res, token, matchId, identity, invitations,
       if (lobby.status === 'READY') {
         const store = await getStore(matchId);
         const state = store.view(actor);
+        // A connection opened before laboratory activation must not continue
+        // reporting its experimental revision (even though SSE has no cards).
+        if (state?.status === 'LAB_ONLY') { stop(); res.end(); return; }
         if (!state || state.matchId !== matchId || !Number.isSafeInteger(state.revision)) {
           throw new Error('MATCH_REVISION_INVALID');
         }

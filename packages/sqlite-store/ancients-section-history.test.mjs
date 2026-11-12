@@ -400,3 +400,55 @@ test('CCWB composition: preview cannot authorize movement before orders are stag
   assert.equal(store.precheckExperimentalSectionMovement(movementRequest(tokens.A,{expectedRevision:3}),trusted).preview.reason,'NOT_ACTING_PLAYER');
   assert.equal(store.precheckExperimentalSectionMovement(movementRequest(tokens.B,{expectedRevision:3,unitId:'unitB',path:[{col:9,row:4}]}),trusted).preview.reason,'ORDERS_NOT_STAGED');
 }));
+
+
+test('CCWB HTTP boundary: event reads fail closed inside their own WAL snapshot',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  assert.deepEqual(store.publicEvents('A',{denyExperimentalLab:true}),[]);
+  // Emulate the HTTP layer reading an ordinary synthetic view first.
+  assert.equal(store.view('A').matchId,matchId);
+  const other=connect().getStore(matchId);
+  assert.equal(other.initializeExperimentalSectionHistory({
+    sessionToken:tokens.A,trustedSetup:setup()
+  }).status,201);
+  const card=other.viewExperimentalSectionHistory({sessionToken:tokens.A}).view.yourHand[0].instanceId;
+  assert.equal(other.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,type:'PLAY_SECTION_CARD',expectedRevision:0,
+    idempotencyKey:'late_http_event_guard_001',cardInstanceId:card
+  }).status,200);
+  assert.equal(store.publicEvents('A').length,1); // Internal callers only.
+  assert.deepEqual(store.publicEvents('A',{denyExperimentalLab:true}),
+    {status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB HTTP boundary: demo command cannot corrupt lab activated before SQLite write lock',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const other=connect().getStore(matchId);
+  const original=db.exec;
+  let activated=false;
+  try {
+    // A deterministic two-connection interleaving at the exact boundary
+    // between the synthetic preflight and its BEGIN IMMEDIATE.
+    db.exec=(sql,...args)=>{
+      if(sql==='BEGIN IMMEDIATE'&&!activated){
+        activated=true;
+        assert.equal(other.initializeExperimentalSectionHistory({
+          sessionToken:tokens.A,trustedSetup:setup()
+        }).status,201);
+      }
+      return original.call(db,sql,...args);
+    };
+    const response=await store.dispatch({
+      actor:'A',type:'pass_demo_turn',expectedRevision:0,
+      idempotencyKey:'late_demo_recheck_001'
+    });
+    assert.equal(response.status,409);
+    assert.equal(response.code,'SECTION_LAB_INTERNAL_ONLY');
+    assert.equal(activated,true);
+  } finally {db.exec=original;}
+  assert.equal(store.viewExperimentalSectionHistory({sessionToken:tokens.A}).view.revision,0);
+  assert.equal(store.publicEvents('A').length,0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM game_commands WHERE match_id=?').get(matchId).n,0);
+  assert.equal(db.isTransaction,false);
+}));

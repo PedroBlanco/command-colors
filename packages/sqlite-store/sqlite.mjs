@@ -324,14 +324,18 @@ export function openSqliteComposition({file, clock = Date.now,
           return sectionHistory.previewMovement(identity.actor,request,trustedContext);
         });
       },
-      publicEvents(actor) {
+      publicEvents(actor, {denyExperimentalLab = false} = {}) {
         if (!['A','B'].includes(actor)) return null;
         // Mode selection, replay verification and event read share a WAL
         // snapshot, without holding an IMMEDIATE writer lock.
-        // This is an internal API: callers still must authenticate the actor.
+        // The HTTP gateway opts out of lab data INSIDE this read transaction;
+        // a lab activated after an earlier gateway check cannot leak events.
         return readSnapshot(() => {
           const row = rowOrThrow();
-          if (hasExperimentalSectionHistory(row)) sectionHistory.view(actor);
+          if (hasExperimentalSectionHistory(row)) {
+            if (denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+            sectionHistory.view(actor);
+          }
           return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
             .all(matchId).map(x => decode(x.payload));
         });
@@ -346,6 +350,11 @@ export function openSqliteComposition({file, clock = Date.now,
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
         return atomic(() => {
           const row = rowOrThrow();
+          // A second SQLite process may initialize the private section lab
+          // after our preflight but before BEGIN IMMEDIATE. Do not append a
+          // synthetic demo event to the active lab journal.
+          if (hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
           const signature = `${type}:${expectedRevision}`;
           const previous = db.prepare('SELECT signature FROM game_commands WHERE match_id=? AND actor=? AND idem_key=?')
             .get(matchId,actor,idempotencyKey);
