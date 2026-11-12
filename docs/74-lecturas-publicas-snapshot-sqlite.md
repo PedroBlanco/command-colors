@@ -9,6 +9,7 @@ La API obtenía `identity.resolveSession(token)`, `invitations.getMatch(...)` y 
 ## Contrato implementado
 
 - `view(actor,{denyExperimentalLab:true})` conserva el contrato interno anterior: selección de modalidad y proyección dentro de una instantánea `BEGIN`/SELECT/`COMMIT`; devuelve `SECTION_LAB_INTERNAL_ONLY` antes de calcular una mano de laboratorio.
+- Todas las operaciones que modifican partidas o invitaciones (`createMatch`, `issueInvitation`, `acceptInvitation`, `rejectInvitation` y `revokeInvitation`) resuelven la sesión **después de `BEGIN IMMEDIATE`**. Su pertenencia, propiedad de partida, caducidad y estado de la invitación también se contrastan dentro de ese bloqueo. Esto impide confirmar una invitación o crear una partida con una sesión revocada por otra conexión antes de adquirir el bloqueo. No se añaden rutas HTTP ni nuevas tablas.
 - `invitations.getMatch({sessionToken,matchId})` consulta **sesión, pertenencia, revision del lobby y lista de participantes** en una instantánea WAL única. Revocaciones o cambios de pertenencia confirmados por otra conexión antes de la primera lectura se reflejan en la respuesta; la transacción finaliza antes de responder.
 - `viewForSession({sessionToken})` **siempre deniega el laboratorio** y consulta la sesión, su vencimiento y la pertenencia a la partida **dentro de la misma instantánea WAL** que emplea para seleccionar el modo, reconstruir la vista y determinar el bando. No acepta el bando del cliente. Fallos: `401 UNAUTHENTICATED`, `404 NOT_FOUND`, `409 SECTION_LAB_INTERNAL_ONLY`.
 - `publicEventsForSession({sessionToken})` vincula sesión, pertenencia, modalidad y consulta de eventos públicos en su propia instantánea, aunque el estado se haya consultado anteriormente. Mantiene el comportamiento interno de `publicEvents(actor,{denyExperimentalLab:true})` para adaptadores y pruebas precedentes.
@@ -24,18 +25,18 @@ Una revocación que **se ha confirmado antes de la primera lectura del snapshot*
 
 ## Pruebas y evidencia
 
-La PR #93 tenía cinco casos nuevos de snapshot/laboratorio en tres suites. Esta ampliación añade **14 casos de prueba** (8 SQLite, 4 HTTP y 2 SSE) dentro de suites existentes:
+La PR #93 tenía cinco casos nuevos de snapshot/laboratorio en tres suites. Esta ampliación añade **16 casos de prueba** (10 SQLite, 4 HTTP y 2 SSE) dentro de suites existentes:
 
-- SQLite: sesión vigente y bando correcto, usuario ajeno, revocación desde segunda conexión WAL, pérdida de pertenencia, laboratorio sin exposición de mano, guardia transaccional de comandos demo/mazo e inicialización autenticada. También se verifica la lectura de lobby tras logout desde otra conexión o cambio de guest confirmado.
+- SQLite: sesión vigente y bando correcto, usuario ajeno, revocación desde segunda conexión WAL, pérdida de pertenencia, laboratorio sin exposición de mano, guardia transaccional de comandos demo/mazo e inicialización autenticada. También se verifica la lectura de lobby tras logout desde otra conexión o cambio de guest confirmado. Dos casos comprueban que las cinco mutaciones del lobby autentican tras adquirir el bloqueo y que un logout WAL desde otro proceso las deniega sin modificar tablas.
 
 - HTTP: revocación entre lobby y lectura de partida/eventos/comandos, revocación entre vista y consulta de eventos, revocación entre vista y escritura, y revocación durante inicialización de mazo. Nunca se publican manos ni eventos privados.
 - SSE: preferencia obligatoria de vista vinculada a sesión y cierre al revocar durante una espera asíncrona de almacenamiento.
 
-Total nuevos en esta PR: **19 casos** (5 iniciales y 14 adicionales) sobre las **71 suites existentes**.
+Total nuevos en esta PR: **21 casos** (5 iniciales y 16 adicionales) sobre las **71 suites existentes**.
 
 **Evidencia ejecutada ANTES de esta ampliación:** 7/7 pruebas SSE, Node.js 22.16.0, sobre los blobs exactos `revision-stream.mjs` y su suite anteriores; cinco comprobaciones simuladas del gateway; 41 pruebas nativas de #92 y una regresión integral Windows reportada por el usuario en la rama anterior. **No prueban el árbol actual.**
 
-**Comprobación del árbol actual:** se ha verificado el **parseo sintáctico** de los siete archivos JavaScript modificados (retirando `import/export` únicamente para analizar con V8; sustituyendo `import.meta.url` en el gateway). **No se han ejecutado aquí tests de integración, HTTP real ni regresión completa.** La PR continúa en borrador. El manifiesto conserva **71 suites** y el lanzador prioriza ocho, incluidas las tres suites ampliadas.
+**Comprobación parcial del árbol actual:** se ha verificado el **parseo sintáctico V8** de los archivos JavaScript de SQLite y de las suites nuevas, además de comprobaciones previas del resto (retirando `import/export` únicamente para analizar con V8; sustituyendo `import.meta.url` en el gateway). **No se han ejecutado aquí tests de integración, HTTP real ni regresión completa.** La PR continúa en borrador. El manifiesto conserva **71 suites** y el lanzador prioriza ocho, incluidas las tres suites ampliadas.
 
 ## Validación pendiente, sin solicitarla ahora al usuario
 
