@@ -48,11 +48,11 @@ async function fixture(work){
     assert.equal(app.invitations.acceptInvitation({
       sessionToken:tokens.bob,invitationToken:invited.token
     }).ok,true);
-    const start=async({browser=false,revisionPollMs=30}={})=>{
+    const start=async({browser=false,revisionPollMs=30,storeFactory=app.getStore}={})=>{
       const port=await availablePort();
       const origin=`http://127.0.0.1:${port}`;
       const srv=createAccessGateway({
-        identity:app.identity,invitations:app.invitations,getStore:app.getStore,
+        identity:app.identity,invitations:app.invitations,getStore:storeFactory,
         revisionPollMs,...(browser?{browser:{origin,insecureLoopback:true}}:{})
       });
       await new Promise((resolve,reject)=>srv.once('error',reject).listen(port,'127.0.0.1',resolve));
@@ -199,4 +199,16 @@ test('HTTP browser SSE subscription opened before lab activation closes on first
     }
     assert.equal(done,true);
   } finally {controller.abort();}
+}));
+
+test('HTTP: malformed internal events fail closed instead of serializing a private object',()=>fixture(async({app,tokens,matchId,start})=>{
+  const normal=app.getStore(matchId);
+  const {origin}=await start({storeFactory:()=>({
+    view:actor=>normal.view(actor),
+    publicEvents:()=>({privateJournal:{yourHand:['DO_NOT_LEAK_CARD'],commands:['DO_NOT_LEAK_KEY']}})
+  })});
+  const response=await api(origin,`/api/matches/${matchId}/events`,tokens.alice);
+  assert.equal(response.status,503);
+  assert.deepEqual(response.body,{code:'SERVICE_UNAVAILABLE'});
+  assert.equal(response.raw.includes('DO_NOT_LEAK'),false);
 }));
