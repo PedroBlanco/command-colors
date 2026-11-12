@@ -468,3 +468,23 @@ las 11 pruebas con Node nativo dentro del nuevo árbol. Las 78 suites,
 composición CCWB/SQLite y seguridad de PR #93 siguen pendientes.
 Véase [reductor sintético](82-reductor-movimientos-lab-un-hexagono.md) y
 [contrato de intención](81-contrato-entrada-movimiento-confirmado.md).
+
+
+## R-05 — composición privada de intención y reducción sintética (LAB-ANC, 12/11/2026)
+
+La función `previewPrivateOneHexAncientsIntent` combina el filtro de
+forma de solicitud no fiable (`screenAncientsMovementCommitIntent`) con
+el reductor puro de un hexágono (`reduceOneHexClearLab`), **sin** exponer
+HTTP, abrir SQLite, alterar un tablero ni confirmar una jugada. Es un
+punto privado de simulación que exige al futuro llamador aportar actor,
+estado replay-verificado, terreno y política de **origen servidor**.
+Este módulo **no autentica** el token ni la pertenencia: debe hacerlo
+la composición CCWB bajo el mismo snapshot WAL antes de usarlo.
+
+El estado favorable `PRIVATE_LAB_SIMULATION` lleva un tablero
+hipotético, `canCommit:false`, `movementAuthorized:false` y
+`stateChanged:false`. No incluye token, clave de idempotencia ni mano.
+Se han escrito **11 nuevos casos de prueba** (no ejecutados nativamente).
+El manifiesto experimental reúne **79 suites**; sigue pendiente
+validarlas, SEC-001 (#93) y el reductor oficial. Véase
+[contrato de simulación privada](83-preview-privada-intencion-un-hexagono.md).
