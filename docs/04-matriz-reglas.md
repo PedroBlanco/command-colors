@@ -301,3 +301,19 @@ La inicialización ordinaria del mazo debía rechazar `ancientsSectionHistoryLab
 La consulta `getStore(matchId).view(actor,{denyExperimentalLab:true})` reúne selección de modo y proyección en un snapshot SQLite/WAL de solo lectura, para impedir incoherencias entre consultas y evitar construir manos del laboratorio privado en respuestas públicas. El gateway usa la opción de rechazo temprano en vistas, eventos, comandos y negociación SSE; el SSE la utiliza en cada tick. Se mantienen los controles internos de eventos dentro de su propio snapshot y las revalidaciones de escritura.
 
 **5 nuevos casos en suites existentes** (3 SQLite, 1 HTTP+SQLite, 1 SSE). **7/7 PASS SSE** sobre archivos exactos de GitHub con Node.js 22.16.0; cinco comprobaciones aisladas del gateway superadas, sin sustituir integración completa. **Pendientes** ejecución real HTTP+SQLite del cambio y regresión integral de 71 suites. Ver [contrato WAL para lectura HTTP](74-lecturas-publicas-snapshot-sqlite.md). No incorpora reglamento oficial ni autoriza movimientos, ataques o publicación.
+
+
+## Autorización en snapshot y guardia de escritura (SEC-001, 12/11/2026)
+
+Como continuación de la PR #93, la composición experimental incorpora `viewForSession` y
+`publicEventsForSession`: sesión, pertenencia y selección de modo se verifican en
+la **misma instantánea WAL** que proyecta cartas propias o consulta eventos públicos.
+HTTP y SSE rechazan el modo `LAB_ONLY` antes de construir manos internas.
+`dispatchForSession` e `initializeCommandDeckForSession` revalidan la sesión y
+el bando después de adquirir `BEGIN IMMEDIATE`, también en el mazo sintético.
+
+Se añaden **12 casos** (6 SQLite, 4 HTTP, 2 SSE), además de los 5 casos iniciales
+de #93. **Solo consta verificación de sintaxis del código actualizado**; las
+pruebas nativas y la regresión completa siguen pendientes. Se mantiene `main`
+sin cambios, la PR en borrador y la prohibición de despliegue. Consultar
+[SEC-001: contrato de lecturas y escrituras autenticadas](74-lecturas-publicas-snapshot-sqlite.md).
