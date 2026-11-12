@@ -360,3 +360,28 @@ validación contra escenarios. Véase
 El nuevo contrato `movement-draft-contract.mjs` admite guardar una **propuesta hipotética**, no ejecutar movimiento. La composición SQLite comprueba dentro de `BEGIN IMMEDIATE` la sesión y pertenencia, el replay privado de cartas y órdenes y `CANDIDATE_SEQUENCE`; solo entonces guarda `ancientsSectionMovementDraft` en `matches.private_state`. No altera tablero, revisión de juego, eventos públicos ni claves de comandos del juego. La consulta usa un snapshot WAL y solo proyecta la propuesta a su bando en la revisión de origen; la propuesta caduca tras avanzar el diario.
 
 La versión del borrador y su clave de idempotencia controlan ediciones/reintentos sin crear órdenes nuevas. Se verificó **9/9** de lógica de contrato con **Node.js 22.16.0 nativo y SHA-256 real** sobre los tres blobs Git exactos (contrato, suite, geometría); evidencia TAP SHA-256 `507d4c960f934b25934fc782adb8b2c5c49f8bc12ace3f570ba8822b600`. La evaluación V8 con digest simulado fue preliminar. Se prepararon **6 pruebas de integración SQLite** para persistencia, privacidad, revocación, inmutabilidad, idempotencia, cierre de turno y bloqueos, pendientes de ejecución real. La PR #95 acumula **49 casos nuevos**, con **74 suites registradas y presentes**; su regresión completa sigue pendiente. La propuesta nunca concede movimiento legal. Documento: [contrato de borrador privado](77-borrador-privado-movimientos-ancients.md).
+
+
+## LAB-ANC — prueba nativa aislada de SQLite/WAL del borrador (12/11/2026)
+
+Se ha añadido la suite `packages/ancients-rules/movement-draft-sqlite-contract.test.mjs`,
+que usa `node:sqlite` real, un archivo temporal, `PRAGMA journal_mode=WAL`,
+conexiones independientes, snapshot de lectura y `BEGIN IMMEDIATE` de
+escritura. **8/8** pruebas de la nueva suite correctas: persistencia
+entre conexiones, idempotencia y revisión, snapshots consistentes,
+conflicto de escritores, caducidad, corrupción y rollback por datos
+inválidos. Combinadas con las **9/9** de contrato puro:
+**17/17 PASS, 0 FAIL**, Node.js 22.16.0 sin WSL. Informe TAP SHA-256:
+`278c4034328c38a5244a15e51740f1424a0284f77d6f66c1d2adf83333ef07b9`.
+La suite nativa SQLite coincide con el blob Git
+`a686c5822c1045a45901d442c752f51266c816c0`;
+módulo y dependencias puras también contrastados por hash.
+
+**Alcance limitado**: se prueba el contrato en un esquema SQLite mínimo
+con adaptador de prueba, **no la composición real de la aplicación**.
+Quedan **12 casos de integración del juego con SQLite sin ejecutar**;
+tampoco se ejecutó la regresión completa. El manifiesto contiene
+**75 suites reales**, 75 declaradas, y el recuento de casos nuevos de
+la PR #95 es **57** (49 anteriores y 8 nuevos). Requisito CCW-014 y
+el bloqueo de fusión siguen abiertos. Referencia:
+[borrador privado y evidencia nativa](77-borrador-privado-movimientos-ancients.md).
