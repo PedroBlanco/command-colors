@@ -32,7 +32,7 @@ La PR #93 tenía cinco casos nuevos de snapshot/laboratorio en tres suites. Esta
 - HTTP: revocación entre lobby y lectura de partida/eventos/comandos, revocación entre vista y consulta de eventos, revocación entre vista y escritura, y revocación durante inicialización de mazo. Nunca se publican manos ni eventos privados.
 - SSE: preferencia obligatoria de vista vinculada a sesión y cierre al revocar durante una espera asíncrona de almacenamiento.
 
-Total nuevos en esta PR: **21 casos** (5 iniciales y 16 adicionales) sobre las **71 suites que existían antes de incorporar el validador portátil**.
+Casos nuevos de seguridad en esta PR: **21** (5 iniciales y 16 adicionales). Sumados los **5 casos** de la nueva suite del validador, son **26 pruebas nuevas** en el conjunto de la PR. El manifiesto pasó de 71 a **72 suites**.
 
 **Evidencia ejecutada ANTES de esta ampliación:** 7/7 pruebas SSE, Node.js 22.16.0, sobre los blobs exactos `revision-stream.mjs` y su suite anteriores; cinco comprobaciones simuladas del gateway; 41 pruebas nativas de #92 y una regresión integral Windows reportada por el usuario en la rama anterior. **No prueban el árbol actual.**
 
@@ -69,7 +69,7 @@ guardan TAP inmutable, código de salida y hash SHA-256 en
 aceptan rutas de log procedentes de argumentos del usuario.
 
 Se añadió la suite `scripts/validate-ccwb-http.test.mjs` (cinco casos para
-manifestación, versiones Node, CLI, secuencia de fases y corte ante fallos).
+manifiesto, versiones Node, CLI, secuencia de fases y corte ante fallos).
 **Solo se ha comprobado su sintaxis y se han ejecutado comprobaciones
 aisladas de la lógica del lanzador con lotes simulados.** La suite nativa,
 las doce suites prioritarias y la regresión completa **no se han ejecutado
