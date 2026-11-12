@@ -24,8 +24,13 @@ Su único propósito es proporcionar un tablero **hipotético** tras un movimien
 
 Se han agregado **11 casos preparados** en `private-one-hex-intent-preview.test.mjs`: tablero simulado e inmutable, rechazo de actor/política/tablero falsificados, validación antes de consultar estado privado, ausencia de autenticación en la propia función, ruta limitada a una unidad y un paso, revisión/órdenes/bando adversario, terreno/política, líderes, privacidad de manos/tokens, imposibilidad de mutar el resultado y determinismo.
 
-La nueva suite es la **79** del manifiesto consolidado (76 heredadas, filtro de entrada, reductor sintético y esta composición). **No se ha ejecutado esta suite de 11 tests con Node.js nativo**, ni la integración real CCWB/SQLite, ni la regresión de 79 suites. La evidencia anterior de **13/13** del filtro de entrada (Node nativo) y **11/11** del reductor puro (V8 aislado) corresponde a módulos y suites anteriores y **no valida automáticamente este nuevo helper**.
+La nueva suite es la **79** del manifiesto consolidado (76 heredadas, filtro de entrada, reductor sintético y esta composición). **11/11 casos de esta suite evaluados en V8 aislado con modo estricto**, cargando los 14 módulos reales de reglas desde GitHub y sustituyendo exclusivamente `structuredClone` por clonación JSON y los imports `node:crypto`/`node:util` no ejercitados. **No se ha ejecutado con Node.js nativo**, ni las siete nuevas pruebas de integración real CCWB/SQLite, ni la regresión de 79 suites. La evidencia anterior de **13/13** del filtro de entrada (Node nativo) y **11/11** del reductor puro (V8 aislado) corresponde a módulos y suites anteriores y **no valida automáticamente este nuevo helper**.
 
 No existe un reductor reglamentario completo ni una operación que consuma una orden o actualice un tablero de partida. Sigue pendiente la [issue #97](https://github.com/PedroBlanco/command-colors/issues/97) y el diseño de [contrato de commit](80-contrato-futuro-movimiento-autorizado-ancients.md).
 
 **Condición de integración:** ejecutar pruebas nativas en árbol exacto, validar sesión y replay en SQLite/WAL, resolver #93, verificar seguridad bilateral y regresar las 79 suites antes de fusionar en `main` o desplegar.
+
+
+### Integración privada autenticada con CCWB
+
+El nuevo método interno `precheckExperimentalSectionOneHexIntent` une validación de sesión y pertenencia, selección de partida y replay completo del diario dentro de una sola instantánea SQLite/WAL. El puente calcula únicamente `PRIVATE_LAB_SIMULATION`, nunca autoriza un movimiento. Se han escrito **7 casos nuevos de integración** aún no ejecutados; véase [documento 84](84-composicion-ccwb-simulacion-autenticada.md). El contrato no ha sido conectado a HTTP/SSE ni a ninguna mutación de partida.
