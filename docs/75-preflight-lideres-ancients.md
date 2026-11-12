@@ -41,3 +41,24 @@ node --test packages/ancients-rules/leader-movement-preflight.test.mjs packages/
 ```
 
 Las rutas internas del nuevo laboratorio no se exponen desde `packages/local-api/gateway.mjs`, y los modos públicos siguen requiriendo el aislamiento separado de SEC-001 (PR #93).
+
+
+## Continuación: secuencia líder–unidad (12/11/2026)
+
+La [secuencia temporal simulada](76-secuencia-temporal-lider-unidades-ancients.md)
+incorpora las interacciones que no podían deducirse de una sola trayectoria:
+orden de separación, desplazamiento conjunto de unidad y líder, imposibilidad
+de separar después de mover juntos, y prohibición de mover posteriormente
+una unidad que acaba de recibir un líder. El laboratorio reconstruye una
+serie de movimientos **hipotéticos sobre una copia**, sin aplicarla al tablero
+ni crear un diario de movimientos persistidos. La función de secuencia se
+consulta bajo sesión/partida y snapshot SQLite/WAL, exclusivamente desde
+código interno.
+
+Se añaden 18 casos nuevos, de los cuales 15 son de código puro/staged y 3
+requieren SQLite. En conjunto la PR #95 prepara **34 casos nuevos**;
+las evaluaciones V8 aisladas de preflight puro + secuencia + staged acumulan
+**38/38 correctas** (incluyen diez pruebas staged preexistentes). **No
+sustituyen Node.js/SQLite real ni regresión completa**, y la rama pasa a
+**73 suites** por la nueva suite temporal. El cierre funcional de CCW-014
+sigue pendiente.
