@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {checkLocalLab} from './check-browser-lab.mjs';
+import {checkLocalLab, LOCAL_TEST_FILES} from './check-browser-lab.mjs';
 
 test('diagnóstico es de solo lectura, no crea base ni directorios', async() => {
  const root=await mkdtemp(join(tmpdir(), 'ccw-preflight-'));
@@ -12,7 +12,9 @@ test('diagnóstico es de solo lectura, no crea base ni directorios', async() => 
    assert.equal(result.ok,false);
    assert.ok(result.failures.some(x=>x.includes('Faltan')));
    assert.ok(result.warnings.some(x=>x.includes('No existe base')));
-   assert.equal(result.tests,43);
+   // Count follows the canonical manifest, not a stale historical constant.
+   assert.ok(LOCAL_TEST_FILES.length > 0);
+   assert.equal(result.tests,LOCAL_TEST_FILES.length);
  } finally {await rm(root,{recursive:true,force:true});}
 });
 

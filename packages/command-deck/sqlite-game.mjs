@@ -34,6 +34,8 @@ export function hasCommandDeck(row) {
 function project(row, matchId, actor) {
   if (!['A', 'B'].includes(actor)) return null;
   const state = getPrivateState(row, matchId);
+  // A mixed command-deck/section-lab record must never project a hand.
+  if (Object.hasOwn(state, 'ancientsSectionHistoryLab')) throw new Error('COMMAND_DECK_LAB_MODE_CONFLICT');
   if (!Object.hasOwn(state, 'commandSession')) throw new Error('COMMAND_DECK_NOT_INITIALIZED');
   assertCommandSnapshot(state.commandSession);
   if (row.game_revision !== state.commandSession.phaseState.revision) throw new Error('COMMAND_REVISION_MISMATCH');
@@ -69,6 +71,10 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
     return atomic(() => {
       const row = getRow(matchId);
       const state = getPrivateState(row, matchId);
+      // The initial out-of-transaction preflight can race a second SQLite
+      // connection activating the private section lab. Recheck AFTER BEGIN
+      // IMMEDIATE, before touching the ordinary deck or game tables.
+      if (Object.hasOwn(state, 'ancientsSectionHistoryLab')) return deny(409, 'SECTION_LAB_MODE_ACTIVE');
       if (row.game_revision !== 0 || Object.hasOwn(state, 'commandSession')) return deny(409, 'DECK_ALREADY_STARTED');
       // Server-owned scenario-independent placeholder: never trust card IDs/sizes from a browser.
       const session = createCommandSession({cardIds: SYNTHETIC_CARDS, handSizes: {A: 2, B: 3}});
@@ -94,6 +100,7 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
     return atomic(() => {
       const row = getRow(matchId);
       const state = getPrivateState(row, matchId);
+      if (Object.hasOwn(state, 'ancientsSectionHistoryLab')) return deny(409, 'SECTION_LAB_INTERNAL_ONLY');
       if (!Object.hasOwn(state, 'commandSession')) return deny(409, 'DECK_NOT_INITIALIZED');
       assertCommandSnapshot(state.commandSession);
       if (state.commandSession.phaseState.revision !== row.game_revision) throw new Error('COMMAND_REVISION_MISMATCH');
