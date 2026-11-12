@@ -89,7 +89,8 @@ test('stored data validates its checksum and rejects tampering',()=>{
     {...draft,actions:[{...draft.actions[0],path:[{col:9,row:8}]}]},
     {...draft,signature:'0'.repeat(64)},
     {...draft,unexpected:'private'},
-    {...draft,draftRevision:0}
+    {...draft,draftRevision:0},
+    {...draft,draftRevision:2}
   ]) {
     assert.throws(()=>assertMovementDraft(altered,MATCH),
       /SECTION_LAB_MOVEMENT_DRAFT_CORRUPT/);
@@ -124,4 +125,20 @@ test('editing a draft never mutates the previous record or caller actions',()=>{
   input[0].path[0].col=8;
   assert.deepEqual(first.draft,before);
   assert.equal(next.draft.actions[0].path[0].col,2);
+});
+
+
+test('identical proposal with reordered JSON fields remains an idempotent retry',()=>{
+  const first=save();
+  const reordered=actions().map(a=>({
+    path:a.path.map(c=>({row:c.row,col:c.col})),id:a.id,kind:a.kind
+  }));
+  const retry=save({previous:first.draft,actions:reordered});
+  assert.equal(retry.code,'ALREADY_APPLIED');
+  assert.equal(retry.draft.draftRevision,1);
+  // Reordering the serialized action fields does not invalidate the
+  // signature when the actual ordered path is unchanged.
+  const stored=structuredClone(first.draft);
+  stored.actions=reordered;
+  assert.equal(assertMovementDraft(stored,MATCH),true);
 });
