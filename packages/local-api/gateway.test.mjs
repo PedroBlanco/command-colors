@@ -207,6 +207,9 @@ test('API: LAB_ONLY cannot turn private simulation into generic public command',
       const read=await request('GET',`/api/matches/${MATCH}`,side);
       assert.equal(read.status,409);
       assert.deepEqual(read.body,{code:'SECTION_LAB_INTERNAL_ONLY'});
+      const events=await request('GET',`/api/matches/${MATCH}/events`,side);
+      assert.equal(events.status,409);
+      assert.deepEqual(events.body,{code:'SECTION_LAB_INTERNAL_ONLY'});
     }
     assert.equal(dispatchCalled,0);
     assert.equal(privatePreviewCalled,0);
