@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply}
   from './section-history-journal.mjs';
 import {precheckStagedAncientsMovement as preview,
-  precheckStagedAncientsLeaderMovement as leaderPreview} from './staged-movement-preflight.mjs';
+  precheckStagedAncientsLeaderMovement as leaderPreview,
+  precheckStagedAncientsMovementSequence as sequencePreview} from './staged-movement-preflight.mjs';
 
 const at=(col,row)=>({col,row});
 const setup=()=>init({
@@ -124,7 +125,7 @@ test('invalid geometry returns a validation error but never modifies state',()=>
 });
 
 
-function readyLeader() {
+function readyLeader({includeUnit=false}={}) {
   const initial=init({
     cardInstances:[
       {instanceId:'a_left',definitionId:'ORDER_2_LEFT'},
@@ -144,7 +145,7 @@ function readyLeader() {
     expectedRevision:0,cardInstanceId:initial.hands.A[0].instanceId});
   assert.equal(played.accepted,true);
   const ordered=apply(played.nextState,{actor:'A',type:'ASSIGN_SECTION_ORDERS',
-    expectedRevision:1,unitIds:[],leaderIds:['leaderA']});
+    expectedRevision:1,unitIds:includeUnit?['unitA']:[],leaderIds:['leaderA']});
   assert.equal(ordered.accepted,true);
   return {initial,played:played.nextState,state:ordered.nextState};
 }
@@ -199,4 +200,61 @@ test('end of experimental turn removes authority for prior leader order',()=>{
   const ended=apply(state,{actor:'A',type:'END_EXPERIMENTAL_TURN',expectedRevision:2});
   assert.equal(ended.accepted,true);
   assert.equal(checkLeader(ended.nextState,{actor:'B'}).reason,'ORDERS_NOT_STAGED');
+});
+
+
+const action=(kind,id,cells)=>({kind,id,path:cells.map(([col,row])=>at(col,row))});
+const leaderMove=()=>action('LEADER','leaderA',[[2,5]]);
+const unitMove=()=>action('UNIT','unitA',[[3,4]]);
+const checkSequence=(state,actions,opts={})=>sequencePreview({
+  state,actor:'A',expectedRevision:state.revision,actions,
+  serverContext:context(),...opts
+});
+
+test('staged sequence keeps leader-first detach and subsequent unit move as provisional',()=>{
+  const {state}=readyLeader({includeUnit:true}),copy=structuredClone(state);
+  const result=checkSequence(state,[leaderMove(),unitMove()]);
+  assert.equal(result.status,'CANDIDATE_SEQUENCE');
+  assert.equal(result.steps.length,2);
+  assert.equal(result.steps[0].detachedFromUnit,'unitA');
+  assert.equal(result.steps[1].leaderCarried,null);
+  assert.equal(result.movementAuthorized,false);
+  assert.equal(result.stateChanged,false);
+  assert.deepEqual(state,copy);
+});
+
+test('staged sequence blocks late detach after the same ordered unit carried leader',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const result=checkSequence(state,[unitMove(),leaderMove()]);
+  assert.equal(result.status,'BLOCKED');
+  assert.equal(result.reason,'LEADER_ALREADY_MOVED');
+  assert.equal(result.step,1);
+});
+
+test('staged sequence cannot use unissued unit order, false side or stale revision',()=>{
+  const {state,initial,played}=readyLeader();
+  assert.equal(checkSequence(state,[unitMove()]).reason,'PIECE_NOT_ORDERED');
+  assert.equal(checkSequence(initial,[leaderMove()]).reason,'ORDERS_NOT_STAGED');
+  assert.equal(checkSequence(played,[leaderMove()]).reason,'ORDERS_NOT_STAGED');
+  assert.equal(checkSequence(state,[leaderMove()],{actor:'B'}).reason,'NOT_ACTING_PLAYER');
+  assert.equal(checkSequence(state,[leaderMove()],{expectedRevision:1}).reason,'STALE_REVISION');
+  assert.throws(()=>checkSequence(state,[leaderMove()],{expectedRevision:'2'}),
+    /INVALID_STAGED_SEQUENCE_REVISION/);
+});
+
+test('staged sequence detects changed order snapshots before examining paths',()=>{
+  const {state}=readyLeader({includeUnit:true}),forged=structuredClone(state);
+  forged.orderSnapshot.pieces[0].col=5;
+  assert.equal(checkSequence(forged,[unitMove()]).reason,'ORDER_LEDGER_MISMATCH');
+  const repeated=structuredClone(state);
+  repeated.orderSnapshot.pieces.push({...repeated.orderSnapshot.pieces[0]});
+  assert.equal(checkSequence(repeated,[unitMove()]).reason,'ORDER_LEDGER_MISMATCH');
+});
+
+test('staged sequence requires complete trusted profiles and does not accept extra commands',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  assert.throws(()=>checkSequence(state,[leaderMove()],{serverContext:{terrain:[]}}),
+    /INVALID_STAGED_MOVEMENT_CONTEXT/);
+  assert.throws(()=>checkSequence(state,[{...leaderMove(),actor:'B'}]),
+    /INVALID_SEQUENCE_CONTEXT/);
 });
