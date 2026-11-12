@@ -1,6 +1,6 @@
-# CCW-015 — Lecturas públicas en snapshot WAL sin proyección del laboratorio
+# SEC-001 — Lecturas públicas en snapshot WAL sin proyección del laboratorio
 
-**12/11/2026.** Corrección experimental apilada sobre la PR #83. El laboratorio privado de cartas y órdenes de *Ancients* no es una partida reglamentaria ni está habilitado por HTTP.
+**12/11/2026.** Seguimiento: [SEC-001 / issue #94](https://github.com/PedroBlanco/command-colors/issues/94). Corrección experimental apilada sobre la PR #83. El laboratorio privado de cartas y órdenes de *Ancients* no es una partida reglamentaria ni está habilitado por HTTP.
 
 ## Problema que resuelve
 
