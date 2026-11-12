@@ -242,6 +242,25 @@ export function openSqliteComposition({file, clock = Date.now,
         db, resolveActor:resolveSectionLabActor, sessionToken, expectedActor:originalActor
       });
     }
+    function projectForActor(actor, denyExperimentalLab) {
+      const row = rowOrThrow();
+      if (hasExperimentalSectionHistory(row)) {
+        // HTTP/SSE must never build a private laboratory hand.
+        if (denyExperimentalLab)
+          return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        return sectionHistory.view(actor);
+      }
+      return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+    }
+    function eventsForActor(actor, denyExperimentalLab) {
+      const row = rowOrThrow();
+      if (hasExperimentalSectionHistory(row)) {
+        if (denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        sectionHistory.view(actor);
+      }
+      return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
+        .all(matchId).map(x => decode(x.payload));
+    }
     return {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
@@ -249,17 +268,15 @@ export function openSqliteComposition({file, clock = Date.now,
         // A single WAL snapshot binds mode selection and the private
         // projection. Another connection cannot switch from a demo deck
         // to the Ancients lab between separate SELECTs.
+        return readSnapshot(() => projectForActor(actor,denyExperimentalLab));
+      },
+      /** Authenticated HTTP/SSE read. Session, membership and projection share
+       * the first SQLite WAL snapshot; no request-supplied side is accepted. */
+      viewForSession({sessionToken} = {}) {
         return readSnapshot(() => {
-          const row = rowOrThrow();
-          if (hasExperimentalSectionHistory(row)) {
-            // Only explicitly trusted internal callers can obtain a lab view.
-            // The HTTP gateway and SSE use the deny flag and never construct
-            // the private lab projection, even for a short-lived response.
-            if (denyExperimentalLab)
-              return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
-            return sectionHistory.view(actor);
-          }
-          return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+          const identity = resolveSectionLabActor(sessionToken);
+          if (identity.error) return identity.error;
+          return projectForActor(identity.actor,true);
         });
       },
       initializeCommandDeck(actor) {
@@ -342,14 +359,14 @@ export function openSqliteComposition({file, clock = Date.now,
         // snapshot, without holding an IMMEDIATE writer lock.
         // The HTTP gateway opts out of lab data INSIDE this read transaction;
         // a lab activated after an earlier gateway check cannot leak events.
+        return readSnapshot(() => eventsForActor(actor,denyExperimentalLab));
+      },
+      /** Session-bound event read: no stale lobby/actor proof can authorize it. */
+      publicEventsForSession({sessionToken} = {}) {
         return readSnapshot(() => {
-          const row = rowOrThrow();
-          if (hasExperimentalSectionHistory(row)) {
-            if (denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
-            sectionHistory.view(actor);
-          }
-          return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
-            .all(matchId).map(x => decode(x.payload));
+          const identity = resolveSectionLabActor(sessionToken);
+          if (identity.error) return identity.error;
+          return eventsForActor(identity.actor,true);
         });
       },
       async dispatch(request = {}) {
