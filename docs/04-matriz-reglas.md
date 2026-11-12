@@ -509,3 +509,24 @@ ejecución** en `ancients-section-history.test.mjs`; regresión de
 **79 suites** aún pendiente. El resultado no autoriza movimientos
 reglamentarios. Véase
 [composición autenticada](84-composicion-ccwb-simulacion-autenticada.md).
+
+## R-05 — evitar filtración de metadatos en tablero simulado (LAB-ANC, 12/11/2026)
+
+El resultado `simulatedBoard` ya no copia íntegramente
+`state.board`: el reductor usa una lista blanca de atributos
+`{units:[{id,side,col,row}],leaders:[]}` para excluir metadatos
+internos que pudieran estar presentes en el historial privado.
+Se incorporan regresiones en reductor, helper privado y SQLite
+(real, pendiente de ejecución) con campos secretos inyectados.
+Se corrigió también la prueba que pasaba `undefined` a un
+helper cuyo valor por defecto reconstruía un contexto válido:
+la ausencia de contexto se comprueba directamente en el almacén.
+
+**Pruebas:** 12 del reductor + 12 de composición pura = **24/24**
+evaluaciones correctas en V8 aislado con dependencias nativas no
+ejercitadas simuladas; **8 nuevos casos de integración SQLite
+escritos pero no ejecutados**. 79 suites registradas. La evidencia
+no autoriza movimientos oficiales ni fusionar `main`.
+Detalles en [documentos 82](82-reductor-movimientos-lab-un-hexagono.md),
+[83](83-preview-privada-intencion-un-hexagono.md) y
+[84](84-composicion-ccwb-simulacion-autenticada.md).
