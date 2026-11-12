@@ -40,6 +40,7 @@ test('portable launcher runs security suites before full regression with separat
   const result=await validateCcwHttp({
     fullRegression:true,rootDir:'/tmp/dry-run',version:'22.16.0',
     now:()=>new Date('2026-11-12T12:00:00.000Z'),pid:123,
+    auditManifest:()=>({ok:true,discovered:72,declared:72,missing:[],unregistered:[]}),
     runBatch
   });
   assert.equal(result.exitCode,0);
@@ -58,7 +59,9 @@ test('portable launcher aborts full regression on failed or missing security sui
   ]) {
     let calls=0;
     const result=await validateCcwHttp({
-      fullRegression:true,version:'22.16.0',runBatch:async()=>{calls++;return failure;}
+      fullRegression:true,version:'22.16.0',
+      auditManifest:()=>({ok:true,discovered:72,declared:72,missing:[],unregistered:[]}),
+      runBatch:async()=>{calls++;return failure;}
     });
     assert.equal(result.exitCode,failure.exitCode || 2);
     assert.equal(calls,1);
@@ -73,4 +76,21 @@ test('portable launcher never starts tests with an unsupported Node version',asy
   assert.equal(result.exitCode,2);
   assert.equal(result.reason,'NODE_22_16_REQUIRED');
   assert.equal(called,false);
+});
+
+
+test('portable launcher blocks any test run when the manifest misses a repository suite',async()=>{
+  let invoked=false;
+  const inventory={ok:false,discovered:73,declared:72,missing:[],
+    unregistered:['packages/future/unlisted.test.mjs']};
+  const result=await validateCcwHttp({
+    version:'22.16.0', fullRegression:true,
+    auditManifest:()=>inventory,
+    runBatch:async()=>{invoked=true;throw new Error('must not run');}
+  });
+  assert.equal(result.exitCode,2);
+  assert.equal(result.reason,'TEST_MANIFEST_DRIFT');
+  assert.deepEqual(result.inventory,inventory);
+  assert.deepEqual(result.results,[]);
+  assert.equal(invoked,false);
 });
