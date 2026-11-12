@@ -11,11 +11,14 @@ const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]
 const revision=x=>Number.isSafeInteger(x)&&x>=0;
 const hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const coordinate=p=>[p.col,p.row];
-const ordered=xs=>[...xs].sort();
+// Do not use localeCompare in cryptographic evidence: different locale/ICU
+// settings may order the same identifiers differently across servers.
+const codepointCompare=(a,b)=>a<b?-1:a>b?1:0;
+const ordered=xs=>[...xs].sort(codepointCompare);
 const pieceList=xs=>xs.map(x=>[x.id,x.side,x.col,x.row,...('type' in x?[x.type]:[])])
-  .sort((a,b)=>a[0].localeCompare(b[0]));
+  .sort((a,b)=>codepointCompare(a[0],b[0]));
 const terrainList=xs=>xs.map(x=>[x.col,x.row,x.kind]).sort((a,b)=>
-  a[0]-b[0]||a[1]-b[1]||a[2].localeCompare(b[2]));
+  a[0]-b[0]||a[1]-b[1]||codepointCompare(a[2],b[2]));
 const readOnly=result=>Object.freeze({
   ...result,movementAuthorized:false,attackAuthorized:false,
   stateChanged:false,needsFullLegalityCheck:true
