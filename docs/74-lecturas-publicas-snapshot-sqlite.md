@@ -32,7 +32,7 @@ La PR #93 tenía cinco casos nuevos de snapshot/laboratorio en tres suites. Esta
 - HTTP: revocación entre lobby y lectura de partida/eventos/comandos, revocación entre vista y consulta de eventos, revocación entre vista y escritura, y revocación durante inicialización de mazo. Nunca se publican manos ni eventos privados.
 - SSE: preferencia obligatoria de vista vinculada a sesión y cierre al revocar durante una espera asíncrona de almacenamiento.
 
-Casos nuevos de seguridad en esta PR: **21** (5 iniciales y 16 adicionales). Sumados los **5 casos** de la nueva suite del validador, son **26 pruebas nuevas** en el conjunto de la PR. El manifiesto pasó de 71 a **72 suites**.
+Casos nuevos de seguridad en esta PR: **21** (5 iniciales y 16 adicionales). Se añadieron **8 casos de infraestructura**: 6 de la nueva suite del validador y 2 sobre auditoría del manifiesto en la suite existente. Total acumulado: **29 casos nuevos**. El manifiesto pasó de 71 a **72 suites**.
 
 **Evidencia ejecutada ANTES de esta ampliación:** 7/7 pruebas SSE, Node.js 22.16.0, sobre los blobs exactos `revision-stream.mjs` y su suite anteriores; cinco comprobaciones simuladas del gateway; 41 pruebas nativas de #92 y una regresión integral Windows reportada por el usuario en la rama anterior. **No prueban el árbol actual.**
 
@@ -62,15 +62,33 @@ wrapper PowerShell, que conserva su opción `-FullRegression`.
 node scripts/validate-ccwb-http.mjs --full
 ```
 
-La primera fase ejecuta doce suites predefinidas del manifiesto oficial. Si
+Antes de lanzar cualquier prueba, los dos ejecutores comparan el manifiesto con **todos los archivos `*.test.mjs` realmente presentes** en `packages/`, `scripts/` y `spikes/` (sin seguir enlaces simbólicos). Si hay archivos de prueba omitidos o entradas obsoletas, la ejecución **se detiene con `TEST_MANIFEST_DRIFT`**. La primera fase ejecuta doce suites predefinidas del manifiesto oficial. Si
 fallan o falta un archivo, **no se inicia** la regresión completa. Ambas fases
 guardan TAP inmutable, código de salida y hash SHA-256 en
 `.local-test-reports/`; no se ejecutan comandos de shell arbitrarios ni se
 aceptan rutas de log procedentes de argumentos del usuario.
 
-Se añadió la suite `scripts/validate-ccwb-http.test.mjs` (cinco casos para
-manifiesto, versiones Node, CLI, secuencia de fases y corte ante fallos).
+Se añadió la suite `scripts/validate-ccwb-http.test.mjs` (seis casos para
+manifiesto, versiones Node, CLI, secuencia de fases, corte ante fallos y detección de deriva). Además, dos nuevos casos en `scripts/check-browser-lab.test.mjs` cubren archivos omitidos, entradas obsoletas y enlaces simbólicos.
 **Solo se ha comprobado su sintaxis y se han ejecutado comprobaciones
 aisladas de la lógica del lanzador con lotes simulados.** La suite nativa,
 las doce suites prioritarias y la regresión completa **no se han ejecutado
 sobre este nuevo SHA**. La PR #93 debe seguir en borrador.
+
+
+### Auditoría automática de cobertura del inventario (12/11/2026)
+
+La ejecución canónica `scripts/run-test-suite.mjs` y el lanzador portátil
+`scripts/validate-ccwb-http.mjs` usan el mismo
+`auditLocalTestManifest(rootDir,manifest)`, función de solo lectura. Recorre
+`packages/`, `scripts/` y `spikes/` y rechaza omisiones o entradas que ya no
+se corresponden con archivos. Se ignoran enlaces simbólicos para no escanear
+fuera del checkout. Se añaden tres casos de prueba (uno en el validador,
+dos en el lanzador canónico) y no se añade otra suite al manifiesto.
+
+**Comprobación aislada con datos reales del árbol GitHub** del mismo SHA de
+esta iteración: 72 archivos de prueba encontrados y 72 declarados;
+omitir una entrada o declarar otra inexistente produce un error, y el
+modo estricto rechaza continuar. **No se ejecutó `node:test` sobre el checkout**:
+la auditoría fue evaluada en V8 con una representación de solo lectura
+del árbol real. El bloqueo de fusión de #93 permanece.
