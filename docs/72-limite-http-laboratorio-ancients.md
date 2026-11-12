@@ -125,3 +125,12 @@ node --test --test-reporter=tap scripts/check-browser-lab.test.mjs
 ```
 
 Si la suite corregida pasa, la repetición de regresión global puede ejecutarse con `.\scripts\validate-ccwb-http.ps1 -FullRegression` o con el ejecutor `node scripts/run-test-suite.mjs --log=.local-test-reports/ccwb-global-tras-fix.tap` (usar un nombre de informe nuevo). **No se solicita iniciar el servidor manualmente, probar navegadores ni usar WSL** para validar este cambio de aserción.
+
+
+## Validación en Windows 11 confirmada por el usuario (12/11/2026)
+
+El usuario ha repetido las pruebas en el *worktree* aislado de la PR #91 tras actualizar el cambio que sustituye el recuento fijo `43` por `LOCAL_TEST_FILES.length`. **Resultado comunicado: la prueba `scripts/check-browser-lab.test.mjs` ha pasado y la regresión completa ha pasado.** Anteriormente ya había comunicado 67 pruebas correctas en el bloque prioritario HTTP/SQLite.
+
+Con ello, **las dos condiciones locales pendientes para integrar esta corrección en su rama base experimental se consideran satisfechas**, basándonos en la ejecución y los resultados aportados por el usuario en Windows 11, sin WSL. No se ha recibido el archivo TAP ni su SHA-256 en esta conversación: no se inventan porcentajes, duración ni contadores de pruebas individuales de la regresión global. El manifiesto de la rama de PR #91 contiene **71 suites declaradas**, lo cual no equivale a «71 casos»; cada suite puede contener varios subtests.
+
+**Decisión de integración:** puede fusionarse la PR #91 sobre su rama base `feat/i4-ancients-section-idempotency-journal-binding` (PR #87). Esta decisión no autoriza una fusión del conjunto experimental con `main`, ni su publicación por HTTP/Internet, ni declara completas las reglas oficiales de movimiento o combate. Las pruebas de dos navegadores reales y el examen de seguridad para producción siguen pendientes. El laboratorio permanece exclusivamente interno.
