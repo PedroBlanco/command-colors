@@ -1,4 +1,4 @@
-# CCW-015 / R-04–R-05 — Prevalidación de movimiento desde órdenes registradas
+# LAB-ANC / R-04–R-05 — Prevalidación de movimiento desde órdenes registradas
 
 **Fecha:** 12/11/2026. **Dependencia:** PR #88. **Estado:** laboratorio interno, **sin autorización de movimientos**, sin HTTP, sin escritura SQLite y sin reglas de combate completas.
 
@@ -44,3 +44,6 @@ $LASTEXITCODE
 ```
 
 **Mantener PR apilada en borrador, sin fusionar ni desplegar** hasta revisar la regresión completa, las sesiones y las reglas oficiales.
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `LAB-ANC` (laboratorio privado de cartas, órdenes o movimiento de *Ancients*).
