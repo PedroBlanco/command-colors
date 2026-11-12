@@ -45,7 +45,7 @@ test('SSE sends only public revision counters for a normal active match',async t
   await until(()=>f.res.text.includes('event: revision'));
   assert.equal(f.res.status,200);
   assert.match(f.res.headers['content-type'],/text\/event-stream/);
-  assert.match(f.res.text,/'none'|retry: 3000/);
+  assert.match(f.res.text,/retry: 3000/);
   assert.match(f.res.text,/"lobbyRevision":1,"gameRevision":2/);
   assert.doesNotMatch(f.res.text,/SECRET|yourHand|privateJournal|cardInstanceId/);
   assert.equal(f.res.ended,false);
