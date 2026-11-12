@@ -38,3 +38,11 @@ Un futuro evento confirmado debe tener identidad y revisión inequívocas, versi
 - **Integración:** SQLite real con WAL, seguridad HTTP/SSE de SEC-001, dos sesiones reales, manifiesto completo y regresión nativa del SHA exacto; sin WSL, Docker ni Actions.
 
 **Condición de salida:** la futura PR de movimientos confirmados debe distinguir, con pruebas reproducibles, rechazo, preflight, autorización reglamentaria y confirmación transaccional. Mientras tanto, todas las consultas `LAB-ANC` siguen siendo privadas y **`movementAuthorized:false`**.
+
+## Primer subcontrato implementado (12/11/2026)
+
+El filtro de **formato de entrada, no de autorización**, se ha implementado en
+`movement-commit-intent-screen.mjs`. No se conecta todavía a CCWB o HTTP.
+Valida únicamente un intento de movimiento no fiable y nunca devuelve el token
+ni autoriza modificar el tablero. Véase
+[contrato de entrada y evidencia de 13 pruebas nativas](81-contrato-entrada-movimiento-confirmado.md).
