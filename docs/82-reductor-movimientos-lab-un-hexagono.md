@@ -61,3 +61,24 @@ Conservar este reductor como contrato reducido para pruebas de movimiento; despu
 ## Consolidación experimental de PR #98 y #99
 
 El código del reductor y sus 11 pruebas se conservó sin modificar los blobs originales de PR #98, junto al filtro independiente de intención y sus 13 pruebas de PR #99. La documentación se renumeró a `82` porque ambos desarrollos paralelos utilizaban `docs/81-*` y se necesitan nombres distintos para los dos contratos. El manifiesto actual declara **79 suites**, al incluir la posterior composición privada (11 nuevos casos no ejecutados). La evidencia nativa de 13 casos del filtro no debe atribuirse a las 11 pruebas del reductor, que continúan pendientes de ejecución nativa. No se crea ruta HTTP ni movimiento real.
+
+
+## Protección de metadatos privados — corrección posterior (12/11/2026)
+
+La primera versión del reductor obtenía `simulatedBoard` con
+`structuredClone(state.board)`. Un escenario de laboratorio puede guardar
+campos internos adicionales en `board` o en los registros de las unidades;
+la clonación exponía esos campos a los llamadores de la simulación.
+
+Ahora el reductor construye una **proyección pública por lista blanca**
+que contiene exactamente `{units:[{id,side,col,row}],leaders:[]}` en
+este escenario sin líderes. Ningún campo desconocido, metadato privado,
+mano, token o atributo de escenario sobrevive a la proyección. Se añade
+un caso negativo específico. **12 casos del reductor**, integrados en la
+verificación aislada conjunta de **24/24** casos con la simulación privada:
+V8 en modo estricto, fuentes GitHub reales, sustituto JSON para
+`structuredClone`, dependencias nativas no utilizadas simuladas.
+No equivale a Node.js nativo. Se mantiene `canCommit:false`.
+
+La suite continúa dentro del manifiesto de **79 suites**; la regresión
+integral sigue sin ejecución.
