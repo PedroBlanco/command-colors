@@ -682,3 +682,147 @@ test('CCWB composition: movement sequence rejects client-controlled actor, path 
     sequenceRequest(tokens.A,[sequenceUnit()],{expectedRevision:1}),
     movementContext()).preview.reason,'STALE_REVISION');
 }));
+
+
+/** Persisted movement DRAFT: never a confirmed legal move or public event. */
+const saveDraftRequest=(sessionToken,overrides={})=>({
+  sessionToken,expectedRevision:2,expectedDraftRevision:0,
+  idempotencyKey:'draft_movement_a01',
+  actions:[sequenceLeader(),sequenceUnit()],...overrides
+});
+
+test('CCWB draft: private proposal survives SQLite reopen without changing board, game revision or public log',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const before={
+    revision:db.prepare('SELECT game_revision,lobby_revision FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all(),
+    board:store.viewExperimentalSectionHistory({sessionToken:tokens.A}).view
+  };
+  const saved=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext());
+  assert.equal(saved.status,200);assert.equal(saved.code,'SECTION_LAB_DRAFT_SAVED');
+  assert.equal(saved.draftRevision,1);assert.equal(saved.boardChanged,false);
+  assert.equal(saved.movementAuthorized,false);
+  const next=connect().getStore(matchId).viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A});
+  assert.equal(next.status,200);assert.equal(next.code,'SECTION_LAB_DRAFT_VIEW');
+  assert.equal(next.draft.draftRevision,1);
+  assert.equal(next.draft.baseGameRevision,2);
+  assert.deepEqual(next.draft.actions,[sequenceLeader(),sequenceUnit()]);
+  assert.equal(next.draft.movementAuthorized,false);
+  assert.equal('idempotencyKey' in next.draft,false);
+  assert.equal('signature' in next.draft,false);
+  const after={
+    revision:db.prepare('SELECT game_revision,lobby_revision FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all(),
+    board:store.viewExperimentalSectionHistory({sessionToken:tokens.A}).view
+  };
+  assert.deepEqual(after,before);
+  assert.equal(JSON.stringify(store.view('B')).includes('draft_movement_a01'),false);
+  assert.equal(JSON.stringify(store.publicEvents('B')).includes('draft_movement_a01'),false);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB draft: same request is idempotent, stale revision and conflicting retry do not write',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const request=saveDraftRequest(tokens.A);
+  assert.equal(store.saveExperimentalSectionMovementDraft(request,movementContext()).code,
+    'SECTION_LAB_DRAFT_SAVED');
+  const state=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const same=store.saveExperimentalSectionMovementDraft(request,movementContext());
+  assert.equal(same.code,'ALREADY_APPLIED');assert.equal(same.draftRevision,1);
+  const stale=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{idempotencyKey:'draft_second_a02'}),movementContext());
+  assert.equal(stale.code,'STALE_DRAFT_REVISION');
+  const reused=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{actions:[sequenceLeader()]}),movementContext());
+  assert.equal(reused.code,'IDEMPOTENCY_KEY_REUSED');
+  assert.deepEqual(db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId),state);
+  const next=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{expectedDraftRevision:1,idempotencyKey:'draft_second_a02',
+      actions:[sequenceLeader()]}),movementContext());
+  assert.equal(next.code,'SECTION_LAB_DRAFT_SAVED');assert.equal(next.draftRevision,2);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A}).draft.actions.length,1);
+  assert.equal(db.prepare('SELECT game_revision FROM matches WHERE id=?').get(matchId).game_revision,2);
+}));
+
+test('CCWB draft: rejected movement, forged request and missing trusted terrain are never persisted',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const original=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const denied=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{actions:[sequenceUnit(),sequenceLeader()]}),
+    movementContext());
+  assert.equal(denied.status,409);
+  assert.equal(denied.code,'SECTION_LAB_DRAFT_NOT_CANDIDATE');
+  for(const request of [
+    saveDraftRequest(tokens.A,{actor:'B'}),
+    saveDraftRequest(tokens.A,{expectedDraftRevision:-1}),
+    saveDraftRequest(tokens.A,{idempotencyKey:'bad'}),
+    saveDraftRequest(tokens.A,{actions:[]}),
+    saveDraftRequest(tokens.A,{actions:[{...sequenceLeader(),actor:'B'}]}),
+    saveDraftRequest(tokens.A,{actions:[{...sequenceLeader(),path:[{col:2,row:5,owner:'B'}]}]})
+  ])
+    assert.equal(store.saveExperimentalSectionMovementDraft(
+      request,movementContext()).code,'INVALID_SECTION_LAB_DRAFT_REQUEST');
+  assert.throws(()=>store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),{}),/INVALID_STAGED_MOVEMENT_CONTEXT/);
+  assert.deepEqual(db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId),original);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB draft: revocation and rival membership cannot view or write owner proposal',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const first=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext());
+  assert.equal(first.status,200);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.B}).draft,null);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.outsider}).code,'NOT_FOUND');
+  const second=connect();
+  second.identity.logOut(tokens.A);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A}).code,'UNAUTHENTICATED');
+  assert.equal(store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{expectedDraftRevision:1,idempotencyKey:'draft_new_after_logout'}),
+    movementContext()).code,'UNAUTHENTICATED');
+  assert.equal(db.prepare('SELECT game_revision FROM matches WHERE id=?').get(matchId).game_revision,2);
+  const newLogin=await app.identity.logIn({handle:'alice',password:PASSWORD});
+  assert.equal(newLogin.ok,true);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:newLogin.token}).draft.draftRevision,1);
+  second.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?').run(matchId);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.B}).code,'NOT_FOUND');
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB draft: advancing the journal invalidates old candidate without exposing it to next player',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  assert.equal(store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext()).status,200);
+  const ended=store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,type:'END_EXPERIMENTAL_TURN',expectedRevision:2,
+    idempotencyKey:'turn_end_after_draft'
+  });
+  assert.equal(ended.status,200);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A}).draft,null);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.B}).draft,null);
+  assert.equal(store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext()).code,'STALE_REVISION');
+}));
