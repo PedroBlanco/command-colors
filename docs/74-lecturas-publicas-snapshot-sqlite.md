@@ -32,14 +32,45 @@ La PR #93 tenía cinco casos nuevos de snapshot/laboratorio en tres suites. Esta
 - HTTP: revocación entre lobby y lectura de partida/eventos/comandos, revocación entre vista y consulta de eventos, revocación entre vista y escritura, y revocación durante inicialización de mazo. Nunca se publican manos ni eventos privados.
 - SSE: preferencia obligatoria de vista vinculada a sesión y cierre al revocar durante una espera asíncrona de almacenamiento.
 
-Total nuevos en esta PR: **21 casos** (5 iniciales y 16 adicionales) sobre las **71 suites existentes**.
+Total nuevos en esta PR: **21 casos** (5 iniciales y 16 adicionales) sobre las **71 suites que existían antes de incorporar el validador portátil**.
 
 **Evidencia ejecutada ANTES de esta ampliación:** 7/7 pruebas SSE, Node.js 22.16.0, sobre los blobs exactos `revision-stream.mjs` y su suite anteriores; cinco comprobaciones simuladas del gateway; 41 pruebas nativas de #92 y una regresión integral Windows reportada por el usuario en la rama anterior. **No prueban el árbol actual.**
 
-**Comprobación parcial del árbol actual:** se ha verificado el **parseo sintáctico V8** de los archivos JavaScript de SQLite y de las suites nuevas, además de comprobaciones previas del resto (retirando `import/export` únicamente para analizar con V8; sustituyendo `import.meta.url` en el gateway). **No se han ejecutado aquí tests de integración, HTTP real ni regresión completa.** La PR continúa en borrador. El manifiesto conserva **71 suites** y el lanzador prioriza ocho, incluidas las tres suites ampliadas.
+**Comprobación parcial del árbol actual:** se ha verificado el **parseo sintáctico V8** de los archivos JavaScript de SQLite y de las suites nuevas, además de comprobaciones previas del resto (retirando `import/export` únicamente para analizar con V8; sustituyendo `import.meta.url` en el gateway). **No se han ejecutado aquí tests de integración, HTTP real ni regresión completa.** La PR continúa en borrador. El manifiesto incorpora **72 suites**, al registrar la nueva suite del lanzador portátil. Se priorizan **12 suites**, incluidas las pruebas de lobby de `sqlite.test.mjs`, revocación WAL y guardias transaccionales.
 
 ## Validación pendiente, sin solicitarla ahora al usuario
 
-Cuando exista una ejecución nativa disponible, verificar primero las ocho suites prioritarias de `scripts/validate-ccwb-http.ps1` en Windows 11/PowerShell nativo (**sin WSL**) y después la regresión completa de 71 suites. Alternativamente, verificar Node.js + SQLite nativos en un entorno aislado controlado y contrastar las dos ejecuciones. No consumir GitHub Actions innecesariamente.
+Cuando exista una ejecución nativa disponible, verificar primero las 12 suites prioritarias con `scripts/validate-ccwb-http.ps1` en Windows 11/PowerShell nativo (**sin WSL**) o `node scripts/validate-ccwb-http.mjs` en Windows/Debian y después la regresión completa de **72 suites**. Alternativamente, verificar Node.js + SQLite nativos en un entorno aislado controlado y contrastar las dos ejecuciones. No consumir GitHub Actions innecesariamente.
 
 Criterio de fusión: evidencia SQLite + HTTP/SSE real, pruebas de concurrencia y regresión completa **sobre el mismo SHA**; revisión de la frontera del gateway antes de promocionar los cambios. La preparación para producción, HTTPS inverso y reglas oficiales tienen alcance separado.
+
+
+## Ejecución portable y evidencia no atribuible a la rama (12/11/2026)
+
+El validador `scripts/validate-ccwb-http.mjs` funciona con Node.js nativo
+**22.16.0 o superior**, en Windows 11 y Debian 13, sin WSL, Docker,
+navegador, GitHub Actions ni despliegues. Sustituye la lista duplicada del
+wrapper PowerShell, que conserva su opción `-FullRegression`.
+
+```powershell
+# Cuando se autoricen pruebas: Windows nativo
+.\scripts\validate-ccwb-http.ps1 -FullRegression
+```
+
+```bash
+# Cuando exista un checkout del mismo SHA en un entorno Debian nativo
+node scripts/validate-ccwb-http.mjs --full
+```
+
+La primera fase ejecuta doce suites predefinidas del manifiesto oficial. Si
+fallan o falta un archivo, **no se inicia** la regresión completa. Ambas fases
+guardan TAP inmutable, código de salida y hash SHA-256 en
+`.local-test-reports/`; no se ejecutan comandos de shell arbitrarios ni se
+aceptan rutas de log procedentes de argumentos del usuario.
+
+Se añadió la suite `scripts/validate-ccwb-http.test.mjs` (cinco casos para
+manifestación, versiones Node, CLI, secuencia de fases y corte ante fallos).
+**Solo se ha comprobado su sintaxis y se han ejecutado comprobaciones
+aisladas de la lógica del lanzador con lotes simulados.** La suite nativa,
+las doce suites prioritarias y la regresión completa **no se han ejecutado
+sobre este nuevo SHA**. La PR #93 debe seguir en borrador.
