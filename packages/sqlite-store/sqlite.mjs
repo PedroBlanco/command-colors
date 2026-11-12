@@ -144,22 +144,26 @@ export function openSqliteComposition({file, clock = Date.now,
       return {ok:true, matchId:id};
     },
     getMatch({sessionToken, matchId} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
       if (!UUID.test(String(matchId ?? ''))) return denied('NOT_FOUND');
-      const match = getMember.get(matchId);
-      if (!match || !checkActor(match, user.userId)) return denied('NOT_FOUND');
-      const owner = db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.owner_id);
-      const guest = match.guest_id ? db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.guest_id) : null;
-      const result = {ok:true, matchId, revision:getMatchRow.get(matchId).lobby_revision,
-        players:[{side:'A',handle:owner.handle},...(guest ? [{side:'B',handle:guest.handle}] : [])],
-        status:guest?'READY':'INVITING'};
-      if (match.owner_id === user.userId) {
-        result.invitations = db.prepare('SELECT id, target_handle, status, expires_at FROM invitations WHERE match_id=? ORDER BY rowid')
-          .all(matchId).map(i => ({invitationId:i.id,targetHandle:i.target_handle,
-            status: i.status === 'PENDING' && clock() >= i.expires_at ? 'EXPIRED' : i.status,expiresAt:i.expires_at}));
-      }
-      return result;
+      // The lobby metadata is security-sensitive too: a logout, change of
+      // membership and the participant list must share one WAL snapshot.
+      return readSnapshot(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const match = getMember.get(matchId);
+        if (!match || !checkActor(match, user.userId)) return denied('NOT_FOUND');
+        const owner = db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.owner_id);
+        const guest = match.guest_id ? db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.guest_id) : null;
+        const result = {ok:true, matchId, revision:getMatchRow.get(matchId).lobby_revision,
+          players:[{side:'A',handle:owner.handle},...(guest ? [{side:'B',handle:guest.handle}] : [])],
+          status:guest?'READY':'INVITING'};
+        if (match.owner_id === user.userId) {
+          result.invitations = db.prepare('SELECT id, target_handle, status, expires_at FROM invitations WHERE match_id=? ORDER BY rowid')
+            .all(matchId).map(i => ({invitationId:i.id,targetHandle:i.target_handle,
+              status: i.status === 'PENDING' && clock() >= i.expires_at ? 'EXPIRED' : i.status,expiresAt:i.expires_at}));
+        }
+        return result;
+      });
     },
     issueInvitation({sessionToken,matchId,targetHandle} = {}) {
       const user = sessions.resolveSession(sessionToken);
