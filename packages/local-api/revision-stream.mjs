@@ -44,7 +44,9 @@ export function startRevisionStream({res, token, matchId, identity, invitations,
       let gameRevision = null;
       if (lobby.status === 'READY') {
         const store = await getStore(matchId);
-        const state = store.view(actor,{denyExperimentalLab:true});
+        const state = typeof store.viewForSession === 'function'
+          ? store.viewForSession({sessionToken:token})
+          : store.view(actor,{denyExperimentalLab:true});
         // The SQLite store can reject the internal lab inside one WAL read
         // snapshot without building any private hand. Older store adapters
         // are also guarded by the legacy LAB_ONLY status check.
