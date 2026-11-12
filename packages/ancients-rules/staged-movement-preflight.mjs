@@ -10,6 +10,7 @@ import {assertSectionHistoryLab} from './section-history-journal.mjs';
 import {precheckAncientsMovementPath} from './movement-path-precheck.mjs';
 import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {precheckAncientsMovementSequence} from './leader-unit-sequence-preflight.mjs';
+import {buildAncientsCandidateJournal} from './movement-candidate-journal.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 
 const SIDES=new Set(['A','B']);
@@ -153,5 +154,34 @@ export function precheckStagedAncientsMovementSequence({
   return precheckAncientsMovementSequence({
     ...roster,actor,orderedUnitIds,orderedLeaderIds,
     actions:structuredClone(actions)
+  });
+}
+
+
+/**
+ * LAB-ANC: evidence for a hypothetical sequence, bound to the replay-verified
+ * section orders and to a trusted server context. This never executes moves.
+ * matchId comes from the authenticated CCWB row, never from client data.
+ */
+export function precheckStagedAncientsMovementEvidence({
+  matchId,state,actor,expectedRevision,actions,serverContext
+}={}) {
+  const screened=precheckStagedAncientsMovementSequence({
+    state,actor,expectedRevision,actions,serverContext
+  });
+  if(screened.status!=='CANDIDATE_SEQUENCE')
+    return Object.freeze({
+      status:'BLOCKED',reason:screened.reason,step:screened.step??null,
+      journal:null,movementAuthorized:false,attackAuthorized:false,
+      stateChanged:false,needsFullLegalityCheck:true
+    });
+  const roster=trustedRoster(state,serverContext);
+  const orderedUnitIds=state.orderSnapshot.pieces
+    .filter(piece=>piece.kind==='UNIT').map(piece=>piece.id);
+  const orderedLeaderIds=state.orderSnapshot.pieces
+    .filter(piece=>piece.kind==='LEADER').map(piece=>piece.id);
+  return buildAncientsCandidateJournal({
+    matchId,actor,baseRevision:state.revision,...roster,
+    orderedUnitIds,orderedLeaderIds,actions:structuredClone(actions)
   });
 }
