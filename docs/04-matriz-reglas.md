@@ -488,3 +488,24 @@ Se han escrito **11 nuevos casos de prueba** (no ejecutados nativamente).
 El manifiesto experimental reúne **79 suites**; sigue pendiente
 validarlas, SEC-001 (#93) y el reductor oficial. Véase
 [contrato de simulación privada](83-preview-privada-intencion-un-hexagono.md).
+
+
+## R-05 — simulación privada autenticada en SQLite/WAL (LAB-ANC, 12/11/2026)
+
+El método interno `precheckExperimentalSectionOneHexIntent` en el
+almacén CCWB conecta el contrato de entrada, el diario privado
+replay-verificado y el reductor sintético de un hexágono. La sesión
+activa y la pertenencia determinan el actor en **una única instantánea
+SQLite/WAL**; el navegador no puede aportar bando, terreno, tablero,
+carta ni resultado autorizado. El puente solo devuelve una simulación
+inmutable, nunca consume órdenes ni escribe eventos y **no** tiene
+ruta HTTP/SSE. Mantiene `movementAuthorized:false`,
+`boardChanged:false` y `canCommit:false`.
+
+**Evidencia:** 11/11 casos de la composición pura evaluados en V8
+aislado con modo estricto y sustituciones declaradas, **no Node nativo**;
+**7 nuevos casos CCWB/SQLite reales escritos y pendientes de
+ejecución** en `ancients-section-history.test.mjs`; regresión de
+**79 suites** aún pendiente. El resultado no autoriza movimientos
+reglamentarios. Véase
+[composición autenticada](84-composicion-ccwb-simulacion-autenticada.md).
