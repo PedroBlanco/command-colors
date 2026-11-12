@@ -452,3 +452,49 @@ test('CCWB HTTP boundary: demo command cannot corrupt lab activated before SQLit
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM game_commands WHERE match_id=?').get(matchId).n,0);
   assert.equal(db.isTransaction,false);
 }));
+
+
+test('CCWB mode exclusivity: deck initialization rechecks lab inside SQLite write lock',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  const db=app.unsafeTestDatabase();
+  const other=connect().getStore(matchId);
+  const original=db.exec;
+  let injected=false;
+  try {
+    // Deterministically place a second connection's lab initialization
+    // between the deck's preflight and its BEGIN IMMEDIATE writer lock.
+    db.exec=(sql,...args)=>{
+      if(sql==='BEGIN IMMEDIATE'&&!injected){
+        injected=true;
+        const activated=other.initializeExperimentalSectionHistory({
+          sessionToken:tokens.A,trustedSetup:setup()
+        });
+        assert.equal(activated.status,201);
+      }
+      return original.call(db,sql,...args);
+    };
+    const response=store.initializeCommandDeck('A');
+    assert.deepEqual(response,{status:409,code:'SECTION_LAB_MODE_ACTIVE'});
+    assert.equal(injected,true);
+  } finally {db.exec=original;}
+  const row=db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId);
+  const persisted=JSON.parse(row.private_state);
+  assert.equal(Object.hasOwn(persisted,'ancientsSectionHistoryLab'),true);
+  assert.equal(Object.hasOwn(persisted,'commandSession'),false);
+  assert.equal(row.game_revision,0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM game_events WHERE match_id=?').get(matchId).n,0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM game_commands WHERE match_id=?').get(matchId).n,0);
+  assert.equal(store.viewExperimentalSectionHistory({sessionToken:tokens.A}).status,200);
+  assert.equal(store.viewExperimentalSectionHistory({sessionToken:tokens.B}).status,200);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB mode exclusivity: deck initialization after active lab remains blocked',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  assert.equal(store.initializeExperimentalSectionHistory({sessionToken:tokens.A,trustedSetup:setup()}).status,201);
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  assert.equal(store.initializeCommandDeck('A').code,'SECTION_LAB_MODE_ACTIVE');
+  assert.equal(store.initializeCommandDeck('B').code,'SECTION_LAB_MODE_ACTIVE');
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
