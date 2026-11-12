@@ -119,3 +119,27 @@ La ejecución **conjunta** de las cinco suites nativas disponibles —vinculaci�
 - `section-mutation-session-guard.test.mjs`: `a410ea0e48b15b913c8cc29dd3e21196b4131694`
 
 El manifiesto crece a **68 suites**. Continúa **pendiente** la ejecución de `sqlite-section-ccwb-bridge.test.mjs`, `ancients-section-history.test.mjs` y la regresión de las 68 suites desde el repositorio completo; las 34 pruebas anteriores **no** equivalen a esa integración. El laboratorio sigue sin autorización de reglas oficiales ni exponer nuevos endpoints HTTP.
+
+
+## Validación integrada del puente y la composición CCWB (12/11/2026)
+
+Se ha resuelto el obstáculo de la descarga directa del repositorio para estas suites concretas: mediante la conexión con GitHub se recuperaron y reconstruyeron en un directorio temporal **18 archivos originales**, correspondientes al SHA de rama `c1ab98da863b292e9da407293f643c492be7dff7`, y se comprobó uno por uno que su **SHA de blob Git local coincidía con el archivo remoto**. Las dependencias no se sustituyeron por dobles: se usaron `node:sqlite`, la composición CCWB real, identidad, invitaciones y código de cartas, órdenes y movimiento preexistente.
+
+Pruebas ejecutadas con **Node.js 22.16.0, Linux nativo, sin WSL y sin GitHub Actions**:
+
+- `packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs`: **24 PASS, 0 FAIL, 0 SKIP**, proceso de salida 0. Incluye integridad de replay, claves de idempotencia v2 y legacy, transacciones de escritura, intentos de alteración del diario, privacidad y tres pruebas de guardia de sesión transaccional.
+- `packages/sqlite-store/ancients-section-history.test.mjs`: **11 PASS, 0 FAIL, 0 SKIP**, proceso de salida 0. Incluye aprovisionamiento y acceso real de tres cuentas de prueba, invitación y aceptación, comandos en dos turnos, reinicio de conexión y persistencia, rechazo de suplantación, revocación simulada entre dos comprobaciones y lectura durante un bloqueo de escritor.
+- Ejecución **conjunta** de ambas suites: **35 PASS / 0 FAIL / 0 SKIP**, proceso de salida **0**, duración aproximada 3 segundos. **SHA-256 del informe TAP conjunto:** `2a3b4afb5a95de359eb41da58dc66ad7ce95ab20d856176f779a9ff04010d82b`.
+
+**Corrección del estado anterior:** los párrafos de esta bitácora que decían «pruebas integradas pendientes» son evidencias de fases anteriores. A la fecha de esta anotación, esas dos suites **ya han sido ejecutadas y han pasado**, incluida toda la batería incremental de siete pruebas de transacción/composición de la PR #88. Las cinco suites independientes previamente ensayadas (34/34 PASS) constituyen evidencia adicional **pero no se suman a una única ejecución de 69 pruebas**, puesto que se ejecutaron en otro lote.
+
+**Todavía pendientes:** regresión global de las **68 suites** inventariadas, Windows 11 sin WSL, pruebas de rutas HTTP/SSE y dos navegadores reales, escenarios reglamentarios y reglas oficiales de movimiento y combate. El código examinado corresponde a la rama experimental y la validación no autoriza por sí sola exponer el laboratorio en red ni fusionar las PR apiladas.
+
+### Reproducción exacta en Windows (sin WSL)
+
+```powershell
+node --test --test-reporter=tap packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs packages/sqlite-store/ancients-section-history.test.mjs
+$LASTEXITCODE
+.\scripts\test-local.ps1
+$LASTEXITCODE
+```
