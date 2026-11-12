@@ -4,6 +4,7 @@
  * Only a future, independently validated rules engine may execute movement.
  */
 import {createHash} from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import {precheckAncientsMovementSequence} from './leader-unit-sequence-preflight.mjs';
 
 export const CANDIDATE_JOURNAL_KIND='ANCIENTS_MOVEMENT_CANDIDATE_JOURNAL_V1';
@@ -106,7 +107,11 @@ export function verifyAncientsCandidateJournal({
     });
     return rebuilt.status==='CANDIDATE_EVIDENCE'&&
       journal!==null&&typeof journal==='object'&&!Array.isArray(journal)&&
-      JSON.stringify(journal)===JSON.stringify(rebuilt.journal);
+      // JSON object key order is not semantically significant. A journal
+      // rehydrated by a different serializer can reorder fields without
+      // changing any evidence. Deep strict equality still rejects missing
+      // fields, extra fields, changed flags, paths and SHA-256 digests.
+      isDeepStrictEqual(journal,rebuilt.journal);
   } catch {
     // A corrupt or stale trusted snapshot can never be considered matching
     // evidence. Never promote a failed verification into authorization.
