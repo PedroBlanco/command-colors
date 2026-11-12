@@ -1,7 +1,7 @@
 /** Local, read-only test orchestrator. Never runs GitHub Actions, WSL or a deployment. */
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {existsSync, realpathSync} from 'node:fs';
+import {existsSync, realpathSync, readdirSync, lstatSync} from 'node:fs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -30,6 +30,48 @@ export function validateLogFileTarget(rootDir, logFile) {
     throw new TypeError('LOG_MUST_BE_INSIDE_PROJECT');
   }
   return target;
+}
+
+/**
+ * Compare the fixed manifest with every native test in the three repository
+ * roots. An unregistered suite must never be silently omitted from a passing
+ * full regression. This is read-only; do not follow symlinks outside the tree.
+ */
+export function auditLocalTestManifest(rootDir, manifest) {
+  if (!Array.isArray(manifest) || new Set(manifest).size !== manifest.length ||
+      manifest.some(file => typeof file !== 'string' ||
+        !/^[A-Za-z0-9_./-]+[.]test[.]mjs$/.test(file) ||
+        file.startsWith('/') || file.split('/').includes('..')))
+    throw new TypeError('INVALID_TEST_MANIFEST');
+  const observed=[];
+  function visit(absolute, relativePath) {
+    for (const entry of readdirSync(absolute, {withFileTypes:true})) {
+      // Dirent.isDirectory() and isFile() both reject symbolic links.
+      const path = relativePath + '/' + entry.name;
+      const file = resolve(absolute,entry.name);
+      if (entry.isDirectory()) visit(file,path);
+      else if (entry.isFile() && entry.name.endsWith('.test.mjs'))
+        observed.push(path);
+    }
+  }
+  for (const root of ['packages','scripts','spikes']) {
+    const folder=resolve(rootDir,root);
+    if (existsSync(folder) && lstatSync(folder).isDirectory()) visit(folder,root);
+  }
+  observed.sort();
+  const declared=new Set(manifest), actual=new Set(observed);
+  const missing=manifest.filter(file=>!actual.has(file)).sort();
+  const unregistered=observed.filter(file=>!declared.has(file));
+  return {ok:missing.length===0&&unregistered.length===0,
+    discovered:observed.length, declared:manifest.length, missing, unregistered};
+}
+
+export function requireCompleteTestManifest(rootDir, manifest) {
+  const result=auditLocalTestManifest(rootDir,manifest);
+  if (!result.ok)
+    throw new Error('TEST_MANIFEST_DRIFT: missing='+result.missing.join(',')+
+      '; unregistered='+result.unregistered.join(','));
+  return result;
 }
 
 /** Run exactly the files in a trusted manifest, without invoking a shell. */
@@ -103,6 +145,7 @@ export function parseArgs(args) {
 async function main(args) {
   const {LOCAL_TEST_FILES} = await import('./check-browser-lab.mjs');
   const {only, logFile, list} = parseArgs(args);
+  requireCompleteTestManifest(ROOT, LOCAL_TEST_FILES);
   const files = selectTests(LOCAL_TEST_FILES, only);
   if (list) {for (const file of files) console.log(file); return 0;}
   const result = await runTestBatch({rootDir: ROOT, files, logFile});
