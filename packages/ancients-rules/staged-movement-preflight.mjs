@@ -147,6 +147,11 @@ export function precheckStagedAncientsMovementSequence({
       current.col===piece.col&&current.row===piece.row);
   });
   if(!complete)return blocked('ORDER_LEDGER_MISMATCH');
+  // An otherwise validly shaped hypothetical route cannot consume more
+  // moves than the authenticated order ledger contains. Fail closed rather
+  // than let the lower-level sequence reject with a configuration error.
+  if(Array.isArray(actions)&&actions.length>snapshot.pieces.length)
+    return blocked('PIECE_NOT_ORDERED');
   // Context is supplied by the server, never copied from a browser request.
   const roster=trustedRoster(state,serverContext);
   const orderedUnitIds=snapshot.pieces.filter(p=>p.kind==='UNIT').map(p=>p.id);
