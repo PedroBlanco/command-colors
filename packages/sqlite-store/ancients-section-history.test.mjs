@@ -543,3 +543,84 @@ test('CCWB generic public read: second SQLite connection activates lab before ne
     {status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
   assert.equal(app.unsafeTestDatabase().isTransaction,false);
 }));
+
+
+test('SEC-001 public read: token derives actor and hides the other hand in one WAL snapshot',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const a=store.viewForSession({sessionToken:tokens.A});
+  const b=store.viewForSession({sessionToken:tokens.B});
+  assert.equal(a.status,200);assert.equal(b.status,200);
+  assert.equal(a.view.you,'A');assert.equal(b.view.you,'B');
+  assert.equal(a.view.matchId,matchId);assert.equal(b.view.matchId,matchId);
+  assert.deepEqual(a.view.yourHand,['PRIVATE_A_1','PRIVATE_A_2']);
+  assert.deepEqual(b.view.yourHand,['PRIVATE_B_1','PRIVATE_B_2','PRIVATE_B_3']);
+  assert.doesNotMatch(JSON.stringify(a),/PRIVATE_B_|HIDDEN_FUTURE_CARD/);
+  assert.doesNotMatch(JSON.stringify(b),/PRIVATE_A_|HIDDEN_FUTURE_CARD/);
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.outsider}),
+    {status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.A,actor:'B'}),
+    {status:400,code:'INVALID_PUBLIC_VIEW_REQUEST'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.A,actor:'B'}),
+    {status:400,code:'INVALID_PUBLIC_EVENTS_REQUEST'});
+  assert.equal(db.isTransaction,false);
+}));
+
+test('SEC-001 public read: private laboratory rejected without projecting either hand',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  assert.equal(store.initializeExperimentalSectionHistory({
+    sessionToken:tokens.A,trustedSetup:setup()
+  }).status,201);
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  for(const token of [tokens.A,tokens.B]){
+    assert.deepEqual(store.viewForSession({sessionToken:token}),
+      {status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+    assert.deepEqual(store.publicEventsForSession({sessionToken:token}),
+      {status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+  }
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('SEC-001 public read: revoked token is rechecked in the SQLite snapshot',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  const earlier=store.viewForSession({sessionToken:tokens.A});
+  assert.equal(earlier.status,200);
+  const second=connect();
+  assert.equal(second.identity.logOut(tokens.A).ok,true);
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.A}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.A}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.equal(store.viewForSession({sessionToken:tokens.B}).status,200);
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('SEC-001 public read: membership revoked by a second connection cannot retain access',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),other=connect();
+  assert.equal(store.viewForSession({sessionToken:tokens.B}).status,200);
+  other.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?')
+    .run(matchId);
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.B}),
+    {status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.B}),
+    {status:404,code:'NOT_FOUND'});
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('SEC-001 public events: normal authorized event read preserves public-only revision',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const command=await store.dispatch({
+    actor:'A',type:'pass_demo_turn',expectedRevision:0,
+    idempotencyKey:'public_session_event_001'
+  });
+  assert.equal(command.status,200);
+  const a=store.publicEventsForSession({sessionToken:tokens.A});
+  const b=store.publicEventsForSession({sessionToken:tokens.B});
+  assert.equal(a.status,200);assert.equal(b.status,200);
+  assert.deepEqual(a.events,b.events);
+  assert.equal(a.events.length,1);
+  assert.equal(a.events[0].type,'DEMO_TURN_PASSED');
+  assert.equal(a.events[0].visibility,'public');
+  assert.doesNotMatch(JSON.stringify(a.events),/PRIVATE_A_|PRIVATE_B_|HIDDEN_FUTURE_CARD/);
+  assert.equal(db.isTransaction,false);
+}));
