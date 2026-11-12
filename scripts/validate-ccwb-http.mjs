@@ -25,7 +25,7 @@ export const CCWB_SECURITY_SUITES = Object.freeze([
 
 export function validNodeVersion(version) {
   if (typeof version !== 'string') return false;
-  const match = /^(\\d+)\\.(\\d+)\\.\\d+$/.exec(version);
+  const match = /^([0-9]+)[.]([0-9]+)[.][0-9]+$/.exec(version);
   if (!match) return false;
   const major = Number(match[1]), minor = Number(match[2]);
   return major > 22 || (major === 22 && minor >= 16);
