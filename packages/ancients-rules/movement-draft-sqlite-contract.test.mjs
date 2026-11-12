@@ -124,3 +124,33 @@ test('native SQLite: corrupt serialized draft is detected and cannot be projecte
     /SECTION_LAB_MOVEMENT_DRAFT_CORRUPT/);
   assert.equal(first.isTransaction,false);
 }));
+
+test('native WAL: a reader sees committed draft while another connection holds a writer lock',()=>fixture(({first,connect})=>{
+  store(first,proposal());
+  const writer=connect(),reader=connect();
+  writer.exec('BEGIN IMMEDIATE');
+  try {
+    const change=JSON.parse(row(writer).private_state);
+    change.draft.draftRevision=999;
+    writer.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(change),MATCH);
+    reader.exec('BEGIN');
+    try {
+      const visible=savedDraft(reader);
+      assert.equal(visible.draftRevision,1);
+      assertMovementDraft(visible,MATCH);
+    } finally {reader.exec('COMMIT');}
+  } finally {writer.exec('ROLLBACK');}
+  assert.equal(savedDraft(reader).draftRevision,1);
+  assert.equal(reader.isTransaction,false);
+}));
+
+test('native SQLite: invalid candidate causes transaction rollback and preserves stored bytes',()=>fixture(({first})=>{
+  store(first,proposal());
+  const original=row(first).private_state;
+  assert.throws(()=>store(first,proposal({
+    expectedDraftRevision:1,idempotencyKey:'draft_sqlite_009',
+    actions:[{kind:'LEADER',id:'leaderA',path:[{col:200,row:5}]}]
+  })),/INVALID_MOVEMENT_DRAFT_REQUEST/);
+  assert.equal(row(first).private_state,original);
+  assert.equal(first.isTransaction,false);
+}));
