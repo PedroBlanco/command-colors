@@ -139,3 +139,76 @@ test('API: bloquea proyección de un almacén asociado a otra partida',()=>{
     assert.equal(JSON.stringify([read.body,write.body]).includes('OTHER_MATCH_PRIVATE'),false);
   },services);
 });
+
+
+test('API: internal one-hex simulation has no publicly addressable endpoint',()=> {
+  const services=fixture();
+  let storeResolved=0, previewCalled=0;
+  const original=services.getStore;
+  services.getStore=async(...args)=>{
+    storeResolved++;
+    const store=await original(...args);
+    return {...store,
+      precheckExperimentalSectionOneHexIntent:()=>{
+        previewCalled++;
+        throw new Error('PRIVATE_SIMULATION_MUST_NOT_BE_EXPOSED');
+      },
+      previewOneHexIntent:()=>{
+        previewCalled++;
+        throw new Error('PRIVATE_BRIDGE_MUST_NOT_BE_EXPOSED');
+      }
+    };
+  };
+  return withApi(async({request})=>{
+    await createReady(request);
+    const payload={kind:'UNIT',pieceId:'synthetic-a',
+      expectedRevision:0,idempotencyKey:'not_for_public_http',
+      path:[{col:4,row:4}],actor:'A',policy:{scope:'SYNTHETIC_OPEN_HEX_V1'}};
+    const routes=[
+      `/api/matches/${MATCH}/lab/one-hex`,
+      `/api/matches/${MATCH}/one-hex`,
+      `/api/matches/${MATCH}/preview`,
+      `/api/matches/${MATCH}/precheckExperimentalSectionOneHexIntent`
+    ];
+    for(const route of routes){
+      const get=await request('GET',route,A);
+      const post=await request('POST',route,A,payload);
+      assert.equal(get.status,404);
+      assert.equal(post.status,404);
+      assert.equal(JSON.stringify([get.body,post.body]).includes('PRIVATE_'),false);
+    }
+    assert.equal(previewCalled,0);
+    assert.equal(storeResolved,0,'unknown resource must not resolve private store');
+  },services);
+});
+
+test('API: LAB_ONLY cannot turn private simulation into generic public command',()=> {
+  const services=fixture();
+  let dispatchCalled=0, privatePreviewCalled=0;
+  services.getStore=async()=>({
+    view:actor=>({matchId:MATCH,status:'LAB_ONLY',you:actor,
+      revision:2,opponentCardCount:1,yourHand:['INTERNAL_HAND']}),
+    publicEvents:()=>{throw Error('LAB_PUBLIC_EVENTS_MUST_NOT_RUN')},
+    dispatch:async()=>{dispatchCalled++;throw Error('LAB_DISPATCH_MUST_NOT_RUN')},
+    precheckExperimentalSectionOneHexIntent:()=>{
+      privatePreviewCalled++;throw Error('PRIVATE_PREVIEW_MUST_NOT_RUN');
+    }
+  });
+  return withApi(async({request})=>{
+    await createReady(request);
+    for(const side of [A,B]){
+      const res=await request('POST',`/api/matches/${MATCH}/commands`,side,{
+        type:'precheckExperimentalSectionOneHexIntent',
+        expectedRevision:2,idempotencyKey:'must_remain_private',
+        pieceId:'synthetic-a',kind:'UNIT',path:[{col:4,row:4}]
+      });
+      assert.equal(res.status,409);
+      assert.deepEqual(res.body,{code:'SECTION_LAB_INTERNAL_ONLY'});
+      const read=await request('GET',`/api/matches/${MATCH}`,side);
+      assert.equal(read.status,409);
+      assert.deepEqual(read.body,{code:'SECTION_LAB_INTERNAL_ONLY'});
+    }
+    assert.equal(dispatchCalled,0);
+    assert.equal(privatePreviewCalled,0);
+  },services);
+});
