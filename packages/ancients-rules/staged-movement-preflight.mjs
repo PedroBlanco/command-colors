@@ -8,6 +8,8 @@
  */
 import {assertSectionHistoryLab} from './section-history-journal.mjs';
 import {precheckAncientsMovementPath} from './movement-path-precheck.mjs';
+import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
+import {precheckAncientsMovementSequence} from './leader-unit-sequence-preflight.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 
 const SIDES=new Set(['A','B']);
@@ -69,5 +71,87 @@ export function precheckStagedAncientsMovement({
     ...screen,
     movementAuthorized:false,attackAuthorized:false,stateChanged:false,
     needsFullLegalityCheck:true
+  });
+}
+
+
+/**
+ * LAB-ANC R-04: read-only preview for a separately ordered leader. Unlike
+ * normal units, a leader can pass through a friendly unit or leader, but
+ * cannot finish on another leader; the base-path check is deliberately separate.
+ *
+ * The state must first be replay-verified by the trusted CCWB caller.
+ * Only the server provides the terrain map. No database or HTTP mutation.
+ */
+export function precheckStagedAncientsLeaderMovement({
+  state,actor,expectedRevision,leaderId,path,serverContext
+}={}) {
+  assertSectionHistoryLab(state);
+  if(!SIDES.has(actor))return blocked('FORBIDDEN');
+  if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)
+    throw new TypeError('INVALID_STAGED_LEADER_REVISION');
+  if(state.revision!==expectedRevision)return blocked('STALE_REVISION');
+  if(state.turn!==actor)return blocked('NOT_ACTING_PLAYER');
+  if(state.phase!=='LAB_RESOLUTION_PENDING'||!record(state.orderSnapshot)||
+    state.orderSnapshot.side!==actor||state.orderSnapshot.revision!==state.revision||
+    !Array.isArray(state.orderSnapshot.pieces))
+    return blocked('ORDERS_NOT_STAGED');
+  // Do not distinguish foreign, missing and unordered leader identifiers.
+  if(typeof leaderId!=='string'||!ID.test(leaderId)||leaderId==='__proto__'||
+    !state.orderSnapshot.pieces.some(piece=>record(piece)&&
+      piece.id===leaderId&&piece.kind==='LEADER'&&piece.side===actor&&
+      state.board.leaders.some(current=>current.id===piece.id&&
+        current.side===piece.side&&current.col===piece.col&&current.row===piece.row)))
+    return blocked('LEADER_NOT_ORDERED');
+  if(!record(serverContext)||!Array.isArray(serverContext.terrain))
+    throw new TypeError('INVALID_STAGED_LEADER_CONTEXT');
+  const preview=precheckAncientsLeaderPath({
+    units:structuredClone(state.board.units),
+    leaders:structuredClone(state.board.leaders),
+    leaderId,path:structuredClone(path),terrain:structuredClone(serverContext.terrain)
+  });
+  return preview;
+}
+
+
+/**
+ * LAB-ANC: simulate a hypothetical ordered movement sequence on a copy.
+ * This is NOT a journal, cannot spend orders and cannot authorize movement.
+ * The caller must first verify its private CCWB replay and authenticate actor.
+ */
+export function precheckStagedAncientsMovementSequence({
+  state,actor,expectedRevision,actions,serverContext
+}={}){
+  assertSectionHistoryLab(state);
+  if(!SIDES.has(actor))return blocked('FORBIDDEN');
+  if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)
+    throw new TypeError('INVALID_STAGED_SEQUENCE_REVISION');
+  if(state.revision!==expectedRevision)return blocked('STALE_REVISION');
+  if(state.turn!==actor)return blocked('NOT_ACTING_PLAYER');
+  const snapshot=state.orderSnapshot;
+  if(state.phase!=='LAB_RESOLUTION_PENDING'||!record(snapshot)||
+     snapshot.side!==actor||snapshot.revision!==state.revision||
+     !Array.isArray(snapshot.pieces))
+    return blocked('ORDERS_NOT_STAGED');
+  // Do not extrapolate from or trust an incomplete/forged set of orders.
+  // These rows must also be authenticated against the event replay by caller.
+  const seen=new Set();
+  const complete=snapshot.pieces.every(piece=>{
+    if(!record(piece)||!ID.test(piece.id)||piece.id==='__proto__'||
+       !['UNIT','LEADER'].includes(piece.kind)||piece.side!==actor||
+       seen.has(piece.id))return false;
+    seen.add(piece.id);
+    const collection=piece.kind==='UNIT'?state.board.units:state.board.leaders;
+    return collection.some(current=>current.id===piece.id&&current.side===piece.side&&
+      current.col===piece.col&&current.row===piece.row);
+  });
+  if(!complete)return blocked('ORDER_LEDGER_MISMATCH');
+  // Context is supplied by the server, never copied from a browser request.
+  const roster=trustedRoster(state,serverContext);
+  const orderedUnitIds=snapshot.pieces.filter(p=>p.kind==='UNIT').map(p=>p.id);
+  const orderedLeaderIds=snapshot.pieces.filter(p=>p.kind==='LEADER').map(p=>p.id);
+  return precheckAncientsMovementSequence({
+    ...roster,actor,orderedUnitIds,orderedLeaderIds,
+    actions:structuredClone(actions)
   });
 }

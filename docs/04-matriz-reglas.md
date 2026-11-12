@@ -294,3 +294,116 @@ Además, el comando sintético `pass_demo_turn` vuelve a comprobar la modalidad 
 ## Exclusión entre laboratorio Ancients y mazo sintético (12/11/2026)
 
 La inicialización ordinaria del mazo debía rechazar `ancientsSectionHistoryLab` **dentro de su propia transacción SQLite**, no solo en el preflight de la composición: otra conexión podía activar el diario entre ambos. Se añade ese guard bajo `BEGIN IMMEDIATE` y bloqueos equivalentes para `dispatch` y `view` del mazo ante estados mixtos. **Cuatro nuevos casos de integración SQLite** repartidos en `packages/command-deck/sqlite-game.test.mjs` y `packages/sqlite-store/ancients-section-history.test.mjs`; pendientes de ejecución nativa en esta rama. Se han superado **5/5 comprobaciones aisladas con transacción simulada** sobre el código Git exacto, que no sustituyen los tests SQLite. Total inventariado: **71 suites**. Documento: [exclusión atómica de modos](73-exclusion-atomica-mazo-laboratorio.md). Las reglas y combates oficiales no se habilitan.
+
+
+## R-04/R-05 — prevalidación individual de líder ordenado (LAB-ANC, 12/11/2026)
+
+Se incorpora un filtro **de solo lectura** para líderes a partir de las
+reglas básicas de *Ancients* (tercera edición, 2009), sin mezclarlo con
+los límites de desplazamiento de unidades. Se comprueban 1–3 pasos
+adyacentes, ocupación, paso por unidades y líderes amigos, prohibición
+de terminar sobre otro líder y restricciones normales de bosque/terreno
+accidentado. Exige orden explícita del líder extraída de un diario
+CCWB verificado, sesión y bando obtenidos del servidor y una única
+instantánea WAL. No hay comandos de movimiento, endpoints, escrituras,
+excepciones de escenario, evasión ni resolución de combate.
+
+**Contratos:** `leader-movement-preflight.mjs` (geometría/ocupación),
+`staged-movement-preflight.mjs` (turno, órdenes y revisión),
+`sqlite-section-ccwb-bridge.mjs` (replay) y
+`sqlite.mjs` (sesión y snapshot WAL), con
+`precheckExperimentalSectionLeaderMovement` **solo interno**.
+
+**Pruebas preparadas:** 8 casos nuevos del módulo puro, 5 en el
+filtro staged y 3 integraciones con SQLite y sesiones. Ejecutadas en
+**V8 aislado** las 8 pruebas puras nuevas y las 15 de la suite staged
+(10 previas + 5 nuevas) sobre los blobs exactos de GitHub, todas
+correctas. **Los 3 casos SQLite y las 72 suites nativas siguen
+pendientes**. Conservar la rama y PR en borrador sin prometer legalidad
+ni cambiar `main`. Véase
+[prevalidación de líderes](75-preflight-lideres-ancients.md).
+
+
+## R-04/R-05 — orden temporal simulado de unidades y líderes (LAB-ANC, 12/11/2026)
+
+Las reglas verificadas de tercera edición (2009) permiten separar un líder
+de una unidad **antes** de que esta se mueva; si se mueve con ella ya no puede
+separarse en ese turno. Una unidad a la que llega un líder no puede moverse
+más, aunque puede seguir combatiendo si se cumplen los requisitos restantes.
+Se implementa **simulación de secuencias hipotéticas sin persistencia**,
+con bloqueo de doble movimiento por pieza, validación de orden de los
+movimientos y aplicación sobre copias exclusivamente.
+
+**Código:** `leader-unit-sequence-preflight.mjs` (reglas temporales
+sobre estado provisional); `staged-movement-preflight.mjs` (sesión,
+revisión y órdenes); `sqlite-section-ccwb-bridge.mjs` (replay
+privado íntegro); `sqlite-store/sqlite.mjs` (instantánea WAL
+autenticada para método estrictamente interno). **No** hay endpoint,
+acción ejecutable, cambio de base de datos ni autorización.
+
+**Pruebas:** +10 nuevos casos puros en una suite nueva, +5 en la suite
+staged y +3 casos de composición SQLite todavía **sin ejecutar**.
+Comprobación aislada del código de GitHub: **38/38** resultados correctos
+(8 de movimiento individual, 10 de secuencia, 20 staged, estos últimos
+incluyen pruebas previas); sintaxis de SQLite/bridge comprobada, sin
+ejecución nativa de la regresión. El inventario actual de la PR #95
+contiene **73 suites**; el incremento de #95 es de **34 casos nuevos**
+(16 anteriores + 18 de secuencia). La norma R-04/R-05 y CCW-014
+permanecen **incompletas** hasta tener un reductor de movimiento
+reglamentario, diario persistente de movimientos, pruebas nativas y
+validación contra escenarios. Véase
+[secuencia líder–unidad](76-secuencia-temporal-lider-unidades-ancients.md).
+
+
+## LAB-ANC — borrador privado de movimientos, revisión independiente (12/11/2026)
+
+El nuevo contrato `movement-draft-contract.mjs` admite guardar una **propuesta hipotética**, no ejecutar movimiento. La composición SQLite comprueba dentro de `BEGIN IMMEDIATE` la sesión y pertenencia, el replay privado de cartas y órdenes y `CANDIDATE_SEQUENCE`; solo entonces guarda `ancientsSectionMovementDraft` en `matches.private_state`. No altera tablero, revisión de juego, eventos públicos ni claves de comandos del juego. La consulta usa un snapshot WAL y solo proyecta la propuesta a su bando en la revisión de origen; la propuesta caduca tras avanzar el diario.
+
+La versión del borrador y su clave de idempotencia controlan ediciones/reintentos sin crear órdenes nuevas. Se verificó **9/9** de lógica de contrato con **Node.js 22.16.0 nativo y SHA-256 real** sobre los tres blobs Git exactos (contrato, suite, geometría); evidencia TAP SHA-256 `507d4c960f934b25934fc782adb8b2c5c49f8bc12ace3f570ba8822b600`. La evaluación V8 con digest simulado fue preliminar. Se prepararon **6 pruebas de integración SQLite** para persistencia, privacidad, revocación, inmutabilidad, idempotencia, cierre de turno y bloqueos, pendientes de ejecución real. La PR #95 acumula **49 casos nuevos**, con **74 suites registradas y presentes**; su regresión completa sigue pendiente. La propuesta nunca concede movimiento legal. Documento: [contrato de borrador privado](77-borrador-privado-movimientos-ancients.md).
+
+
+## LAB-ANC — prueba nativa aislada de SQLite/WAL del borrador (12/11/2026)
+
+Se ha añadido la suite `packages/ancients-rules/movement-draft-sqlite-contract.test.mjs`,
+que usa `node:sqlite` real, un archivo temporal, `PRAGMA journal_mode=WAL`,
+conexiones independientes, snapshot de lectura y `BEGIN IMMEDIATE` de
+escritura. **8/8** pruebas de la nueva suite correctas: persistencia
+entre conexiones, idempotencia y revisión, snapshots consistentes,
+conflicto de escritores, caducidad, corrupción y rollback por datos
+inválidos. Combinadas con las **9/9** de contrato puro:
+**17/17 PASS, 0 FAIL**, Node.js 22.16.0 sin WSL. Informe TAP SHA-256:
+`278c4034328c38a5244a15e51740f1424a0284f77d6f66c1d2adf83333ef07b9`.
+La suite nativa SQLite coincide con el blob Git
+`a686c5822c1045a45901d442c752f51266c816c0`;
+módulo y dependencias puras también contrastados por hash.
+
+**Alcance limitado**: se prueba el contrato en un esquema SQLite mínimo
+con adaptador de prueba, **no la composición real de la aplicación**.
+Quedan **12 casos de integración del juego con SQLite sin ejecutar**;
+tampoco se ejecutó la regresión completa. El manifiesto contiene
+**75 suites reales**, 75 declaradas, y el recuento de casos nuevos de
+la PR #95 es **57** (49 anteriores y 8 nuevos). Requisito CCW-014 y
+el bloqueo de fusión siguen abiertos. Referencia:
+[borrador privado y evidencia nativa](77-borrador-privado-movimientos-ancients.md).
+
+
+## LAB-ANC — versión protegida del borrador y purga al avanzar el diario (12/11/2026)
+
+El checksum de `movement-draft-contract.mjs` incorpora ahora
+`draftRevision`, evitando que un cambio arbitrario del contador de
+concurrencia quede fuera de la verificación. La secuencia de acciones
+se codifica con campos ordenados para idempotencia estable ante JSON
+equivalente. En la composición experimental,
+`sqlite-section-ccwb-bridge.mjs` purga el borrador privado **de forma
+atómica** cuando avanza el diario; los intentos rechazados no lo borran.
+Nunca se confirma movimiento ni se añade un nuevo evento.
+
+**19/19 PASS con Node.js 22.16.0 y SQLite/WAL nativo** para las suites
+`movement-draft-contract.test.mjs` y
+`movement-draft-sqlite-contract.test.mjs`, con archivos idénticos a los
+blobs Git de la rama. SHA-256 del TAP:
+`b87335b82b9d88195c2f95c01f969f087165d3f8f1fca485b234b5a840d123c6`.
+El puente e integración ampliada pasan análisis sintáctico, pero
+**13 casos nuevos de integración CCWB+SQLite siguen sin ejecutar**.
+PR #95: **60 nuevos casos preparados, 75 suites**. No completar CCW-014,
+no publicar métodos internos ni fusionar en `main`.

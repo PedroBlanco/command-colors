@@ -9,7 +9,9 @@ import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
 import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
-import {precheckStagedAncientsMovement} from './staged-movement-preflight.mjs';
+import {precheckStagedAncientsMovement,
+  precheckStagedAncientsLeaderMovement,
+  precheckStagedAncientsMovementSequence} from './staged-movement-preflight.mjs';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
@@ -150,6 +152,11 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
         initial:journal.initial,
         commands:[...journal.commands,bindLabJournalIdempotency(command,request.idempotencyKey)],
         state:next}};
+      // A private proposal is bound to the PREVIOUS game revision. Its
+      // actions must not survive a successfully committed journal step as
+      // stale private data, even though the public log never exposes them.
+      // Failed/retried commands return above without deleting anything.
+      delete updated.ancientsSectionMovementDraft;
       if(update.run(JSON.stringify(updated),next.revision,row.id,row.game_revision).changes!==1)
         throw new Error('SECTION_CCWB_CONCURRENT_UPDATE');
       eventInsert.run(row.id,next.revision,'public',JSON.stringify({...result.publicEvent,visibility:'public'}));
@@ -170,5 +177,28 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     });
     return Object.freeze({status:200,code:'SECTION_LAB_MOVEMENT_PREVIEW',preview});
   }
-  return Object.freeze({initialize,view,dispatch,previewMovement});
+  /** INTERNAL LAB ONLY: a leader was explicitly ordered by the private
+   *  card journal. Never return or persist a move; no HTTP exposure. */
+  function previewLeaderMovement(actor,request,trustedContext){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const preview=precheckStagedAncientsLeaderMovement({
+      state:snapshot,actor,expectedRevision:request.expectedRevision,
+      leaderId:request.leaderId,path:request.path,serverContext:trustedContext
+    });
+    return Object.freeze({status:200,code:'SECTION_LAB_LEADER_MOVEMENT_PREVIEW',preview});
+  }
+  /** Read-only laboratory simulation, from a verified and authenticated
+   *  private journal. The result NEVER commits candidate board positions. */
+  function previewMovementSequence(actor,request,trustedContext){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const preview=precheckStagedAncientsMovementSequence({
+      state:snapshot,actor,expectedRevision:request.expectedRevision,
+      actions:request.actions,serverContext:trustedContext
+    });
+    return Object.freeze({status:200,code:'SECTION_LAB_SEQUENCE_PREVIEW',preview});
+  }
+  return Object.freeze({initialize,view,dispatch,previewMovement,
+    previewLeaderMovement,previewMovementSequence});
 }

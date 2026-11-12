@@ -498,3 +498,402 @@ test('CCWB mode exclusivity: deck initialization after active lab remains blocke
   assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
   assert.equal(db.isTransaction,false);
 }));
+
+
+/** Leader preview stays in the private authenticated CCWB laboratory. */
+function stageForLeader(store,token,{orderUnit=false}={}){
+  const lab=setup();
+  lab.board.leaders=[
+    {id:'leaderA',side:'A',col:2,row:4},
+    {id:'leaderB',side:'B',col:10,row:4}
+  ];
+  assert.equal(store.initializeExperimentalSectionHistory({
+    sessionToken:token,trustedSetup:lab
+  }).status,201);
+  const card=store.viewExperimentalSectionHistory({sessionToken:token})
+    .view.yourHand[0].instanceId;
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    sessionToken:token,type:'PLAY_SECTION_CARD',expectedRevision:0,
+    idempotencyKey:'leader_preview_card_01',cardInstanceId:card
+  }).status,200);
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    sessionToken:token,type:'ASSIGN_SECTION_ORDERS',expectedRevision:1,
+    idempotencyKey:'leader_preview_orders_01',unitIds:orderUnit?['unitA']:[],leaderIds:['leaderA']
+  }).status,200);
+}
+const leaderRequest=(sessionToken,extra={})=>({
+  sessionToken,expectedRevision:2,leaderId:'leaderA',
+  path:[{col:3,row:4}],...extra
+});
+
+test('CCWB composition: preview of ordered leader is private and never persists a move',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A);
+  const db=app.unsafeTestDatabase();
+  const before={
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all()
+  };
+  const candidate=store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.A),{terrain:[]});
+  assert.equal(candidate.status,200);
+  assert.equal(candidate.code,'SECTION_LAB_LEADER_MOVEMENT_PREVIEW');
+  assert.equal(candidate.preview.status,'CANDIDATE');
+  assert.equal(candidate.preview.detachesFromUnit,true);
+  assert.equal(candidate.preview.movementAuthorized,false);
+  assert.equal(candidate.preview.attackAuthorized,false);
+  assert.equal(candidate.preview.stateChanged,false);
+  assert.equal(JSON.stringify(candidate).includes('card_a_left'),false);
+  assert.equal(store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.B),{terrain:[]}).preview.reason,'NOT_ACTING_PLAYER');
+  assert.equal(store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.outsider),{terrain:[]}).code,'NOT_FOUND');
+  const after={
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all()
+  };
+  assert.deepEqual(after,before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB composition: leader preview binds session and membership in read snapshot',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A);
+  const other=connect();
+  other.identity.logOut(tokens.A);
+  assert.equal(store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.A),{terrain:[]}).code,'UNAUTHENTICATED');
+  const resumed=app.identity.logIn({handle:'alice',password:PASSWORD});
+  const again=await resumed;
+  assert.equal(again.ok,true);
+  const second=store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(again.token),{terrain:[]});
+  assert.equal(second.status,200);
+  assert.equal(second.preview.movementAuthorized,false);
+  other.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?').run(matchId);
+  assert.equal(store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.B),{terrain:[]}).code,'NOT_FOUND');
+}));
+
+test('CCWB composition: leader preview rejects injection and missing trusted terrain',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A);
+  const invalid=[
+    leaderRequest(tokens.A,{actor:'B'}),
+    leaderRequest(tokens.A,{leaderId:'__proto__'}),
+    leaderRequest(tokens.A,{path:[{col:-1,row:4}]}),
+    leaderRequest(tokens.A,{expectedRevision:1.5}),
+    {...leaderRequest(tokens.A),path:[{col:3,row:4,side:'B'}]}
+  ];
+  for(const request of invalid)
+    assert.equal(store.precheckExperimentalSectionLeaderMovement(
+      request,{terrain:[]}).code,'INVALID_SECTION_LAB_LEADER_REQUEST');
+  assert.throws(()=>store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.A),{}),/INVALID_STAGED_LEADER_CONTEXT/);
+  const denied=store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.A,{leaderId:'leaderB'}),{terrain:[]});
+  assert.equal(denied.preview.reason,'LEADER_NOT_ORDERED');
+}));
+
+
+const sequenceLeader=()=>({kind:'LEADER',id:'leaderA',path:[{col:2,row:5}]});
+const sequenceUnit=()=>({kind:'UNIT',id:'unitA',path:[{col:3,row:4}]});
+const sequenceRequest=(sessionToken,actions,extra={})=>({
+  sessionToken,expectedRevision:2,actions,...extra
+});
+
+test('CCWB composition: authenticated movement sequence enforces leader/unit order without writes',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),trusted=movementContext();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const db=app.unsafeTestDatabase();
+  const capture=()=>({
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all()
+  });
+  const before=capture();
+  const first=store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.A,[sequenceLeader(),sequenceUnit()]),trusted);
+  assert.equal(first.status,200);
+  assert.equal(first.code,'SECTION_LAB_SEQUENCE_PREVIEW');
+  assert.equal(first.preview.status,'CANDIDATE_SEQUENCE');
+  assert.equal(first.preview.reviewedMoves,2);
+  assert.equal(first.preview.movementAuthorized,false);
+  assert.equal(first.preview.attackAuthorized,false);
+  assert.equal(first.preview.stateChanged,false);
+  const reverse=store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.A,[sequenceUnit(),sequenceLeader()]),trusted);
+  assert.equal(reverse.status,200);
+  assert.equal(reverse.preview.status,'BLOCKED');
+  assert.equal(reverse.preview.reason,'LEADER_ALREADY_MOVED');
+  assert.equal(reverse.preview.step,1);
+  assert.deepEqual(capture(),before);
+  assert.equal(db.isTransaction,false);
+  assert.equal(JSON.stringify(first).includes('card_a_left'),false);
+  assert.equal(JSON.stringify(first).includes('PRIVATE_'),false);
+}));
+
+test('CCWB composition: movement sequence reads session and membership in WAL snapshot',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),other=connect();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const request=sequenceRequest(tokens.A,[sequenceLeader()]);
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    request,movementContext()).status,200);
+  other.identity.logOut(tokens.A);
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    request,movementContext()).code,'UNAUTHENTICATED');
+  const guest=store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.B,[sequenceLeader()]),movementContext());
+  assert.equal(guest.preview.reason,'NOT_ACTING_PLAYER');
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.outsider,[sequenceLeader()]),movementContext()).code,'NOT_FOUND');
+  other.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?').run(matchId);
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.B,[sequenceLeader()]),movementContext()).code,'NOT_FOUND');
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB composition: movement sequence rejects client-controlled actor, path injection and missing context',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const valid=sequenceRequest(tokens.A,[sequenceLeader()]);
+  const invalid=[
+    {...valid,actor:'B'},
+    {...valid,actions:[{...sequenceLeader(),actor:'B'}]},
+    {...valid,actions:[{...sequenceLeader(),path:[{col:2,row:5,side:'B'}]}]},
+    {...valid,actions:[{...sequenceLeader(),id:'__proto__'}]},
+    {...valid,actions:[]},
+    {...valid,expectedRevision:2.5}
+  ];
+  for(const request of invalid)
+    assert.equal(store.precheckExperimentalSectionMovementSequence(
+      request,movementContext()).code,'INVALID_SECTION_LAB_SEQUENCE_REQUEST');
+  assert.throws(()=>store.precheckExperimentalSectionMovementSequence(
+    valid,{terrain:[]}),/INVALID_STAGED_MOVEMENT_CONTEXT/);
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.A,[sequenceUnit()],{expectedRevision:1}),
+    movementContext()).preview.reason,'STALE_REVISION');
+}));
+
+
+/** Persisted movement DRAFT: never a confirmed legal move or public event. */
+const saveDraftRequest=(sessionToken,overrides={})=>({
+  sessionToken,expectedRevision:2,expectedDraftRevision:0,
+  idempotencyKey:'draft_movement_a01',
+  actions:[sequenceLeader(),sequenceUnit()],...overrides
+});
+
+test('CCWB draft: private proposal survives SQLite reopen without changing board, game revision or public log',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const before={
+    revision:db.prepare('SELECT game_revision,lobby_revision FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all(),
+    board:store.viewExperimentalSectionHistory({sessionToken:tokens.A}).view
+  };
+  const saved=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext());
+  assert.equal(saved.status,200);assert.equal(saved.code,'SECTION_LAB_DRAFT_SAVED');
+  assert.equal(saved.draftRevision,1);assert.equal(saved.boardChanged,false);
+  assert.equal(saved.movementAuthorized,false);
+  const next=connect().getStore(matchId).viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A});
+  assert.equal(next.status,200);assert.equal(next.code,'SECTION_LAB_DRAFT_VIEW');
+  assert.equal(next.draft.draftRevision,1);
+  assert.equal(next.draft.baseGameRevision,2);
+  assert.deepEqual(next.draft.actions,[sequenceLeader(),sequenceUnit()]);
+  assert.equal(next.draft.movementAuthorized,false);
+  assert.equal('idempotencyKey' in next.draft,false);
+  assert.equal('signature' in next.draft,false);
+  const after={
+    revision:db.prepare('SELECT game_revision,lobby_revision FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all(),
+    board:store.viewExperimentalSectionHistory({sessionToken:tokens.A}).view
+  };
+  assert.deepEqual(after,before);
+  assert.equal(JSON.stringify(store.view('B')).includes('draft_movement_a01'),false);
+  assert.equal(JSON.stringify(store.publicEvents('B')).includes('draft_movement_a01'),false);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB draft: same request is idempotent, stale revision and conflicting retry do not write',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const request=saveDraftRequest(tokens.A);
+  assert.equal(store.saveExperimentalSectionMovementDraft(request,movementContext()).code,
+    'SECTION_LAB_DRAFT_SAVED');
+  const state=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const same=store.saveExperimentalSectionMovementDraft(request,movementContext());
+  assert.equal(same.code,'ALREADY_APPLIED');assert.equal(same.draftRevision,1);
+  const stale=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{idempotencyKey:'draft_second_a02'}),movementContext());
+  assert.equal(stale.code,'STALE_DRAFT_REVISION');
+  const reused=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{actions:[sequenceLeader()]}),movementContext());
+  assert.equal(reused.code,'IDEMPOTENCY_KEY_REUSED');
+  assert.deepEqual(db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId),state);
+  const next=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{expectedDraftRevision:1,idempotencyKey:'draft_second_a02',
+      actions:[sequenceLeader()]}),movementContext());
+  assert.equal(next.code,'SECTION_LAB_DRAFT_SAVED');assert.equal(next.draftRevision,2);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A}).draft.actions.length,1);
+  assert.equal(db.prepare('SELECT game_revision FROM matches WHERE id=?').get(matchId).game_revision,2);
+}));
+
+test('CCWB draft: rejected movement, forged request and missing trusted terrain are never persisted',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const original=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const denied=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{actions:[sequenceUnit(),sequenceLeader()]}),
+    movementContext());
+  assert.equal(denied.status,409);
+  assert.equal(denied.code,'SECTION_LAB_DRAFT_NOT_CANDIDATE');
+  for(const request of [
+    saveDraftRequest(tokens.A,{actor:'B'}),
+    saveDraftRequest(tokens.A,{expectedDraftRevision:-1}),
+    saveDraftRequest(tokens.A,{idempotencyKey:'bad'}),
+    saveDraftRequest(tokens.A,{actions:[]}),
+    saveDraftRequest(tokens.A,{actions:[{...sequenceLeader(),actor:'B'}]}),
+    saveDraftRequest(tokens.A,{actions:[{...sequenceLeader(),path:[{col:2,row:5,owner:'B'}]}]})
+  ])
+    assert.equal(store.saveExperimentalSectionMovementDraft(
+      request,movementContext()).code,'INVALID_SECTION_LAB_DRAFT_REQUEST');
+  assert.throws(()=>store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),{}),/INVALID_STAGED_MOVEMENT_CONTEXT/);
+  assert.deepEqual(db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId),original);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB draft: revocation and rival membership cannot view or write owner proposal',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const first=store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext());
+  assert.equal(first.status,200);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.B}).draft,null);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.outsider}).code,'NOT_FOUND');
+  const second=connect();
+  second.identity.logOut(tokens.A);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A}).code,'UNAUTHENTICATED');
+  assert.equal(store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A,{expectedDraftRevision:1,idempotencyKey:'draft_new_after_logout'}),
+    movementContext()).code,'UNAUTHENTICATED');
+  assert.equal(db.prepare('SELECT game_revision FROM matches WHERE id=?').get(matchId).game_revision,2);
+  const newLogin=await app.identity.logIn({handle:'alice',password:PASSWORD});
+  assert.equal(newLogin.ok,true);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:newLogin.token}).draft.draftRevision,1);
+  second.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?').run(matchId);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.B}).code,'NOT_FOUND');
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB draft: advancing the journal invalidates old candidate without exposing it to next player',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  assert.equal(store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext()).status,200);
+  const db=app.unsafeTestDatabase();
+  const readRow=()=>db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  assert.equal(Object.hasOwn(JSON.parse(readRow().private_state),
+    'ancientsSectionMovementDraft'),true);
+  const ended=store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,type:'END_EXPERIMENTAL_TURN',expectedRevision:2,
+    idempotencyKey:'turn_end_after_draft'
+  });
+  assert.equal(ended.status,200);
+  // Cleanup and journal advance happen under the same writer transaction.
+  const after=readRow();
+  assert.equal(Object.hasOwn(JSON.parse(after.private_state),
+    'ancientsSectionMovementDraft'),false);
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,type:'END_EXPERIMENTAL_TURN',expectedRevision:2,
+    idempotencyKey:'turn_end_after_draft'
+  }).code,'ALREADY_APPLIED');
+  assert.deepEqual(readRow(),after);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A}).draft,null);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.B}).draft,null);
+  assert.equal(store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext()).code,'STALE_REVISION');
+}));
+
+
+test('CCWB draft: session is revalidated under BEGIN IMMEDIATE and a WAL reader does not lock writer',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const original=app.identity.resolveSession;
+  let checks=0;
+  try {
+    app.identity.resolveSession=token=>{
+      if(token===tokens.A){
+        checks++;
+        assert.equal(db.isTransaction,true,'auth must be inside the draft transaction');
+      }
+      return original(token);
+    };
+    assert.equal(store.saveExperimentalSectionMovementDraft(
+      saveDraftRequest(tokens.A),movementContext()).code,'SECTION_LAB_DRAFT_SAVED');
+    assert.equal(checks,1);
+    const writer=connect().unsafeTestDatabase();
+    writer.exec('BEGIN IMMEDIATE');
+    try {
+      const read=store.viewExperimentalSectionMovementDraft({sessionToken:tokens.A});
+      assert.equal(read.status,200);
+      assert.equal(read.draft.draftRevision,1);
+      assert.equal(checks,2);
+    } finally {writer.exec('ROLLBACK');}
+  } finally {app.identity.resolveSession=original;}
+  assert.equal(db.isTransaction,false);
+}));
+
+
+test('CCWB draft: a denied or stale journal command preserves the private draft bytes',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  assert.equal(store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext()).code,'SECTION_LAB_DRAFT_SAVED');
+  const db=app.unsafeTestDatabase();
+  const read=()=>db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?')
+    .get(matchId);
+  const before=read();
+  const denied=store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.B,type:'END_EXPERIMENTAL_TURN',expectedRevision:2,
+    idempotencyKey:'turn_wrong_actor'
+  });
+  assert.equal(denied.code,'NOT_YOUR_TURN');
+  assert.deepEqual(read(),before);
+  const stale=store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,type:'END_EXPERIMENTAL_TURN',expectedRevision:1,
+    idempotencyKey:'turn_stale_draft'
+  });
+  assert.equal(stale.code,'STALE_REVISION');
+  assert.deepEqual(read(),before);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A}).draft.draftRevision,1);
+  assert.equal(db.isTransaction,false);
+}));
