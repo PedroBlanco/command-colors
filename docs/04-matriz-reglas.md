@@ -407,3 +407,22 @@ El puente e integración ampliada pasan análisis sintáctico, pero
 **13 casos nuevos de integración CCWB+SQLite siguen sin ejecutar**.
 PR #95: **60 nuevos casos preparados, 75 suites**. No completar CCW-014,
 no publicar métodos internos ni fusionar en `main`.
+
+
+## R-04/R-05 — traza verificable de movimiento candidato (LAB-ANC, 12/11/2026)
+
+La preparación del futuro registro de movimientos confirmados incorpora
+`movement-candidate-journal.mjs`, que deriva una traza de propuesta
+**únicamente** tras `CANDIDATE_SEQUENCE`, con resumen de contexto
+de tablero, órdenes y terreno, entradas correlativas SHA-256 y replay
+determinista. **No convierte la propuesta en jugada ni la escribe en
+SQLite, eventos o interfaz.** Toda respuesta conserva
+`movementAuthorized:false` y `stateChanged:false`.
+
+**Pruebas:** +10 casos en
+`movement-candidate-journal.test.mjs`; V8 aislado **10/10** con
+resumen criptográfico simulado (NO prueba nativa de SHA-256). El
+manifiesto de la rama apilada alcanza **76 suites**; ni esta nueva
+suite ni la regresión conjunta han sido ejecutadas nativamente.
+La composición CCWB y SEC-001 (#93) siguen pendientes. Véase
+[traza de movimientos candidatos](78-traza-auditoria-movimientos-candidatos.md).
