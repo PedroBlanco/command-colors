@@ -281,8 +281,8 @@ test('CCWB composition: private views and public events do not acquire a writer 
 /** Private read-only R-04/R-05 preview, using real sessions and the CCWB
  *  database journal. Never authorize a move or leak another hand. */
 const movementContext=()=>({unitTypes:{unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'},terrain:[]});
-function stageForMovement(store,token){
-  assert.equal(store.initializeExperimentalSectionHistory({sessionToken:token,trustedSetup:setup()}).status,201);
+function stageForMovement(store,token,trustedSetup=setup()){
+  assert.equal(store.initializeExperimentalSectionHistory({sessionToken:token,trustedSetup}).status,201);
   const card=store.viewExperimentalSectionHistory({sessionToken:token}).view.yourHand[0].instanceId;
   assert.equal(store.dispatchExperimentalSectionHistory({sessionToken:token,type:'PLAY_SECTION_CARD',
     expectedRevision:0,idempotencyKey:'private_preview_card_0001',cardInstanceId:card}).status,200);
@@ -1091,13 +1091,19 @@ test('CCWB one-hex simulation: server policy and terrain restrictions cannot be 
     [movementContext(),null],
     [movementContext(),{scope:'OFFICIAL_GAME'}],
     [{...movementContext(),terrain:[{col:3,row:4,kind:'HILL'}]},openHexPolicy()],
-    [undefined,openHexPolicy()]
+    [null,openHexPolicy()]
   ]) {
     const result=oneHexPreview(store,tokens.A,{},ctx,policy);
     assert.equal(result.simulation.status,'BLOCKED');
     assert.equal(result.simulation.simulatedBoard,null);
     assert.equal(result.simulation.canCommit,false);
   }
+  // Passing undefined to the test helper would silently trigger its
+  // default context: exercise the STORE method directly instead.
+  const withoutContext=store.precheckExperimentalSectionOneHexIntent(
+    oneHexIntent(tokens.A),undefined,openHexPolicy());
+  assert.equal(withoutContext.simulation.status,'BLOCKED');
+  assert.equal(withoutContext.simulation.canCommit,false);
 }));
 
 test('CCWB one-hex simulation: reader sees committed WAL state until writer revocation',
@@ -1132,4 +1138,27 @@ test('CCWB one-hex simulation: inactive laboratory cannot be used to bypass deck
   const store=app.getStore(matchId);
   assert.equal(oneHexPreview(store,tokens.A).code,'SECTION_LAB_NOT_INITIALIZED');
   assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB one-hex simulation: private fixture metadata cannot leak through board projection',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const privateSetup=setup();
+  privateSetup.board.privateDeckMarker='NEVER_SHOW_PRIVATE_DECK';
+  privateSetup.board.units[0].serverToken='NEVER_SHOW_OWNER_TOKEN';
+  privateSetup.board.units[1].privateEnemyInfo='NEVER_SHOW_OPPONENT_SECRET';
+  stageForMovement(store,tokens.A,privateSetup);
+  const before=db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId);
+  const response=oneHexPreview(store,tokens.A);
+  assert.equal(response.status,200);
+  assert.equal(response.simulation.status,'PRIVATE_LAB_SIMULATION');
+  const json=JSON.stringify(response);
+  for(const secret of ['NEVER_SHOW_PRIVATE_DECK',
+    'NEVER_SHOW_OWNER_TOKEN','NEVER_SHOW_OPPONENT_SECRET'])
+    assert.equal(json.includes(secret),false);
+  assert.deepEqual(Object.keys(response.simulation.simulatedBoard).sort(),['leaders','units']);
+  for(const unit of response.simulation.simulatedBoard.units)
+    assert.deepEqual(Object.keys(unit).sort(),['col','id','row','side']);
+  assert.deepEqual(db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.isTransaction,false);
 }));
