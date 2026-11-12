@@ -67,3 +67,29 @@ siguen **sin ejecutarse con sus dependencias de reglas reales bajo
 Node.js nativo**. Tampoco se ha ejecutado la composición SQLite,
 HTTP/SSE o la regresión de 76 suites. Esta evidencia no autoriza la
 fusión ni la ejecución de ningún movimiento.
+
+
+## Continuación: consulta CCWB/WAL autenticada (12/11/2026)
+
+La traza ya dispone de un punto de consulta **interno** conectado al
+historial real de la partida: `precheckExperimentalSectionMovementEvidence`.
+La autenticación y pertenencia se comprueban en una única lectura
+SQLite/WAL; el puente reconstruye previamente el diario privado de cartas,
+órdenes, eventos y claves de idempotencia. El nuevo filtro staged verifica
+turno, fase y posiciones de las piezas antes de emitir evidencia.
+No se añaden rutas públicas, persistencia de trazas ni autorización de
+movimientos.
+
+Se detectó un rechazo de sobreasignación de acciones que generaba un
+error de validación de secuencia; ahora devuelve `PIECE_NOT_ORDERED`,
+sin traza y sin cambiar el estado. Se sustituyó también
+`localeCompare` por ordenación ordinal fija en el hash de contexto
+para evitar diferencias entre servidores.
+
+**Evidencia ampliada:** 24/24 pruebas staged y 11/11 pruebas de auditoría
+en V8 aislado con resumen simulado; 4/4 pruebas de SHA-256 real con el
+**blob Git exacto actual** `849f6f4023c966f51c505a5270b1750a9997f533`,
+pero doble de prueba para la prevalidación de reglas. La nueva suite
+de composición incluye 4 casos escritos, **aún no ejecutados con
+SQLite real**. La rama mantiene 76 suites; regresión integral pendiente.
+Detalles en [consulta CCWB autenticada](79-evidencia-movimientos-ccwb-autenticada.md).
