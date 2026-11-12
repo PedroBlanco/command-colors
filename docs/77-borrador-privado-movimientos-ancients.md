@@ -29,9 +29,9 @@ El contexto `trustedContext={unitTypes,terrain}` se suministra por código confi
 
 Esta ampliación añade:
 - **9 casos** en `movement-draft-contract.test.mjs` (reintento, colisión de clave, revisión, privacidad, caducidad por juego, corrupción, validación e inmutabilidad). Los **9/9** se evaluaron en un **aislamiento V8** con digest sustituido por un simulador determinista para probar la lógica de transición; **NO se probó así el SHA-256 nativo**.
-- **5 casos SQLite de integración preparados** en `sqlite-store/ancients-section-history.test.mjs`: persistencia tras reabrir la conexión, ausencia de eventos y mutaciones de tablero, idempotencia, rechazo de rutas/entradas, revocación y aislamiento del rival, y caducidad al terminar el turno. **Pendientes de ejecución nativa sobre el código exacto de la PR**.
+- **6 casos SQLite de integración preparados** en `sqlite-store/ancients-section-history.test.mjs`: persistencia tras reabrir la conexión, ausencia de eventos y mutaciones de tablero, idempotencia, rechazo de rutas/entradas, revocación y aislamiento del rival, caducidad al terminar el turno y autenticación bajo bloqueo de escritura/lectura WAL concurrente. **Pendientes de ejecución nativa sobre el código exacto de la PR**.
 
-Total de la PR #95: **48 casos nuevos preparados** (34 previos + 14 de borrador). El manifiesto de su rama pasa a **74 suites**, incluidas dos suites de líder/secuencia y una nueva de contrato de borrador. Como comprobación aislada, la suite pura del borrador pasa 9/9 y el trío previo de líder/secuencia/órdenes pasó 38/38; **no son una regresión de Node.js/SQLite**. Los nuevos casos SQLite de toda la PR están sin ejecutar (11: tres de líder, tres de secuencia y cinco del borrador).
+Total de la PR #95: **49 casos nuevos preparados** (34 previos + 15 de borrador). El manifiesto de su rama pasa a **74 suites**, incluidas dos suites de líder/secuencia y una nueva de contrato de borrador. Como comprobación aislada, la suite pura del borrador pasa 9/9 y el trío previo de líder/secuencia/órdenes pasó 38/38; **no son una regresión de Node.js/SQLite**. Los nuevos casos SQLite de toda la PR están sin ejecutar (12: tres de líder, tres de secuencia y seis del borrador).
 
 ### Siguientes hitos y bloqueo de seguridad
 
