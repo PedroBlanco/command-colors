@@ -151,3 +151,21 @@ test('repeated previews are deterministic, and neither input can be mutated',()=
   assert.deepEqual(a,b);
   assert.deepEqual({state,req},previous);
 });
+
+test('private simulation response strips unknown board and unit metadata',()=>{
+  const state=ready();
+  state.board.secretScenario='HIDDEN_SCENARIO_NOT_FOR_OPPONENT';
+  state.board.units[0].secretOrder='HIDDEN_ORDERS';
+  state.board.units[2].privateOwnerData='HIDDEN_PLAYER_DATA';
+  const previous=structuredClone(state);
+  const r=run({verifiedSectionState:state});
+  assert.equal(r.status,'PRIVATE_LAB_SIMULATION');
+  const json=JSON.stringify(r);
+  for(const s of ['HIDDEN_SCENARIO_NOT_FOR_OPPONENT','HIDDEN_ORDERS',
+    'HIDDEN_PLAYER_DATA'])assert.equal(json.includes(s),false);
+  assert.deepEqual(Object.keys(r.simulatedBoard).sort(),['leaders','units']);
+  for(const u of r.simulatedBoard.units)
+    assert.deepEqual(Object.keys(u).sort(),['col','id','row','side']);
+  assert.deepEqual(state,previous);
+  assert.equal(r.canCommit,false);
+});
