@@ -9,6 +9,7 @@ import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
 import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
+import {previewPrivateOneHexAncientsIntent} from './private-one-hex-intent-preview.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence,
@@ -216,6 +217,26 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       boardChanged:false
     });
   }
+
+  /**
+   * INTERNAL LAB ONLY: CCWB replay is verified from the same WAL snapshot
+   * that the caller uses to authenticate the live participant. No game
+   * change, HTTP route, authorization, secret hand or private journal export.
+   */
+  function previewOneHexIntent(actor,request,trustedContext,policy){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const simulation=previewPrivateOneHexAncientsIntent({
+      request,authenticatedActor:actor,verifiedSectionState:snapshot,
+      serverContext:trustedContext,policy
+    });
+    return Object.freeze({
+      status:200,code:'SECTION_LAB_ONE_HEX_SIMULATION',
+      simulation,movementAuthorized:false,attackAuthorized:false,
+      boardChanged:false,canCommit:false
+    });
+  }
   return Object.freeze({initialize,view,dispatch,previewMovement,
-    previewLeaderMovement,previewMovementSequence,previewMovementEvidence});
+    previewLeaderMovement,previewMovementSequence,previewMovementEvidence,
+    previewOneHexIntent});
 }
