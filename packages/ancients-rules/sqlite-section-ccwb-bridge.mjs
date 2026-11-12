@@ -9,6 +9,7 @@ import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
 import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
+import {precheckStagedAncientsMovement} from './staged-movement-preflight.mjs';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
@@ -158,5 +159,16 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
         cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,combatResolved:false});
     });
   }
-  return Object.freeze({initialize,view,dispatch});
+  /** Verified, private CCWB snapshot. Caller MUST authenticate actor and hold
+   *  the session/membership read transaction; no raw journal leaves the bridge. */
+  function previewMovement(actor,request,trustedContext){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const preview=precheckStagedAncientsMovement({
+      state:snapshot,actor,expectedRevision:request.expectedRevision,
+      unitId:request.unitId,path:request.path,serverContext:trustedContext
+    });
+    return Object.freeze({status:200,code:'SECTION_LAB_MOVEMENT_PREVIEW',preview});
+  }
+  return Object.freeze({initialize,view,dispatch,previewMovement});
 }
