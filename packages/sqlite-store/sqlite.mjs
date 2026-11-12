@@ -11,6 +11,7 @@ import {initializeSchema, CCW_SCHEMA_SQL} from './schema-version.mjs';
 import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqlite-game.mjs';
 import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
+import {proposeMovementDraft, projectMovementDraft} from '../ancients-rules/movement-draft-contract.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -380,6 +381,92 @@ export function openSqliteComposition({file, clock = Date.now,
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
           return sectionHistory.previewMovementSequence(identity.actor,request,trustedContext);
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY: persist a PRIVATE hypothetical movement draft.
+       * This is NOT an executed move. The game revision, public events and
+       * board never change. No HTTP endpoint calls this method.
+       */
+      saveExperimentalSectionMovementDraft(request = {},trustedContext) {
+        if(!plainLabRequest(request) || Object.keys(request).length!==5 ||
+           !['sessionToken','expectedRevision','expectedDraftRevision',
+             'idempotencyKey','actions'].every(k=>Object.hasOwn(request,k)) ||
+           typeof request.sessionToken!=='string' ||
+           !Number.isSafeInteger(request.expectedRevision)||request.expectedRevision<0 ||
+           !Number.isSafeInteger(request.expectedDraftRevision)||request.expectedDraftRevision<0 ||
+           typeof request.idempotencyKey!=='string'||!COMMAND_KEY.test(request.idempotencyKey)||
+           !Array.isArray(request.actions)||request.actions.length<1||
+           request.actions.length>117||
+           !request.actions.every(a=>plainLabRequest(a)&&Object.keys(a).length===3&&
+             ['kind','id','path'].every(k=>Object.hasOwn(a,k))&&
+             ['UNIT','LEADER'].includes(a.kind)&&typeof a.id==='string'&&
+             /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(a.id)&&a.id!=='__proto__'&&
+             Array.isArray(a.path)&&a.path.length>0&&a.path.length<=32&&
+             a.path.every(c=>plainLabRequest(c)&&Object.keys(c).length===2&&
+               Object.hasOwn(c,'col')&&Object.hasOwn(c,'row')&&inBounds(c))))
+          return {status:400,code:'INVALID_SECTION_LAB_DRAFT_REQUEST'};
+        // No auth may be cached from outside this writer lock. An already
+        // committed logout or membership change wins over any draft write.
+        return atomic(() => {
+          const identity=resolveSectionLabActor(request.sessionToken);
+          if(identity.error)return identity.error;
+          const row=rowOrThrow();
+          if(!hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          if(row.game_revision!==request.expectedRevision)
+            return {status:409,code:'STALE_REVISION'};
+          const preview=sectionHistory.previewMovementSequence(identity.actor,request,trustedContext);
+          if(preview.preview.status!=='CANDIDATE_SEQUENCE')
+            return {status:409,code:'SECTION_LAB_DRAFT_NOT_CANDIDATE',
+              reason:preview.preview.reason};
+          const persisted=decode(row.private_state);
+          const previous=Object.hasOwn(persisted,'ancientsSectionMovementDraft')
+            ? persisted.ancientsSectionMovementDraft : null;
+          const proposal=proposeMovementDraft({
+            previous,matchId,actor:identity.actor,gameRevision:row.game_revision,
+            expectedDraftRevision:request.expectedDraftRevision,
+            idempotencyKey:request.idempotencyKey,actions:request.actions
+          });
+          if(!proposal.ok)return {status:409,code:proposal.code};
+          if(proposal.code==='ALREADY_APPLIED')
+            return {status:200,code:'ALREADY_APPLIED',
+              draftRevision:proposal.draft.draftRevision,boardChanged:false};
+          const updated={...persisted,ancientsSectionMovementDraft:proposal.draft};
+          const write=db.prepare('UPDATE matches SET private_state=? WHERE id=? AND game_revision=?')
+            .run(JSON.stringify(updated),matchId,row.game_revision);
+          if(write.changes!==1)throw new Error('SECTION_LAB_DRAFT_CONCURRENT_UPDATE');
+          return {status:200,code:'SECTION_LAB_DRAFT_SAVED',
+            draftRevision:proposal.draft.draftRevision,boardChanged:false,
+            movementAuthorized:false,attackAuthorized:false};
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY: only the actor who owns the current-revision
+       * draft sees its actions. A rival, a new turn or missing draft gets
+       * the same null projection, never any saved private route or key.
+       */
+      viewExperimentalSectionMovementDraft(request = {}) {
+        if(!plainLabRequest(request)||Object.keys(request).length!==1||
+           !Object.hasOwn(request,'sessionToken')||
+           typeof request.sessionToken!=='string')
+          return {status:400,code:'INVALID_SECTION_LAB_DRAFT_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(request.sessionToken);
+          if(identity.error)return identity.error;
+          const row=rowOrThrow();
+          if(!hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          // Ensure private card/command replay still matches the SQLite log,
+          // while keeping this new draft completely outside public events.
+          sectionHistory.view(identity.actor);
+          const persisted=decode(row.private_state);
+          const draft=projectMovementDraft({
+            draft: Object.hasOwn(persisted,'ancientsSectionMovementDraft')
+              ? persisted.ancientsSectionMovementDraft : null,
+            matchId,actor:identity.actor,gameRevision:row.game_revision
+          });
+          return {status:200,code:'SECTION_LAB_DRAFT_VIEW',draft};
         });
       },
       publicEvents(actor, {denyExperimentalLab = false} = {}) {
