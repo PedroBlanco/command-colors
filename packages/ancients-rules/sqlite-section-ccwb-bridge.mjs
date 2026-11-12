@@ -10,7 +10,8 @@ import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempo
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
 import {precheckStagedAncientsMovement,
-  precheckStagedAncientsLeaderMovement} from './staged-movement-preflight.mjs';
+  precheckStagedAncientsLeaderMovement,
+  precheckStagedAncientsMovementSequence} from './staged-movement-preflight.mjs';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
@@ -182,5 +183,17 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     });
     return Object.freeze({status:200,code:'SECTION_LAB_LEADER_MOVEMENT_PREVIEW',preview});
   }
-  return Object.freeze({initialize,view,dispatch,previewMovement,previewLeaderMovement});
+  /** Read-only laboratory simulation, from a verified and authenticated
+   *  private journal. The result NEVER commits candidate board positions. */
+  function previewMovementSequence(actor,request,trustedContext){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const preview=precheckStagedAncientsMovementSequence({
+      state:snapshot,actor,expectedRevision:request.expectedRevision,
+      actions:request.actions,serverContext:trustedContext
+    });
+    return Object.freeze({status:200,code:'SECTION_LAB_SEQUENCE_PREVIEW',preview});
+  }
+  return Object.freeze({initialize,view,dispatch,previewMovement,
+    previewLeaderMovement,previewMovementSequence});
 }
