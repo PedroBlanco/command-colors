@@ -50,3 +50,8 @@ node --test packages/ancients-rules/leader-movement-preflight.test.mjs packages/
 ```
 
 PR #93 (SEC-001) conserva por separado sus propias pruebas y bloqueo de integración. No desplegar, no fusionar en `main` y no declarar terminada CCW-014.
+
+
+## Borrador persistente posterior (12/11/2026)
+
+Las secuencias `CANDIDATE_SEQUENCE` admiten ahora guardado **como borrador privado, no como jugada confirmada**, mediante `saveExperimentalSectionMovementDraft`. Se revisa sesión y replay dentro de `BEGIN IMMEDIATE`, con revisión de borrador propia, deduplicación de reintentos y proyección exclusiva para su bando. El tablero y `game_revision` no cambian y el borrador es obsoleto al avanzar el diario. Se mantienen separados el posible futuro reductor reglamentario y el flujo público HTTP/SSE. Véase [borrador privado](77-borrador-privado-movimientos-ancients.md).
