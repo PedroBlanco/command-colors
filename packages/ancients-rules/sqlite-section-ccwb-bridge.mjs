@@ -6,6 +6,10 @@
  */
 import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
   assertSectionHistoryLab, projectSectionHistoryLab} from './section-history-journal.mjs';
+import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
+import {signSectionJournalCommand, checkSectionJournalSignature,
+  matchesSectionJournalRetry} from './lab-command-signature.mjs';
+import {precheckStagedAncientsMovement} from './staged-movement-preflight.mjs';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
@@ -37,7 +41,7 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
   if(!db||typeof matchId!=='string'||typeof getRow!=='function'||typeof atomic!=='function')
     throw new TypeError('INVALID_SECTION_BRIDGE_DEPENDENCIES');
   const events=db.prepare('SELECT sequence,visibility,payload FROM game_events WHERE match_id=? ORDER BY sequence');
-  const keys=db.prepare('SELECT actor,signature,committed_revision FROM game_commands WHERE match_id=? ORDER BY committed_revision');
+  const keys=db.prepare('SELECT actor,idem_key,signature,committed_revision FROM game_commands WHERE match_id=? ORDER BY committed_revision');
   const getKey=db.prepare('SELECT signature,committed_revision FROM game_commands WHERE match_id=? AND actor=? AND idem_key=?');
   const update=db.prepare('UPDATE matches SET private_state=?,game_revision=? WHERE id=? AND game_revision=?');
   const eventInsert=db.prepare('INSERT INTO game_events(match_id,sequence,visibility,payload) VALUES(?,?,?,?)');
@@ -59,15 +63,19 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     if(storedEvents.length!==row.game_revision||storedKeys.length!==row.game_revision)
       throw new Error('SECTION_CCWB_EVENT_COUNT');
     for(let i=0;i<journal.commands.length;i++){
-      const command=journal.commands[i],step=applySectionHistoryLabCommand(snapshot,command),revision=i+1;
+      const {command,idempotencyKey}=
+        readLabJournalIdempotency(journal.commands[i]);
+      const step=applySectionHistoryLabCommand(snapshot,command),revision=i+1;
       if(!step.accepted||step.nextState.revision!==revision)
         throw new Error('SECTION_CCWB_HISTORY_REPLAY_FAILED');
       const evt=storedEvents[i],saved=JSON.parse(evt.payload),key=storedKeys[i];
       if(evt.sequence!==revision||evt.visibility!=='public'||
          !exact(saved,{...step.publicEvent,visibility:'public'})||
-         key.actor!==command.actor||key.committed_revision!==revision||
-         key.signature!==JSON.stringify(command))
+         key.actor!==command.actor||key.committed_revision!==revision)
         throw new Error('SECTION_CCWB_HISTORY_TAMPERED');
+      checkSectionJournalSignature({
+        signature:key.signature,command,journalKey:idempotencyKey,sqlKey:key.idem_key
+      });
       snapshot=step.nextState;
     }
     if(snapshot.revision!==row.game_revision||!exact(snapshot,journal.state))
@@ -80,9 +88,15 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       status:'LAB_ONLY',...projectSectionHistoryLab(snapshot,actor)});
   }
   /** Explicit TEST-ONLY server setup. Never accept browser-supplied setup. */
-  function initialize(actor,setup){
+  function initialize(actor,setup,authorizeInTransaction=()=>true){
     if(actor!=='A')return denied(403,'FORBIDDEN');
+    if(typeof authorizeInTransaction!=='function')
+      throw new TypeError('INVALID_SECTION_LAB_AUTH_GUARD');
     return atomic(()=>{
+      // Recheck live session and membership after BEGIN IMMEDIATE, not only
+      // before entering this bridge. Another connection may have revoked it.
+      const authorization=authorizeInTransaction();
+      if(authorization!==true)return authorization;
       const row=resultRow(),persisted=parse(row);
       if(row.game_revision!==0||Object.hasOwn(persisted,'commandSession')||
          Object.hasOwn(persisted,'ancientsSectionHistoryLab')||
@@ -103,22 +117,29 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     if(!['A','B'].includes(actor))return null;
     return safeView(resultRow(),actor);
   }
-  function dispatch(request={}){
+  function dispatch(request={},authorizeInTransaction=()=>true){
     if(!record(request)||!['A','B'].includes(request.actor))return denied(403,'FORBIDDEN');
-    const fields=TYPES[request.type];
-    const expected=['actor','type','expectedRevision','idempotencyKey',...(fields??[])];
-    if(!Object.hasOwn(TYPES,request.type)||Object.keys(request).length!==expected.length||
+    if(typeof authorizeInTransaction!=='function')
+      throw new TypeError('INVALID_SECTION_LAB_AUTH_GUARD');
+    const fields=Object.hasOwn(TYPES,request.type) ? TYPES[request.type] : null;
+    if(!fields)return denied(400,'INVALID_SECTION_LAB_COMMAND');
+    const expected=['actor','type','expectedRevision','idempotencyKey',...fields];
+    if(Object.keys(request).length!==expected.length||
        !expected.every(key=>Object.hasOwn(request,key))||
        !Number.isSafeInteger(request.expectedRevision)||request.expectedRevision<0||
        typeof request.idempotencyKey!=='string'||!KEY.test(request.idempotencyKey))
       return denied(400,'INVALID_SECTION_LAB_COMMAND');
     return atomic(()=>{
+      // Mutating command: revalidate the original session under the same SQLite
+      // write transaction that records revision, events and command.
+      const authorization=authorizeInTransaction();
+      if(authorization!==true)return authorization;
       const row=resultRow(),{persisted,journal,snapshot}=verify(row);
       const command={type:request.type,actor:request.actor,expectedRevision:request.expectedRevision};
       for(const field of fields)command[field]=structuredClone(request[field]);
-      const signature=JSON.stringify(command);
+      const signature=signSectionJournalCommand(command,request.idempotencyKey);
       const previous=getKey.get(row.id,request.actor,request.idempotencyKey);
-      if(previous)return previous.signature===signature
+      if(previous)return matchesSectionJournalRetry(previous.signature,command,request.idempotencyKey)
         ? Object.freeze({status:200,code:'ALREADY_APPLIED',revision:previous.committed_revision,view:safeView(row,request.actor)})
         : denied(409,'IDEMPOTENCY_KEY_REUSED');
       if(row.game_revision!==request.expectedRevision)return denied(409,'STALE_REVISION');
@@ -126,7 +147,9 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       if(!result.accepted)return denied(result.code==='NOT_YOUR_TURN'?403:409,result.code);
       const next=result.nextState;
       const updated={...persisted,ancientsSectionHistoryLab:{
-        initial:journal.initial,commands:[...journal.commands,command],state:next}};
+        initial:journal.initial,
+        commands:[...journal.commands,bindLabJournalIdempotency(command,request.idempotencyKey)],
+        state:next}};
       if(update.run(JSON.stringify(updated),next.revision,row.id,row.game_revision).changes!==1)
         throw new Error('SECTION_CCWB_CONCURRENT_UPDATE');
       eventInsert.run(row.id,next.revision,'public',JSON.stringify({...result.publicEvent,visibility:'public'}));
@@ -136,5 +159,16 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
         cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,combatResolved:false});
     });
   }
-  return Object.freeze({initialize,view,dispatch});
+  /** Verified, private CCWB snapshot. Caller MUST authenticate actor and hold
+   *  the session/membership read transaction; no raw journal leaves the bridge. */
+  function previewMovement(actor,request,trustedContext){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const preview=precheckStagedAncientsMovement({
+      state:snapshot,actor,expectedRevision:request.expectedRevision,
+      unitId:request.unitId,path:request.path,serverContext:trustedContext
+    });
+    return Object.freeze({status:200,code:'SECTION_LAB_MOVEMENT_PREVIEW',preview});
+  }
+  return Object.freeze({initialize,view,dispatch,previewMovement});
 }
