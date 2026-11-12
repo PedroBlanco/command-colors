@@ -1,6 +1,6 @@
 # LAB-ANC — Primer reductor determinista de desplazamientos de un hexágono
 
-**Fecha:** 12/11/2026. **Rama:** `feat/lab-anc-minimal-movement-reducer` (PR #97, basada en PR #96 y PR #95). **Estado:** laboratorio **sin persistencia**, sin endpoint y sin autorización de movimientos de partida.
+**Fecha:** 12/11/2026. **Rama:** `feat/lab-anc-minimal-movement-reducer` (PR #98, basada en PR #96 y PR #95). **Estado:** laboratorio **sin persistencia**, sin endpoint y sin autorización de movimientos de partida.
 
 ## Objetivo técnico
 
@@ -55,4 +55,4 @@ Se añade `packages/ancients-rules/clear-lab-movement-reducer.test.mjs` con **11
 
 Conservar este reductor como contrato reducido para pruebas de movimiento; después, sobre un árbol completo validado con Node.js y SQLite, diseñar e implementar una **transición reglamentaria distinta** que registre una orden consumida, la posición final, los eventos y un replay comprobable dentro de una transacción. Evitar que un resumen SHA-256, un borrador o este `simulatedBoard` se empleen como autorización.
 
-**No fusionar PR #97, #96 o #95 en `main` hasta completar los criterios de integración, seguridad y revisión.**
+**No fusionar PR #98, #96 o #95 en `main` hasta completar los criterios de integración, seguridad y revisión.**
