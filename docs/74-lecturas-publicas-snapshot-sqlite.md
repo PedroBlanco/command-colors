@@ -1,51 +1,40 @@
-# SEC-001 — Lecturas públicas en snapshot WAL sin proyección del laboratorio
+# SEC-001 — Autorización de sesión, vistas públicas y escrituras SQLite/WAL
 
-**12/11/2026.** Seguimiento: [SEC-001 / issue #94](https://github.com/PedroBlanco/command-colors/issues/94). Corrección experimental apilada sobre la PR #83. El laboratorio privado de cartas y órdenes de *Ancients* no es una partida reglamentaria ni está habilitado por HTTP.
+**12/11/2026.** Seguimiento: [SEC-001, issue #94](https://github.com/PedroBlanco/command-colors/issues/94). Rama experimental sobre la cadena de la PR #83. **Sin despliegue ni fusión en `main`.** La composición CCWB contiene un laboratorio interno *Ancients*; no es una partida reglamentaria y sus manos, diario y operaciones no deben salir por la API pública.
 
-## Problema que resuelve
+## Riesgo original
 
-El almacenamiento `getStore(matchId).view(actor)` seleccionaba el modo de partida con una primera consulta SQLite y construía la proyección a partir de nuevas consultas sin compartir una transacción de lectura. Una segunda conexión SQLite/WAL podía cambiar la modalidad entre ambas operaciones, provocando una respuesta incoherente o un error al proyectar una fila distinta. Además, el gateway HTTP bloqueaba `status:'LAB_ONLY'` **después** de construir la vista privada, pese a que no debía solicitarla.
+La API obtenía `identity.resolveSession(token)`, `invitations.getMatch(...)` y un bando `actor` antes de buscar el almacenamiento y construir la proyección. Otra conexión o proceso SQLite podía revocar la sesión o cambiar la pertenencia/modo durante el intervalo. La versión inicial de #93 protegió la selección de modo y la proyección en un `BEGIN` WAL de solo lectura, pero todavía confiaba en el bando obtenido *fuera* de esa instantánea. Además, el código HTTP construía anteriormente una mano `LAB_ONLY` antes de descartarla.
 
-## Contrato nuevo
+## Contrato implementado
 
-- `store.view(actor, {denyExperimentalLab = false})` reúne elección de modalidad y construcción de vista en una sola transacción **`BEGIN` de solo lectura**. El primer SELECT fija el snapshot WAL. La transacción termina con `COMMIT`, o `ROLLBACK` si hay un error. No se requiere bloqueo reservado de escritura.
-- Con `denyExperimentalLab:true`, si la partida está en modo privado, el método devuelve **`{status:409,code:'SECTION_LAB_INTERNAL_ONLY'}` sin invocar la proyección privada**.
-- Las llamadas internas existentes `view(actor)` conservan su contrato anterior; se mantiene el control de filas mixtas y la verificación del diario experimental.
-- El gateway solicita la nueva modalidad denegada para **GET de partida, GET eventos, POST comandos y negociación inicial SSE**. Comprueba el resultado de denegación antes de examinar `matchId`. Mantiene también el rechazo de `status:'LAB_ONLY'` de otros almacenes como defensa complementaria.
-- El flujo SSE solicita el modo denegado en cada tick y **cierra la conexión** ante el resultado 409 o un estado privado legado, sin emitir revisiones del laboratorio.
-- La lectura HTTP de eventos conserva su segunda comprobación dentro del propio snapshot de `publicEvents`; no se eliminan protecciones existentes. Tampoco se modifica el esquema ni se añade una ruta pública.
+- `view(actor,{denyExperimentalLab:true})` conserva el contrato interno anterior: selección de modalidad y proyección dentro de una instantánea `BEGIN`/SELECT/`COMMIT`; devuelve `SECTION_LAB_INTERNAL_ONLY` antes de calcular una mano de laboratorio.
+- `viewForSession({sessionToken})` **siempre deniega el laboratorio** y consulta la sesión, su vencimiento y la pertenencia a la partida **dentro de la misma instantánea WAL** que emplea para seleccionar el modo, reconstruir la vista y determinar el bando. No acepta el bando del cliente. Fallos: `401 UNAUTHENTICATED`, `404 NOT_FOUND`, `409 SECTION_LAB_INTERNAL_ONLY`.
+- `publicEventsForSession({sessionToken})` vincula sesión, pertenencia, modalidad y consulta de eventos públicos en su propia instantánea, aunque el estado se haya consultado anteriormente. Mantiene el comportamiento interno de `publicEvents(actor,{denyExperimentalLab:true})` para adaptadores y pruebas precedentes.
+- El gateway utiliza los métodos de sesión cuando los proporciona el almacén real. En los adaptadores antiguos conserva los métodos basados en `actor`. GET de partida, GET de eventos, POST de comandos y negociación SSE deniegan el laboratorio antes de serializar información. Un rechazo de sesión se convierte en 401/404, sin exponer objetos privados ni detalles de SQLite.
+- Cada tick SSE revalida sesión y pertenencia, solicita `viewForSession` si existe y cierra el flujo ante revocación, estado inconsistente o laboratorio; solo emite números de revisión, nunca cartas.
+- `dispatchForSession({sessionToken,...command})` determina el bando desde la sesión en el servidor y pasa una guardia que se **ejecuta dentro de `BEGIN IMMEDIATE`**, tanto para comandos de demostración como para el mazo sintético. La guardia comprueba que la sesión siga vigente y que la pertenencia coincida con el bando previamente derivado. Se verifica antes de consultar idempotencia, proyectar manos de error o modificar tablas.
+- `initializeCommandDeckForSession({sessionToken})` somete la inicialización sintética a idéntica comprobación bajo bloqueo de escritura. La API HTTP usa el nuevo contrato cuando existe; los métodos antiguos `initializeCommandDeck(actor)` y `dispatch({actor,...})` se mantienen para los consumidores internos y las pruebas previas.
+- No hay nuevas rutas públicas, datos de usuario en el navegador, migraciones de esquema, acciones reglamentarias de *Ancients* ni exposición de funciones internas del laboratorio.
 
-Esta protección vincula la selección y proyección del estado en una instantánea; **no sustituye todavía un contrato unificado de autorización de sesión + lectura de cualquier modo en la misma instantánea**. Ese endurecimiento requerirá diseño y pruebas específicos. La modalidad privada ya dispone de sus operaciones propias ligadas a sesión.
+### Semántica temporal
 
-## Evidencia y pruebas
+Una revocación que **se ha confirmado antes de la primera lectura del snapshot** invalida la vista y los eventos. Si la revocación ocurre después de esa primera lectura, la respuesta se interpreta respecto al snapshot autorizado anterior (comportamiento consistente de WAL). Para una escritura, `BEGIN IMMEDIATE` serializa con el cierre de sesión: si la revocación ganó primero, la guardia falla; si la escritura adquirió y validó primero el bloqueo, la revocación espera a la transacción. No se promete la retirada de respuestas ya generadas ni una política de producción para sesiones distribuidas.
 
-Se agregan **cinco casos** en tres suites existentes:
+## Pruebas y evidencia
 
-1. Vista normal con `denyExperimentalLab:true`, sin escrituras ni transacción abierta.
-2. Vista de laboratorio denegada para A y B antes de proyectar manos, manteniendo una vista interna autorizada.
-3. Activación del laboratorio desde una segunda conexión seguida de nueva instantánea: ninguna mano pasa a la respuesta pública.
-4. Gateway HTTP con SQLite real: las rutas de partida, eventos y comandos solicitan todas `denyExperimentalLab:true`.
-5. SSE: el servicio solicita el modo denegado y cierra ante el resultado interno `SECTION_LAB_INTERNAL_ONLY`.
+La PR #93 tenía cinco casos nuevos de snapshot/laboratorio en tres suites. Esta ampliación añade **12 casos de prueba** (6 SQLite, 4 HTTP y 2 SSE) dentro de suites existentes:
 
-**Ejecuciones realizadas en este cambio:**
-- **7/7 PASS** de la suite SSE nativa `revision-stream-lab-isolation.test.mjs` con Node.js 22.16.0. Se verificaron los blobs Git exactos del módulo `d75290d52bf3a839effed33d8ec0f328bcd68acc` y su suite `4489a78912e4b08c69ff47dfcfdb4464a1f33587`. Informe local `ccw-pr93-sse-native-7.tap`.
-- Cinco comprobaciones aisladas del manejador `gateway.mjs` (blob `c08ce7a71750931b56bf83ecb1d5e4a0c3d2abea`) usando respuestas/almacén simulados: 409 al laboratorio en GET/eventos/comandos, 200 para lectura y eventos ordinarios, sin despachos indebidos y con `denyExperimentalLab:true` en todas las consultas. **No equivalen a una prueba nativa HTTP + SQLite**.
+- SQLite: sesión vigente y bando correcto, usuario ajeno, revocación desde segunda conexión WAL, pérdida de pertenencia, laboratorio sin exposición de mano, guardia transaccional de comandos demo/mazo e inicialización autenticada.
+- HTTP: revocación entre lobby y lectura de partida/eventos/comandos, revocación entre vista y consulta de eventos, revocación entre vista y escritura, y revocación durante inicialización de mazo. Nunca se publican manos ni eventos privados.
+- SSE: preferencia obligatoria de vista vinculada a sesión y cierre al revocar durante una espera asíncrona de almacenamiento.
 
-Los tres casos nuevos de composición SQLite y el caso HTTP+SQLite **no se han ejecutado todavía**, y tampoco la regresión global de esta nueva rama. Las **71 suites** del manifiesto no cambian; se ampliaron casos dentro de ellas.
+**Evidencia ejecutada ANTES de esta ampliación:** 7/7 pruebas SSE, Node.js 22.16.0, sobre los blobs exactos `revision-stream.mjs` y su suite anteriores; cinco comprobaciones simuladas del gateway; 41 pruebas nativas de #92 y una regresión integral Windows reportada por el usuario en la rama anterior. **No prueban el árbol actual.**
 
-## Validación propuesta en Windows 11 sin WSL
+**Comprobación del árbol actual:** se ha verificado el **parseo sintáctico** de los siete archivos JavaScript modificados (retirando `import/export` únicamente para analizar con V8; sustituyendo `import.meta.url` en el gateway). **No se han ejecutado aquí tests de integración, HTTP real ni regresión completa.** La PR continúa en borrador. El manifiesto conserva **71 suites** y el lanzador prioriza ocho, incluidas las tres suites ampliadas.
 
-Desde un worktree independiente de la nueva rama:
+## Validación pendiente, sin solicitarla ahora al usuario
 
-```powershell
-git fetch origin
-git worktree add ..\command-colors-read-93 origin/fix/i4-ccwb-public-view-wal-snapshot
-Set-Location ..\command-colors-read-93
-.\scripts\validate-ccwb-http.ps1
-# Si termina con código 0:
-.\scripts\validate-ccwb-http.ps1 -FullRegression
-```
+Cuando exista una ejecución nativa disponible, verificar primero las ocho suites prioritarias de `scripts/validate-ccwb-http.ps1` en Windows 11/PowerShell nativo (**sin WSL**) y después la regresión completa de 71 suites. Alternativamente, verificar Node.js + SQLite nativos en un entorno aislado controlado y contrastar las dos ejecuciones. No consumir GitHub Actions innecesariamente.
 
-El validador prioriza ahora **8 suites**, incluidas `browser-sqlite-smoke.test.mjs` y `command-deck-sse.test.mjs`, además de pruebas de los límites del laboratorio, SQLite y las reglas iniciales. Los informes TAP se guardan con SHA-256 en `.local-test-reports/` sin sobrescribir ejecuciones anteriores.
-
-**Criterio de fusión:** no fusionar esta rama fuera del árbol experimental antes de ejecutar las nuevas pruebas con HTTP + SQLite real y verificar que no hay regresiones. No modifica `main`, no permite movimientos ni combates reglamentarios y no habilita despliegue de producción.
+Criterio de fusión: evidencia SQLite + HTTP/SSE real, pruebas de concurrencia y regresión completa **sobre el mismo SHA**; revisión de la frontera del gateway antes de promocionar los cambios. La preparación para producción, HTTPS inverso y reglas oficiales tienen alcance separado.
