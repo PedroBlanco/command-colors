@@ -58,3 +58,29 @@ Los datos de pruebas ejecutadas distinguen siempre el **blob exacto** y el tipo 
 4. Implementar **en otra fase** el movimiento autorizado, que necesitará revisión de reglas, transición atómica del tablero y replay de comandos persistidos. No reutilizar esta traza como autorización.
 
 **Se mantiene PR #96 en borrador; no fusionar en `main`, no desplegar y no solicitar pruebas locales al usuario por ahora.**
+
+## Continuación — verificación semántica de evidencia JSON (12/11/2026)
+
+Se corrigió un falso rechazo de `verifyAncientsCandidateJournal`: el método
+comparaba `JSON.stringify` de objetos completos y, por tanto, consideraba
+distintas dos trazas de igual contenido cuyos campos se habían serializado
+en otro orden. La comparación utiliza ahora `isDeepStrictEqual` de Node.js:
+el orden de propiedades JSON deja de importar, pero siguen rechazándose
+campos omitidos o añadidos, estructuras alteradas, rutas modificadas,
+resúmenes incorrectos y `movementAuthorized:true`. Una instancia de
+prototipo no ordinario tampoco se admite como el mismo objeto JSON.
+
+Se añadieron **dos pruebas** a
+`movement-candidate-journal.test.mjs` (reescritura del orden de campos a
+todos los niveles y prototipo no JSON), elevando esa suite de 11 a **13**
+casos y los casos nuevos de esta PR de 19 a **21**. Hay **76 suites**
+declaradas; **no se ha ejecutado** la suite de 13 casos en el árbol nuevo,
+ni la integración CCWB/SQLite, ni la regresión. Se verificaron aparte
+tres comparaciones nativas con `node:util.isDeepStrictEqual` en Node
+22.16.0, pero **no son** evidencia de ejecución del módulo completo.
+
+El diseño de la futura transición transaccional, reglamentariamente
+autorizada y **separada de esta traza** está en
+[contrato de movimientos confirmados](80-contrato-futuro-movimiento-autorizado-ancients.md).
+No se añade ejecución de jugadas ni ruta pública. Se conserva el bloqueo
+de fusión y despliegue.
