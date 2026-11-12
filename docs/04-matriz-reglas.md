@@ -448,3 +448,23 @@ composición SQLite. No se han ejecutado las cuatro pruebas nuevas
 SQLite ni la regresión de las 76 suites. No se autorizan ni aplican
 movimientos. Véase
 [consulta CCWB autenticada](79-evidencia-movimientos-ccwb-autenticada.md).
+
+
+## R-05 — reductor sintético privado de un hexágono (consolidación de PR #98 en #99)
+
+`clear-lab-movement-reducer.mjs` crea una copia profundamente inmutable del
+**tablero simulado** para una o varias unidades de infantería ordenadas,
+con movimientos de un solo hexágono en terreno totalmente abierto y sin líderes.
+Usa el preflight staged para revisión, bando, órdenes, colisiones y geometría.
+No consume órdenes ni se conecta al almacén: la política explícita
+`SYNTHETIC_OPEN_HEX_V1` **no es permiso reglamentario**. Siempre
+`canCommit:false`, `movementAuthorized:false` y `stateChanged:false`.
+
+Se copian sin alteración el módulo y los **11 tests** de la PR #98 a la rama
+unificada con el filtro de intención de PR #99 (**13 tests nativos comprobados**).
+El manifiesto combinado tiene **78 suites**. El reductor cuenta por ahora con
+**11/11 evaluaciones V8 aisladas** de su rama original, pero **no** ha pasado
+las 11 pruebas con Node nativo dentro del nuevo árbol. Las 78 suites,
+composición CCWB/SQLite y seguridad de PR #93 siguen pendientes.
+Véase [reductor sintético](82-reductor-movimientos-lab-un-hexagono.md) y
+[contrato de intención](81-contrato-entrada-movimiento-confirmado.md).
