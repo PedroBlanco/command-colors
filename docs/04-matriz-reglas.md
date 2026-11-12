@@ -315,7 +315,7 @@ el bando después de adquirir `BEGIN IMMEDIATE`, también en el mazo sintético.
 Se añaden **12 casos** (6 SQLite, 4 HTTP, 2 SSE), además de los 5 casos iniciales
 de #93. La lectura `invitations.getMatch()` también valida identidad, pertenencia
 y lista de participantes dentro de una instantánea WAL; incorpora **2 casos SQLite**
-adicionales de revocación y actualización de membresía. Total nuevo en #93: **19 casos**.
+adicionales de revocación y actualización de membresía. Total nuevo en #93: **21 casos**.
 **Solo consta verificación de sintaxis del código actualizado**; las
 pruebas nativas y la regresión completa siguen pendientes. Se mantiene `main`
 sin cambios, la PR en borrador y la prohibición de despliegue. Consultar
@@ -331,3 +331,18 @@ aislamiento, sesiones y seguridad transaccional. **`CCW-015` queda reservado
 a dados digitales con azar del servidor**, conforme a la [issue #15](https://github.com/PedroBlanco/command-colors/issues/15).
 Los PR históricos conservan su numeración original; la reclasificación
 documental no cambia funcionalidad, pruebas ni las reglas oficiales.
+
+
+## Invitaciones y creación de partida — cierre transaccional (SEC-001, 12/11/2026)
+
+Las cinco mutaciones del lobby `createMatch`, `issueInvitation`,
+`acceptInvitation`, `rejectInvitation` y `revokeInvitation` verifican la
+sesión, la propiedad o pertenencia de la partida y el estado de invitación
+**dentro de la transacción `BEGIN IMMEDIATE`**, no durante una precomprobación
+que podría volverse obsoleta. Las operaciones existentes conservan sus
+códigos de error, semántica de invitación e idempotencia, sin migraciones
+ni rutas nuevas. Se añaden dos pruebas en `sqlite.test.mjs` para comprobar
+la existencia del bloqueo durante la autenticación y la negativa tras un
+logout confirmado desde otra conexión WAL. **Pendientes ejecución nativa y
+regresión completa**: la sintaxis y la inspección estática no son evidencia
+suficiente para fusionar la PR #93.
