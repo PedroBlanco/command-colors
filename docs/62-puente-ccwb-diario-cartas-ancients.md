@@ -1,4 +1,4 @@
-# CCW-015 — Puente experimental del diario de cartas de sección hacia CCWB
+# LAB-ANC — Puente experimental del diario de cartas de sección hacia CCWB
 
 **Fecha:** 11/11/2026. **Base:** PR #84. **Alcance:** partidas de laboratorio expresamente inicializadas, sin HTTP propio ni motor de combate. **No modificar la base de producción.**
 
@@ -81,3 +81,6 @@ La nueva rama `feat/i4-ancients-section-session-authority`, documentada también
 Los eventos públicos de este modo se verifican contra el diario privado **dentro de una transacción SQLite** antes de ser devueltos por `publicEvents`. Si hay manipulación, falla la lectura; las partidas sintéticas existentes conservan su ruta habitual.
 
 Se han añadido **4 nuevas pruebas** a la suite de integración completa (7 preparadas en total, contando las 3 de esta PR), **todavía no ejecutadas con el checkout completo**. Las cifras históricas de **66/66 PASS** y 14/14 PASS de la PR #85 **no certifican este cambio**. La regresión nativa y Windows siguen pendientes; no fusionar ni desplegar.
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `LAB-ANC` (laboratorio privado de cartas, órdenes o movimiento de *Ancients*).
