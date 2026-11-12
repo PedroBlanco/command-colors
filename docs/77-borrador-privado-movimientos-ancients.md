@@ -104,3 +104,45 @@ completa siguen pendientes de ejecución. Tampoco se prueba HTTP/SSE.
 **17 casos nativos aprobados** en el subcontrato de borrador, 38 verificaciones
 aisladas del movimiento/órdenes y 12 nuevos casos de composición SQLite sin
 ejecutar. Ninguna acción de juego está autorizada ni se ha fusionado `main`.
+
+
+## Corrección de integridad y minimización de datos (12/11/2026)
+
+Se ha corregido el resumen SHA-256 del contrato `ANCIENTS_PRIVATE_MOVEMENT_DRAFT_V1`:
+incluye ahora **`draftRevision`**, además de partida, bando, revisión
+de juego, clave y secuencia de acciones. Antes, la revisión del borrador
+podía alterarse a otro entero positivo sin invalidar el checksum.
+Las acciones se codifican como tuplas con orden fijo de campos para que un
+reintento semánticamente idéntico no falle por reordenar las propiedades JSON.
+Este checksum es **detección de corrupción accidental, no MAC** y no protege
+contra alguien que pueda recalcular el hash en la base.
+
+El puente `sqlite-section-ccwb-bridge.mjs` elimina ahora
+`ancientsSectionMovementDraft` **dentro de la misma transacción que confirma
+cualquier avance del diario experimental de cartas/órdenes**. No se limita
+a ocultar un borrador caduco: se retiran del registro persistente las rutas
+privadas que ya no son vigentes. Un comando rechazado o un reintento
+idempotente no purga el borrador. La operación no crea eventos públicos ni
+aplica movimientos.
+
+**Nueva evidencia nativa sobre los blobs Git exactos:** contrato
+`3112fc5ae0d41c42633f3fcee845b83ee2112ea6`;
+suite pura `5c3d976b5bc870851dc7ed4c56ad62bddb6ab31a`;
+suite SQLite/WAL `dde434735fe0c2f4e667aa066e67c92d6fa29049`;
+geometría `ae0e4526b8e91c4c0d5d94aebc52077b60f410da`.
+En un árbol aislado reconstruido exactamente, Node.js 22.16.0 ejecutó
+**19 pruebas: 19 PASS, 0 FAIL, 0 SKIP, salida 0**, con SHA-256 real y
+SQLite/WAL nativo. El informe TAP tiene SHA-256
+`b87335b82b9d88195c2f95c01f969f087165d3f8f1fca485b234b5a840d123c6`.
+Se añadieron dos casos: reordenación equivalente de campos y rechazo de
+cambio de `draftRevision` en datos SQLite. El análisis sintáctico V8
+del puente y del fichero de integración actualizado también fue correcto.
+
+**Limitación expresa:** no se reconstruyó ni ejecutó la composición
+completa `openSqliteComposition`; el test de purga de borrador en el puente
+está **preparado, no ejecutado con SQLite real**. La ejecución de las 19
+pruebas del subcontrato no demuestra la seguridad global de sesiones,
+replay ni HTTP. Los casos SQLite nuevos de composición pendientes son
+**13**, y las 75 suites aún no tienen regresión integral. La PR #95
+acumula **60 casos nuevos**: 57 previos + 2 de integridad + 1 de purga.
+Se mantiene borrador sin fusión/despliegue.
