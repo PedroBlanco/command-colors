@@ -44,10 +44,13 @@ export function startRevisionStream({res, token, matchId, identity, invitations,
       let gameRevision = null;
       if (lobby.status === 'READY') {
         const store = await getStore(matchId);
-        const state = store.view(actor);
-        // A connection opened before laboratory activation must not continue
-        // reporting its experimental revision (even though SSE has no cards).
-        if (state?.status === 'LAB_ONLY') { stop(); res.end(); return; }
+        const state = store.view(actor,{denyExperimentalLab:true});
+        // The SQLite store can reject the internal lab inside one WAL read
+        // snapshot without building any private hand. Older store adapters
+        // are also guarded by the legacy LAB_ONLY status check.
+        if (state?.code === 'SECTION_LAB_INTERNAL_ONLY' || state?.status === 'LAB_ONLY') {
+          stop(); res.end(); return;
+        }
         if (!state || state.matchId !== matchId || !Number.isSafeInteger(state.revision)) {
           throw new Error('MATCH_REVISION_INVALID');
         }
