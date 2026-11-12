@@ -152,6 +152,11 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
         initial:journal.initial,
         commands:[...journal.commands,bindLabJournalIdempotency(command,request.idempotencyKey)],
         state:next}};
+      // A private proposal is bound to the PREVIOUS game revision. Its
+      // actions must not survive a successfully committed journal step as
+      // stale private data, even though the public log never exposes them.
+      // Failed/retried commands return above without deleting anything.
+      delete updated.ancientsSectionMovementDraft;
       if(update.run(JSON.stringify(updated),next.revision,row.id,row.game_revision).changes!==1)
         throw new Error('SECTION_CCWB_CONCURRENT_UPDATE');
       eventInsert.run(row.id,next.revision,'public',JSON.stringify({...result.publicEvent,visibility:'public'}));
