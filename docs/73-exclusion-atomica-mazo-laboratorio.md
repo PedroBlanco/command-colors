@@ -1,4 +1,4 @@
-# CCW-015 — Exclusión atómica entre mazo sintético y diario de Ancients
+# SEC-001 — Exclusión atómica entre mazo sintético y diario de Ancients
 
 **12/11/2026.** Rama de corrección derivada de `feat/i4-ancients-section-history-journal` (PR #84). Cambios internos de laboratorio; no hay rutas HTTP nuevas, ni reglas oficiales, ni migraciones.
 
@@ -44,3 +44,6 @@ $LASTEXITCODE
 El validador `scripts/validate-ccwb-http.ps1` incluye ahora **seis suites prioritarias**, incorporando las pruebas del mazo. `-FullRegression` realiza después la regresión completa únicamente si las prioritarias pasan y guarda informes TAP con SHA-256.
 
 No es necesario arrancar el servidor de navegador ni cambiar `main`. **Mantener la PR en borrador hasta ejecutar las nuevas pruebas nativas.**
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `SEC-001` (issue #94, frontera de seguridad y aislamiento).
