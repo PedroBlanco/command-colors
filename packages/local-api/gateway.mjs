@@ -156,6 +156,9 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const store = await getStore(matchId);
         const state = store.view(actor);
         if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
+        // The internal Ancients section-card lab is NEVER a public HTTP state.
+        // Access through the generic match GET must not bypass lab-only guards.
+        if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
         return reply(res, 200, {matchId, status: lobby.status, players: lobby.players, state});
       }
       if (req.method === 'POST' && resource === 'invitations') {
@@ -164,6 +167,13 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         return reply(res, ...Object.values(domainReply(result, 201)));
       }
       if (req.method === 'GET' && resource === 'updates' && config) {
+        // Guard the initial SSE handshake. revision-stream.mjs also rechecks
+        // every tick, so activation after subscription closes the stream.
+        if (lobby.status === 'READY') {
+          const store = await getStore(matchId);
+          if (store.view(actor)?.status === 'LAB_ONLY')
+            return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
+        }
         if (revisionStreams >= MAX_REVISION_STREAMS) return reply(res, 429, {code: 'TOO_MANY_STREAMS'});
         revisionStreams++;
         res.once('close', () => {revisionStreams--;});
@@ -184,14 +194,18 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
       if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
       if (req.method === 'GET' && resource === 'events') {
         const store = await getStore(matchId);
-        if (store.view(actor)?.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
+        const state = store.view(actor);
+        if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
+        if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
         const events = store.publicEvents(actor);
         return reply(res, 200, {events: events ?? []});
       }
       if (req.method === 'POST' && resource === 'commands') {
         const body = await jsonRequest(req);
         const store = await getStore(matchId);
-        if (store.view(actor)?.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
+        const state = store.view(actor);
+        if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
+        if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
         const result = await store.dispatch({actor, type: body.type,
           expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey,
           cardRef: body.cardRef, unitIds: body.unitIds,
