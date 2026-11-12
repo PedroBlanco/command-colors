@@ -157,3 +157,30 @@ test('context digest orders mixed-case piece identities by codepoint, not system
   assert.equal(journal.contextDigest,expected);
   assert.equal(verify({...input,journal}),true);
 });
+
+test('reordered JSON journal properties are equivalent without waiving strict evidence',()=>{
+  const input=fixture(),original=build(input).journal;
+  // Simulates independent JSON serializers for a stored/replayed audit log.
+  const reordered=JSON.parse(JSON.stringify(original),(_key,value)=>
+    value!==null&&typeof value==='object'&&!Array.isArray(value)
+      ?Object.fromEntries(Object.entries(value).reverse()):value);
+  assert.notEqual(JSON.stringify(reordered),JSON.stringify(original));
+  assert.equal(verify({...input,journal:reordered}),true);
+  assert.deepEqual(build(input).journal,original);
+  // Structural comparison must still reject additions, omissions and
+  // any attempt to upgrade hypothetical evidence into authorization.
+  assert.equal(verify({...input,journal:{...reordered,privateHand:['secret']}}),false);
+  assert.equal(verify({...input,journal:{...reordered,movementAuthorized:true}}),false);
+  const missing=structuredClone(reordered);
+  delete missing.entries[0].previousDigest;
+  assert.equal(verify({...input,journal:missing}),false);
+  const tampered=structuredClone(reordered);
+  tampered.entries[0].path[0].row=6;
+  assert.equal(verify({...input,journal:tampered}),false);
+});
+
+test('journal verification rejects non-JSON prototypes instead of trusting them',()=>{
+  const input=fixture(),journal=build(input).journal;
+  const other=Object.assign(Object.create(null),structuredClone(journal));
+  assert.equal(verify({...input,journal:other}),false);
+});
