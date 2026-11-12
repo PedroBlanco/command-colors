@@ -76,6 +76,21 @@ function domainReply(result, successStatus = 200) {
 }
 
 /**
+ * Authenticate the session inside the SQLite reader's WAL snapshot when
+ * available. Mock/legacy adapters retain the actor-scoped read contract.
+ */
+function publicStateForHttp(store,actor,sessionToken) {
+  const result = typeof store.viewForSession === 'function'
+    ? store.viewForSession({sessionToken})
+    : {status:200,view:store.view(actor,{denyExperimentalLab:true})};
+  if (!result || result.status!==200 || !result.view) {
+    const status=[400,401,403,404,409].includes(result?.status) ? result.status : 503;
+    return {error:{status,code:typeof result?.code==='string' ? result.code:'SERVICE_UNAVAILABLE'}};
+  }
+  return {state:result.view};
+}
+
+/**
  * Browser mode options: {origin:'http://127.0.0.1:8788',insecureLoopback:true} for dev;
  * production transport would require HTTPS and a separate full security review.
  * Legacy bearer mode (browser omitted) is retained only for earlier laboratory tests.
@@ -156,7 +171,9 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const store = await getStore(matchId);
         // Refuse the private section lab inside the store's WAL snapshot,
         // before ever constructing its private projection.
-        const state = store.view(actor,{denyExperimentalLab:true});
+        const read=publicStateForHttp(store,actor,token);
+        if (read.error) return reply(res,read.error.status,{code:read.error.code});
+        const state=read.state;
         if (state?.code === 'SECTION_LAB_INTERNAL_ONLY' || state?.status === 'LAB_ONLY')
           return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
         if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
@@ -172,7 +189,9 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         // every tick, so activation after subscription closes the stream.
         if (lobby.status === 'READY') {
           const store = await getStore(matchId);
-          const state = store.view(actor,{denyExperimentalLab:true});
+          const read=publicStateForHttp(store,actor,token);
+          if (read.error) return reply(res,read.error.status,{code:read.error.code});
+          const state=read.state;
           if (state?.code === 'SECTION_LAB_INTERNAL_ONLY' || state?.status === 'LAB_ONLY')
             return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
           if (!state || state.matchId !== matchId)
@@ -198,7 +217,20 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
       if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
       if (req.method === 'GET' && resource === 'events') {
         const store = await getStore(matchId);
-        const state = store.view(actor,{denyExperimentalLab:true});
+        // SQLite authenticates the token and selects public events within
+        // the SAME read snapshot. No actor or private mode is client-selected.
+        if (typeof store.publicEventsForSession === 'function') {
+          const result=store.publicEventsForSession({sessionToken:token});
+          if (!result || result.status!==200) {
+            const status=[400,401,403,404,409].includes(result?.status)?result.status:503;
+            return reply(res,status,{code:typeof result?.code==='string'?result.code:'SERVICE_UNAVAILABLE'});
+          }
+          if (!Array.isArray(result.events)) return reply(res,503,{code:'SERVICE_UNAVAILABLE'});
+          return reply(res,200,{events:result.events});
+        }
+        const read=publicStateForHttp(store,actor,token);
+        if (read.error) return reply(res,read.error.status,{code:read.error.code});
+        const state=read.state;
         if (state?.code === 'SECTION_LAB_INTERNAL_ONLY' || state?.status === 'LAB_ONLY')
           return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
         if (!state || state.matchId !== matchId) return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
@@ -216,7 +248,9 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
       if (req.method === 'POST' && resource === 'commands') {
         const body = await jsonRequest(req);
         const store = await getStore(matchId);
-        const state = store.view(actor,{denyExperimentalLab:true});
+        const read=publicStateForHttp(store,actor,token);
+        if (read.error) return reply(res,read.error.status,{code:read.error.code});
+        const state=read.state;
         if (state?.code === 'SECTION_LAB_INTERNAL_ONLY' || state?.status === 'LAB_ONLY')
           return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
         if (!state || state.matchId !== matchId) return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
