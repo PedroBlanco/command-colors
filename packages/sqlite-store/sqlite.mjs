@@ -12,6 +12,7 @@ import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqli
 import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
 import {proposeMovementDraft, projectMovementDraft} from '../ancients-rules/movement-draft-contract.mjs';
+import {screenAncientsMovementCommitIntent} from '../ancients-rules/movement-commit-intent-screen.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -400,6 +401,24 @@ export function openSqliteComposition({file, clock = Date.now,
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
           return sectionHistory.previewMovementEvidence(identity.actor,request,trustedContext);
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY: a shape-screened, non-committable one-hex
+       * simulation. The authenticated actor, section replay and game state
+       * are read under ONE SQLite WAL snapshot, not supplied by the client.
+       * The trusted context/policy must be created by server-side test code.
+       * NEVER expose this method through the HTTP or SSE gateway.
+       */
+      precheckExperimentalSectionOneHexIntent(request = {},trustedContext,policy) {
+        if(screenAncientsMovementCommitIntent(request).status!=='INTENT_SHAPE_VALID')
+          return {status:400,code:'INVALID_SECTION_LAB_ONE_HEX_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(request.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewOneHexIntent(identity.actor,request,trustedContext,policy);
         });
       },
       /**
