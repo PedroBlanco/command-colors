@@ -202,6 +202,10 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const events = store.publicEvents(actor,{denyExperimentalLab:true});
         if (events?.code === 'SECTION_LAB_INTERNAL_ONLY')
           return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
+        // Never serialize an unexpected internal event result as a public
+        // array. Other errors must fail closed, not become response data.
+        if (events != null && !Array.isArray(events))
+          return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
         return reply(res, 200, {events: events ?? []});
       }
       if (req.method === 'POST' && resource === 'commands') {
