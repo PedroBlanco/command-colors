@@ -66,9 +66,14 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
     throw new TypeError('INVALID_DECK_DEPENDENCIES');
   }
   function view(actor) { return project(getRow(matchId), matchId, actor); }
-  function initialize(actor) {
+  function initialize(actor, authGuard = null) {
     if (actor !== 'A') return deny(403, 'FORBIDDEN');
     return atomic(() => {
+      // An authenticated HTTP caller must still be live after the write lock.
+      if (authGuard) {
+        const allowed = authGuard();
+        if (allowed !== true) return allowed;
+      }
       const row = getRow(matchId);
       const state = getPrivateState(row, matchId);
       // The initial out-of-transaction preflight can race a second SQLite
@@ -88,7 +93,7 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
       return {status: 201, code: 'DECK_INITIALIZED', view: project(updated, matchId, actor)};
     });
   }
-  function dispatch(request = {}) {
+  function dispatch(request = {}, authGuard = null) {
     const {actor, expectedRevision, idempotencyKey} = request;
     if (!['A', 'B'].includes(actor)) return deny(403, 'FORBIDDEN');
     const semantic = semanticCommand(request);
@@ -98,6 +103,10 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
     // request key for another card, order or decision must be rejected.
     const signature = JSON.stringify([semantic.type, expectedRevision, semantic.fields]);
     return atomic(() => {
+      if (authGuard) {
+        const allowed = authGuard();
+        if (allowed !== true) return allowed;
+      }
       const row = getRow(matchId);
       const state = getPrivateState(row, matchId);
       if (Object.hasOwn(state, 'ancientsSectionHistoryLab')) return deny(409, 'SECTION_LAB_INTERNAL_ONLY');
