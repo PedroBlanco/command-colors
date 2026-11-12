@@ -1,4 +1,4 @@
-# CCW-015 — Autoridad de sesión para diario experimental de cartas (CCWB)
+# SEC-001 — Autoridad de sesión para diario experimental de cartas (CCWB)
 
 **Fecha:** 11/11/2026. **Base de desarrollo:** PR #85, apilada sobre #84. **Estado:** laboratorio interno, sin HTTP nuevo y sin permisos reglamentarios de combate. No desplegar.
 
@@ -89,3 +89,6 @@ Se han preparado **cinco pruebas de integración adicionales** (tres del puente 
 Además del guard de escritura, `viewExperimentalSectionHistory({sessionToken})` revalida sesión y membresía dentro de una **transacción de lectura SQLite/WAL `BEGIN`**; la vista privada procede de la misma instantánea. `publicEvents(actor)` usa también una instantánea `BEGIN` para seleccionar modo, verificar el replay y recuperar eventos sin adquirir el bloqueo de escritor. Esta última interfaz sigue siendo **interna**, con autorización del actor a cargo de su llamante.
 
 Se añadieron 2 nuevos casos de integración de lectura (todavía pendientes) y una suite independiente reproducible del contrato SQLite/WAL con **5/5 PASS nativos** en Node.js 22.16.0, Linux sin WSL. La suite está en `packages/sqlite-store/wal-transaction-contract.test.mjs` y se han inventariado **66 suites**. La batería completa sigue pendiente. Véase [PR #88 y la documentación transaccional](69-revalidacion-sesion-transaction-ccwb.md).
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `SEC-001` (issue #94, frontera de seguridad y aislamiento).
