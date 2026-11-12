@@ -261,6 +261,12 @@ export function openSqliteComposition({file, clock = Date.now,
       return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
         .all(matchId).map(x => decode(x.payload));
     }
+    // Session-based HTTP readers accept a token ONLY. Reject actor/identity
+    // injection and non-plain objects rather than silently discarding fields.
+    const singleSessionToken = request => plainLabRequest(request) &&
+      Object.keys(request).length===1 &&
+      Object.hasOwn(request,'sessionToken') &&
+      typeof request.sessionToken==='string';
     const store = {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
@@ -272,7 +278,10 @@ export function openSqliteComposition({file, clock = Date.now,
       },
       /** Authenticated HTTP/SSE read. Session, membership and projection share
        * the first SQLite WAL snapshot; no request-supplied side is accepted. */
-      viewForSession({sessionToken} = {}) {
+      viewForSession(request = {}) {
+        if (!singleSessionToken(request))
+          return {status:400,code:'INVALID_PUBLIC_VIEW_REQUEST'};
+        const {sessionToken}=request;
         return readSnapshot(() => {
           const identity = resolveSectionLabActor(sessionToken);
           if (identity.error) return identity.error;
@@ -285,7 +294,10 @@ export function openSqliteComposition({file, clock = Date.now,
         return commandDeck.initialize(actor);
       },
       /** Authenticated HTTP setup, rechecked after BEGIN IMMEDIATE. */
-      initializeCommandDeckForSession({sessionToken} = {}) {
+      initializeCommandDeckForSession(request = {}) {
+        if (!singleSessionToken(request))
+          return {status:400,code:'INVALID_DECK_INIT_REQUEST'};
+        const {sessionToken}=request;
         const identity = resolveSectionLabActor(sessionToken);
         if (identity.error) return identity.error;
         return commandDeck.initialize(identity.actor,
@@ -369,7 +381,10 @@ export function openSqliteComposition({file, clock = Date.now,
         return readSnapshot(() => eventsForActor(actor,denyExperimentalLab));
       },
       /** Session-bound event read: no stale lobby/actor proof can authorize it. */
-      publicEventsForSession({sessionToken} = {}) {
+      publicEventsForSession(request = {}) {
+        if (!singleSessionToken(request))
+          return {status:400,code:'INVALID_PUBLIC_EVENTS_REQUEST'};
+        const {sessionToken}=request;
         return readSnapshot(() => {
           const identity = resolveSectionLabActor(sessionToken);
           if (identity.error) return identity.error;
