@@ -362,8 +362,29 @@ Node.js nativo; en Debian se ejecuta directamente el archivo `.mjs`.
 El validador rechaza Node anterior a 22.16.0, manifiestos incompatibles,
 argumentos ajenos y rutas inyectadas; guarda resultados en TAP inmutables
 con hash SHA-256 y bloquea la regresión completa cuando falla la fase de
-seguridad. Cinco casos de la nueva suite describen este comportamiento.
+seguridad. Seis casos de la nueva suite describen este comportamiento.
 La lógica del validador se inspeccionó y comprobó de forma aislada mediante
 V8 y lotes simulados; **no es una ejecución de las 12 ni las 72 suites**.
 La PR #93 sigue bloqueada hasta integrar y ejecutar pruebas reales de SQLite,
 HTTP y SSE.
+
+
+## Auditoría exhaustiva de suites del repositorio (SEC-001, 12/11/2026)
+
+El ejecutor nativo canónico (`scripts/run-test-suite.mjs`) y el validador
+de seguridad portátil (`scripts/validate-ccwb-http.mjs`) realizan
+`auditLocalTestManifest()` **antes de ejecutar cualquier suite**. La auditoría
+compara las rutas reales `*.test.mjs` bajo `packages/`, `scripts/` y
+`spikes/` con las declaradas en `LOCAL_TEST_FILES`, sin recorrer enlaces
+simbólicos. Tanto suites faltantes como suites nuevas no registradas
+producen `TEST_MANIFEST_DRIFT` y detienen la ejecución; se evita afirmar
+una regresión completa cuando el manifiesto no está actualizado.
+
+Se añadieron tres pruebas a suites existentes o recién incorporadas:
+validación negativa del modo portátil; detección de omisión/sobra y
+no recorrido de enlaces externos en el ejecutor genérico.
+Inventario verificado de forma aislada contra el árbol GitHub: **72 archivos
+de prueba presentes, 72 declarados**. Los 21 casos de seguridad y
+8 casos del lanzador/auditoría suman **29 casos nuevos** en la PR #93,
+pero las **72 suites y la integración Node.js/SQLite/HTTP/SSE permanecen
+sin ejecutar sobre el SHA actual**. `main` permanece intacta.
