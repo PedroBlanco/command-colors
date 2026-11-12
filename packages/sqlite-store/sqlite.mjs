@@ -10,6 +10,8 @@ import {dirname} from 'node:path';
 import {initializeSchema, CCW_SCHEMA_SQL} from './schema-version.mjs';
 import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqlite-game.mjs';
 import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
+import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
+import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
 const KDF = Object.freeze({N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024});
@@ -74,6 +76,16 @@ export function openSqliteComposition({file, clock = Date.now,
   }
   function atomic(fn) {
     db.exec('BEGIN IMMEDIATE');
+    try { const result = fn(); db.exec('COMMIT'); return result; }
+    catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  /**
+   * SQLite WAL read snapshot. First SELECT fixes the visible database state:
+   * session, membership, match state and event replay must come from that state.
+   * Do not take a RESERVED writer lock merely to read public events.
+   */
+  function readSnapshot(fn) {
+    db.exec('BEGIN');
     try { const result = fn(); db.exec('COMMIT'); return result; }
     catch (error) { db.exec('ROLLBACK'); throw error; }
   }
@@ -222,6 +234,14 @@ export function openSqliteComposition({file, clock = Date.now,
     }
     const plainLabRequest = value => value !== null && typeof value === 'object'
       && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+    // A preflight check provides a useful rejection to the caller, but it is
+    // insufficient for mutations: another SQLite connection can revoke the
+    // session before the bridge acquires its write lock.
+    function mutationSessionGuard(sessionToken, originalActor) {
+      return makeSectionMutationSessionGuard({
+        db, resolveActor:resolveSectionLabActor, sessionToken, expectedActor:originalActor
+      });
+    }
     return {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
@@ -246,17 +266,22 @@ export function openSqliteComposition({file, clock = Date.now,
         const identity = resolveSectionLabActor(request.sessionToken);
         if (identity.error) return identity.error;
         rowOrThrow();
-        return sectionHistory.initialize(identity.actor, request.trustedSetup);
+        return sectionHistory.initialize(identity.actor, request.trustedSetup,
+          mutationSessionGuard(request.sessionToken, identity.actor));
       },
       /** Private experimental projection bound to the live participant session. */
       viewExperimentalSectionHistory(request = {}) {
         if (!plainLabRequest(request) || Object.keys(request).some(k => k !== 'sessionToken'))
           return {status:400,code:'INVALID_SECTION_LAB_REQUEST'};
-        const identity = resolveSectionLabActor(request.sessionToken);
-        if (identity.error) return identity.error;
-        if (!hasExperimentalSectionHistory(rowOrThrow()))
-          return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-        return {status:200,code:'SECTION_LAB_VIEW',view:sectionHistory.view(identity.actor)};
+        // Keep the session, membership and private projection on one WAL
+        // snapshot. Revocation before the snapshot's first read is rejected.
+        return readSnapshot(() => {
+          const identity = resolveSectionLabActor(request.sessionToken);
+          if (identity.error) return identity.error;
+          if (!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return {status:200,code:'SECTION_LAB_VIEW',view:sectionHistory.view(identity.actor)};
+        });
       },
       /**
        * INTERNAL LAB ONLY, no HTTP route. The request contains a session
@@ -271,15 +296,46 @@ export function openSqliteComposition({file, clock = Date.now,
         if (identity.error) return identity.error;
         if (!hasExperimentalSectionHistory(rowOrThrow()))
           return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-        return sectionHistory.dispatch({...command,actor:identity.actor});
+        return sectionHistory.dispatch({...command,actor:identity.actor},
+          mutationSessionGuard(sessionToken, identity.actor));
       },
-      publicEvents(actor) {
+      /** INTERNAL LAB ONLY. Session is the sole source of actor identity;
+       *  server-owned unit profiles/terrain are passed separately from request.
+       *  No new HTTP route, no game mutation, no raw private journal returned. */
+      precheckExperimentalSectionMovement(request = {},trustedContext) {
+        if (!plainLabRequest(request) ||
+            Object.keys(request).length!==4 ||
+            !['sessionToken','expectedRevision','unitId','path'].every(k => Object.hasOwn(request,k)) ||
+            typeof request.sessionToken!=='string' ||
+            !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision<0 ||
+            typeof request.unitId!=='string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(request.unitId) ||
+            !Array.isArray(request.path) || request.path.length<1 || request.path.length>32 ||
+            !request.path.every(cell => plainLabRequest(cell) &&
+              Object.keys(cell).length===2 && Object.hasOwn(cell,'col') &&
+              Object.hasOwn(cell,'row') && inBounds(cell)))
+          return {status:400,code:'INVALID_SECTION_LAB_MOVEMENT_REQUEST'};
+        // One WAL snapshot binds identity, match membership, CCWB replay and
+        // the read-only movement filter; a concurrent logout cannot interleave.
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(request.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewMovement(identity.actor,request,trustedContext);
+        });
+      },
+      publicEvents(actor, {denyExperimentalLab = false} = {}) {
         if (!['A','B'].includes(actor)) return null;
-        // Mode selection, replay verification and event read share a snapshot:
-        // another SQLite connection cannot activate the lab between the checks.
-        return atomic(() => {
+        // Mode selection, replay verification and event read share a WAL
+        // snapshot, without holding an IMMEDIATE writer lock.
+        // The HTTP gateway opts out of lab data INSIDE this read transaction;
+        // a lab activated after an earlier gateway check cannot leak events.
+        return readSnapshot(() => {
           const row = rowOrThrow();
-          if (hasExperimentalSectionHistory(row)) sectionHistory.view(actor);
+          if (hasExperimentalSectionHistory(row)) {
+            if (denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+            sectionHistory.view(actor);
+          }
           return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
             .all(matchId).map(x => decode(x.payload));
         });
@@ -294,6 +350,11 @@ export function openSqliteComposition({file, clock = Date.now,
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
         return atomic(() => {
           const row = rowOrThrow();
+          // A second SQLite process may initialize the private section lab
+          // after our preflight but before BEGIN IMMEDIATE. Do not append a
+          // synthetic demo event to the active lab journal.
+          if (hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
           const signature = `${type}:${expectedRevision}`;
           const previous = db.prepare('SELECT signature FROM game_commands WHERE match_id=? AND actor=? AND idem_key=?')
             .get(matchId,actor,idempotencyKey);

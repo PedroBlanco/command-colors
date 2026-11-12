@@ -5,6 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createSqliteAncientsSectionBridge as create,hasExperimentalSectionHistory as hasMode} from './sqlite-section-ccwb-bridge.mjs';
+import {precheckStagedAncientsMovement} from './staged-movement-preflight.mjs';
 
 const MATCH='123e4567-e89b-42d3-a456-426614174000';
 const setup=()=>({cardInstances:[
@@ -114,7 +115,8 @@ test('CCWB: separate connections serialize updates and reject stale revision',()
 test('CCWB: unknown commands, oversized keys and extra authority fields fail closed',()=>fixture(({root})=>{
  root.bridge.initialize('A',setup());
  for(const invalid of [
-  req('pass_demo_turn',0),req('PLAY_SECTION_CARD',0,{cardInstanceId:'x',hands:{A:[]}}),
+  req('pass_demo_turn',0),req('__proto__',0),req('constructor',0),
+  req('toString',0),req('PLAY_SECTION_CARD',0,{cardInstanceId:'x',hands:{A:[]}}),
   {...req('PLAY_SECTION_CARD',0,{cardInstanceId:'x'}),idempotencyKey:'short'}
  ])assert.equal(root.bridge.dispatch(invalid).code,'INVALID_SECTION_LAB_COMMAND');
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,0);
@@ -161,4 +163,168 @@ test('CCWB: transaction rolls back state and idempotency after failed public eve
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events').get().n,0);
  root.db.exec('DROP TRIGGER fail_section_event');
  assert.equal(root.bridge.dispatch(req('PLAY_SECTION_CARD',0,{cardInstanceId:card})).code,'SECTION_LAB_APPLIED');
+}));
+
+test('CCWB: changing a persisted idempotency key cannot pass journal verification',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const before=JSON.parse(root.getRow(MATCH).private_state).ancientsSectionHistoryLab.commands[0];
+ assert.equal(typeof before.idempotencyKey,'string');
+ root.db.prepare('UPDATE game_commands SET idem_key=? WHERE match_id=?').run('altered_section_key_0001',MATCH);
+ assert.throws(()=>root.bridge.view('A'),/SECTION_CCWB_HISTORY_TAMPERED/);
+ assert.throws(()=>root.bridge.dispatch(req('ASSIGN_SECTION_ORDERS',1,{unitIds:['unitA'],leaderIds:[]})),
+   /SECTION_CCWB_HISTORY_TAMPERED/);
+}));
+
+test('CCWB: older keyless lab commands remain readable with explicit legacy limitation',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const state=JSON.parse(root.getRow(MATCH).private_state);
+ // Simulate a genuinely older (pre-v2) database, not only a key deletion:
+ // old rows stored an unversioned JSON signature.
+ const first=state.ancientsSectionHistoryLab.commands[0];
+ const {idempotencyKey,...legacyCommand}=first;
+ delete state.ancientsSectionHistoryLab.commands[0].idempotencyKey;
+ root.db.prepare('UPDATE game_commands SET signature=? WHERE match_id=?')
+   .run(JSON.stringify(legacyCommand),MATCH);
+ root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ assert.equal(root.bridge.view('A').revision,1);
+ const cardRequest=req('PLAY_SECTION_CARD',0,{cardInstanceId:legacyCommand.cardInstanceId});
+ assert.equal(root.bridge.dispatch(cardRequest).code,'ALREADY_APPLIED');
+ order(root);
+ const stored=JSON.parse(root.getRow(MATCH).private_state).ancientsSectionHistoryLab.commands;
+ assert.equal(Object.hasOwn(stored[0],'idempotencyKey'),false);
+ assert.equal(stored[1].idempotencyKey,'section_lab_ASSIGN_SECTION_ORDERS_1');
+ assert.equal(root.bridge.view('A').revision,2);
+}));
+
+test('CCWB: persisted idempotency metadata remains private to the journal',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const journal=JSON.parse(root.getRow(MATCH).private_state).ancientsSectionHistoryLab;
+ const key=journal.commands[0].idempotencyKey;
+ assert.equal(typeof key,'string');
+ for(const v of [root.bridge.view('A'),root.bridge.view('B'),
+   ...root.db.prepare('SELECT payload FROM game_events').all().map(x=>JSON.parse(x.payload))]){
+   assert.equal(JSON.stringify(v).includes(key),false);
+ }
+}));
+
+test('CCWB v2: new persisted signature binds the idempotency key',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const row=root.db.prepare('SELECT idem_key,signature FROM game_commands WHERE match_id=?').get(MATCH);
+ assert.ok(row.signature.startsWith('CCW_SECTION_COMMAND_V2:'));
+ assert.ok(row.signature.includes(row.idem_key));
+ assert.equal(root.bridge.view('B').revision,1);
+}));
+
+test('CCWB v2: deleting journal key alone fails closed, including retries',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());
+ const request=play(root);
+ const row=root.getRow(MATCH),state=JSON.parse(row.private_state);
+ delete state.ancientsSectionHistoryLab.commands[0].idempotencyKey;
+ root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ assert.throws(()=>root.bridge.view('A'),/SECTION_CCWB_HISTORY_TAMPERED/);
+ assert.throws(()=>root.bridge.dispatch(request),/SECTION_CCWB_HISTORY_TAMPERED/);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,1);
+}));
+
+test('CCWB v2: idempotent retry works with new versioned signature',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());
+ const request=play(root);
+ assert.equal(root.bridge.dispatch(request).code,'ALREADY_APPLIED');
+ assert.equal(root.bridge.dispatch({...request,cardInstanceId:'forged_card'}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events').get().n,1);
+}));
+
+test('CCWB v2: legacy entry followed by a new entry uses stronger signature',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);
+ const row=root.getRow(MATCH),state=JSON.parse(row.private_state);
+ const {idempotencyKey,...oldCommand}=state.ancientsSectionHistoryLab.commands[0];
+ delete state.ancientsSectionHistoryLab.commands[0].idempotencyKey;
+ root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ root.db.prepare('UPDATE game_commands SET signature=? WHERE match_id=?')
+   .run(JSON.stringify(oldCommand),MATCH);
+ order(root);
+ const signatures=root.db.prepare('SELECT signature FROM game_commands ORDER BY committed_revision')
+   .all().map(x=>x.signature);
+ assert.equal(signatures[0],JSON.stringify(oldCommand));
+ assert.ok(signatures[1].startsWith('CCW_SECTION_COMMAND_V2:'));
+ assert.equal(root.bridge.view('B').revision,2);
+}));
+
+test('CCWB: initialization authorization runs inside SQLite write transaction',()=>fixture(({root})=>{
+ let checked=0;
+ const denied=root.bridge.initialize('A',setup(),()=>{
+   checked++;
+   assert.equal(root.db.isTransaction,true);
+   return {status:401,code:'UNAUTHENTICATED'};
+ });
+ assert.equal(denied.code,'UNAUTHENTICATED');
+ assert.equal(checked,1);
+ assert.equal(hasMode(root.getRow(MATCH)),false);
+ assert.equal(root.getRow(MATCH).lobby_revision,0);
+ assert.equal(root.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,0);
+ assert.equal(root.bridge.initialize('A',setup()).code,'SECTION_LAB_INITIALIZED');
+}));
+
+test('CCWB: revoked session guard prevents all command writes and idempotency rows',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());
+ const card=root.bridge.view('A').yourHand[0].instanceId;
+ const request=req('PLAY_SECTION_CARD',0,{cardInstanceId:card},'revoked_section_0001');
+ const before=root.getRow(MATCH);
+ let checked=0;
+ const denied=root.bridge.dispatch(request,()=>{
+   checked++;
+   assert.equal(root.db.isTransaction,true);
+   return {status:401,code:'UNAUTHENTICATED'};
+ });
+ assert.equal(denied.code,'UNAUTHENTICATED');
+ assert.equal(checked,1);
+ assert.deepEqual(root.getRow(MATCH),before);
+ assert.equal(root.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,0);
+ assert.equal(root.db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,0);
+ assert.equal(root.bridge.dispatch(request).code,'SECTION_LAB_APPLIED');
+}));
+
+test('CCWB: passing authorization guard is checked exactly once inside transaction',()=>fixture(({root})=>{
+ let calls=0;
+ assert.equal(root.bridge.initialize('A',setup(),()=>{
+   assert.equal(root.db.isTransaction,true);
+   calls++;
+   return true;
+ }).status,201);
+ const card=root.bridge.view('A').yourHand[0].instanceId;
+ const request=req('PLAY_SECTION_CARD',0,{cardInstanceId:card},'authorized_once_0001');
+ assert.equal(root.bridge.dispatch(request,()=>{
+   assert.equal(root.db.isTransaction,true);
+   calls++;
+   return true;
+ }).status,200);
+ assert.equal(calls,2);
+ assert.equal(root.bridge.view('A').revision,1);
+}));
+
+test('CCWB: staged movement screen reads private persisted orders without mutations',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);order(root);
+ const rowBefore=root.getRow(MATCH);
+ const eventsBefore=root.db.prepare('SELECT * FROM game_events ORDER BY sequence').all();
+ const commandsBefore=root.db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all();
+ const state=JSON.parse(rowBefore.private_state).ancientsSectionHistoryLab.state;
+ const trusted={unitTypes:{unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'},terrain:[]};
+ const proposal=precheckStagedAncientsMovement({
+   state,actor:'A',expectedRevision:2,unitId:'unitA',
+   path:[{col:3,row:4}],serverContext:trusted
+ });
+ assert.equal(proposal.status,'CANDIDATE');
+ assert.equal(proposal.movementAuthorized,false);
+ assert.equal(proposal.attackAuthorized,false);
+ assert.equal(proposal.stateChanged,false);
+ const denied=precheckStagedAncientsMovement({
+   state,actor:'A',expectedRevision:2,unitId:'unitB',
+   path:[{col:9,row:4}],serverContext:trusted
+ });
+ assert.equal(denied.reason,'UNIT_NOT_ORDERED');
+ assert.deepEqual(root.getRow(MATCH),rowBefore);
+ assert.deepEqual(root.db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),eventsBefore);
+ assert.deepEqual(root.db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all(),commandsBefore);
+ assert.equal(root.bridge.view('A').revision,2);
+ assert.equal(root.bridge.view('B').revision,2);
 }));
