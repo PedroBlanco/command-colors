@@ -28,9 +28,10 @@ La PR #93 tenía cinco casos nuevos de snapshot/laboratorio en tres suites. Esta
 
 - SQLite: sesión vigente y bando correcto, usuario ajeno, revocación desde segunda conexión WAL, pérdida de pertenencia, laboratorio sin exposición de mano, guardia transaccional de comandos demo/mazo e inicialización autenticada. También se verifica la lectura de lobby tras logout desde otra conexión o cambio de guest confirmado.
 
-Total nuevos en esta PR: **19 casos** (5 iniciales y 14 adicionales) sobre las **71 suites existentes**.
 - HTTP: revocación entre lobby y lectura de partida/eventos/comandos, revocación entre vista y consulta de eventos, revocación entre vista y escritura, y revocación durante inicialización de mazo. Nunca se publican manos ni eventos privados.
 - SSE: preferencia obligatoria de vista vinculada a sesión y cierre al revocar durante una espera asíncrona de almacenamiento.
+
+Total nuevos en esta PR: **19 casos** (5 iniciales y 14 adicionales) sobre las **71 suites existentes**.
 
 **Evidencia ejecutada ANTES de esta ampliación:** 7/7 pruebas SSE, Node.js 22.16.0, sobre los blobs exactos `revision-stream.mjs` y su suite anteriores; cinco comprobaciones simuladas del gateway; 41 pruebas nativas de #92 y una regresión integral Windows reportada por el usuario en la rama anterior. **No prueban el árbol actual.**
 
