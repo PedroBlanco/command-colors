@@ -245,6 +245,29 @@ export function openSqliteComposition({file, clock = Date.now,
     return {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
+      /**
+       * Public-match HTTP reader: session + READY membership + mode + private
+       * projection all belong to ONE SQLite/WAL read snapshot. No browser-
+       * supplied actor is accepted, and the Ancients lab is never projected.
+       * This is distinct from the internal view(actor) test/lab API.
+       */
+      viewForSession(request = {}) {
+        if (!plainLabRequest(request) || Object.keys(request).length !== 1 ||
+            !Object.hasOwn(request,'sessionToken') ||
+            typeof request.sessionToken !== 'string')
+          return {status:400,code:'INVALID_PUBLIC_VIEW_REQUEST'};
+        return readSnapshot(() => {
+          const identity = resolveSectionLabActor(request.sessionToken);
+          if (identity.error) return identity.error;
+          const row = rowOrThrow();
+          if (hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+          const view = hasCommandDeck(row)
+            ? commandDeck.view(identity.actor)
+            : project(row,identity.actor);
+          return {status:200,code:'PUBLIC_MATCH_VIEW',view};
+        });
+      },
       view(actor, {denyExperimentalLab = false} = {}) {
         // A single WAL snapshot binds mode selection and the private
         // projection. Another connection cannot switch from a demo deck
@@ -334,6 +357,27 @@ export function openSqliteComposition({file, clock = Date.now,
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
           return sectionHistory.previewMovement(identity.actor,request,trustedContext);
+        });
+      },
+      /**
+       * Public-events HTTP reader: unlike publicEvents(actor), the session,
+       * match membership, mode and event rows share one WAL snapshot.
+       * The client supplies no actor and cannot opt into private lab events.
+       */
+      publicEventsForSession(request = {}) {
+        if (!plainLabRequest(request) || Object.keys(request).length !== 1 ||
+            !Object.hasOwn(request,'sessionToken') ||
+            typeof request.sessionToken !== 'string')
+          return {status:400,code:'INVALID_PUBLIC_EVENTS_REQUEST'};
+        return readSnapshot(() => {
+          const identity = resolveSectionLabActor(request.sessionToken);
+          if (identity.error) return identity.error;
+          const row = rowOrThrow();
+          if (hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+          const events = db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
+            .all(matchId).map(x => decode(x.payload));
+          return {status:200,code:'PUBLIC_MATCH_EVENTS',events};
         });
       },
       publicEvents(actor, {denyExperimentalLab = false} = {}) {
