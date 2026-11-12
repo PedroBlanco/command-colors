@@ -426,3 +426,25 @@ manifiesto de la rama apilada alcanza **76 suites**; ni esta nueva
 suite ni la regresión conjunta han sido ejecutadas nativamente.
 La composición CCWB y SEC-001 (#93) siguen pendientes. Véase
 [traza de movimientos candidatos](78-traza-auditoria-movimientos-candidatos.md).
+
+
+## R-04/R-05 — evidencia con sesión y órdenes comprobadas (LAB-ANC, 12/11/2026)
+
+La traza `movement-candidate-journal.mjs` se conecta al diario privado
+por `precheckStagedAncientsMovementEvidence`,
+`createSqliteAncientsSectionBridge.previewMovementEvidence` y
+`getStore(matchId).precheckExperimentalSectionMovementEvidence`.
+La identidad y pertenencia a la partida se verifican con la revisión,
+órdenes, estado y reglas **dentro del snapshot WAL**. Los datos del
+escenario los aporta exclusivamente el servidor. Se rechaza el exceso
+de acciones respecto a órdenes y se usa ordenación ordinal fija para
+que los resúmenes no dependan del locale del servidor.
+
+**Pruebas nuevas:** +4 casos staged, +4 casos SQLite preparados,
++1 caso de determinismo SHA-256. Resultado V8 aislado 24/24 staged y
+11/11 auditoría, digest simulado; resultado Node nativo **4/4** con
+SHA-256 real del módulo exacto, pero precheck sustituido y **sin**
+composición SQLite. No se han ejecutado las cuatro pruebas nuevas
+SQLite ni la regresión de las 76 suites. No se autorizan ni aplican
+movimientos. Véase
+[consulta CCWB autenticada](79-evidencia-movimientos-ccwb-autenticada.md).
