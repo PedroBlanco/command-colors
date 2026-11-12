@@ -1,4 +1,4 @@
-# CCW-015 — Aislamiento del laboratorio privado frente a HTTP y SSE existentes
+# SEC-001 — Aislamiento del laboratorio privado frente a HTTP y SSE existentes
 
 **12/11/2026.** Corrección de frontera de seguridad, apilada sobre la PR #87. No incorpora rutas nuevas ni reglas oficiales.
 
@@ -134,3 +134,6 @@ El usuario ha repetido las pruebas en el *worktree* aislado de la PR #91 tras ac
 Con ello, **las dos condiciones locales pendientes para integrar esta corrección en su rama base experimental se consideran satisfechas**, basándonos en la ejecución y los resultados aportados por el usuario en Windows 11, sin WSL. No se ha recibido el archivo TAP ni su SHA-256 en esta conversación: no se inventan porcentajes, duración ni contadores de pruebas individuales de la regresión global. El manifiesto de la rama de PR #91 contiene **71 suites declaradas**, lo cual no equivale a «71 casos»; cada suite puede contener varios subtests.
 
 **Decisión de integración:** puede fusionarse la PR #91 sobre su rama base `feat/i4-ancients-section-idempotency-journal-binding` (PR #87). Esta decisión no autoriza una fusión del conjunto experimental con `main`, ni su publicación por HTTP/Internet, ni declara completas las reglas oficiales de movimiento o combate. Las pruebas de dos navegadores reales y el examen de seguridad para producción siguen pendientes. El laboratorio permanece exclusivamente interno.
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `SEC-001` (issue #94, frontera de seguridad y aislamiento).
