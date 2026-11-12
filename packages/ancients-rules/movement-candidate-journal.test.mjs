@@ -140,3 +140,20 @@ test('digest is native SHA-256 over the prior digest and canonical move tuple',(
   ])).digest('hex');
   assert.equal(firstEntry.digest,expected);
 });
+
+
+test('context digest orders mixed-case piece identities by codepoint, not system locale',()=>{
+  const input=fixture();
+  input.units.push(unit('ZuluExtra','B',9,8),unit('alphaExtra','B',9,7));
+  input.leaders.push(leader('BravoExtra','B',8,8));
+  const journal=build(input).journal;
+  const byCodepoint=(a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0;
+  const u=input.units.map(u=>[u.id,u.side,u.col,u.row,u.type]).sort(byCodepoint);
+  const l=input.leaders.map(l=>[l.id,l.side,l.col,l.row]).sort(byCodepoint);
+  const expected=createHash('sha256').update(JSON.stringify([
+    CANDIDATE_JOURNAL_KIND,matchId,'A',2,u,l,
+    ['front','reserve'],['captain'],[]
+  ])).digest('hex');
+  assert.equal(journal.contextDigest,expected);
+  assert.equal(verify({...input,journal}),true);
+});
