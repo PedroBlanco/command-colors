@@ -43,3 +43,30 @@ El lector WAL puede consultar el estado previo a una revocación que aún no se 
 La PR #96 continúa en **borrador**, basada en #95, y la seguridad de HTTP/SSE de SEC-001 (#93) sigue independiente. Antes de fusionar en `main`, es obligatorio validar las pruebas de composición bajo SQLite/WAL y las 79 suites con Node.js 22.16.0 o superior, comprobar privacidad bilateral y resolver la revisión reglamentaria de *Ancients*. No usar WSL, Docker ni GitHub Actions; no solicitar pruebas locales al usuario en esta etapa.
 
 **No existe todavía movimiento reglamentariamente confirmado.** La etiqueta `PRIVATE_LAB_SIMULATION` jamás debe convertirse en `APPLIED` mediante un alias, una traza candidata o una respuesta HTTP.
+
+
+## Corrección de privacidad y prueba de ausencia de contexto (12/11/2026)
+
+Una revisión posterior identificó dos riesgos de prueba/contrato:
+
+- El reductor copiaba `state.board` entero. Ahora el resultado
+  `simulatedBoard` solo contiene `units:[{id,side,col,row}]` y
+  `leaders:[]`, eliminando cualquier metadato inesperado de tablero
+  o de unidades. Existen regresiones tanto en el reductor como en el
+  helper puro, y un caso de integración con el diario SQLite que inyecta
+  metadatos secretos en un escenario persistido.
+- La función auxiliar `oneHexPreview(..., ctx=movementContext())` hacía
+  que pasar `undefined` en una prueba activase el contexto por defecto.
+  La prueba se ha corregido: usa `null` para el caso negativo y además
+  llama directamente al método del almacén con `undefined` explícito,
+  verificando que no se permite simular sin contexto del servidor.
+
+**Evidencia actual:** 12 casos del reductor + 12 de composición pura =
+**24/24 evaluaciones correctas** en V8 aislado estricto, con 15 módulos
+reales recuperados de GitHub, clonación JSON sustitutiva y dobles para
+imports nativos no ejercitados. Sintaxis aislada **4/4** para el reductor
+y tres archivos de pruebas pertinentes. Son ahora **8 nuevos casos
+escritos de composición SQLite**, no siete. **No se ha ejecutado
+`node:test` con SQLite/WAL real** sobre este árbol, ni la regresión
+de las 79 suites. La PR continúa en borrador y no debe integrarse en
+`main` por estas comprobaciones parciales.
