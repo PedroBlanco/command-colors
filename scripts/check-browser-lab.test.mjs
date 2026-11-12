@@ -116,6 +116,8 @@ test('manifest audit detects forgotten and stale test suites without writing to 
   const first='packages/sample/included.test.mjs';
   const second='packages/sample/forgotten.test.mjs';
   await writeFile(join(folder,'included.test.mjs'),"// synthetic test file\n");
+  await mkdir(join(folder,'node_modules'),{recursive:true});
+  await writeFile(join(folder,'node_modules','dependency.test.mjs'),"// dependency test ignored\n");
   const pass=auditLocalTestManifest(dir,[first]);
   assert.deepEqual(pass,{ok:true,discovered:1,declared:1,missing:[],unregistered:[]});
   assert.equal(requireCompleteTestManifest(dir,[first]).ok,true);
