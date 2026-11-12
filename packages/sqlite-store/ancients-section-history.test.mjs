@@ -498,3 +498,48 @@ test('CCWB mode exclusivity: deck initialization after active lab remains blocke
   assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
   assert.equal(db.isTransaction,false);
 }));
+
+
+test('CCWB generic public read: ordinary view stays usable when denying private lab',()=>fixture(async({app,matchId})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const regular=store.view('A',{denyExperimentalLab:true});
+  assert.equal(regular.matchId,matchId);
+  assert.equal(regular.status,'ACTIVE');
+  assert.equal(Object.hasOwn(regular,'ancientsSectionHistoryLab'),false);
+  assert.equal(db.isTransaction,false);
+  // A public snapshot does not acquire a writer lock or mutate the DB.
+  const row=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  assert.deepEqual(store.view('A',{denyExperimentalLab:true}),regular);
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),row);
+}));
+
+test('CCWB generic public read: private laboratory is denied before any hand projection',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  assert.equal(store.initializeExperimentalSectionHistory({
+    sessionToken:tokens.A,trustedSetup:setup()
+  }).status,201);
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  const internal=store.view('A');
+  assert.equal(internal.status,'LAB_ONLY');
+  assert.ok(internal.yourHand.length>0);
+  for(const actor of ['A','B']) {
+    const safe=store.view(actor,{denyExperimentalLab:true});
+    assert.deepEqual(safe,{status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+    assert.equal(JSON.stringify(safe).includes('yourHand'),false);
+    assert.equal(JSON.stringify(safe).includes('card_a_left'),false);
+  }
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB generic public read: second SQLite connection activates lab before next snapshot',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),other=connect().getStore(matchId);
+  assert.equal(store.view('A',{denyExperimentalLab:true}).status,'ACTIVE');
+  assert.equal(other.initializeExperimentalSectionHistory({
+    sessionToken:tokens.A,trustedSetup:setup()
+  }).status,201);
+  // A new snapshot must observe the committed mode and never publish a hand.
+  assert.deepEqual(store.view('A',{denyExperimentalLab:true}),
+    {status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
