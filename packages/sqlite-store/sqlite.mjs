@@ -144,12 +144,12 @@ export function openSqliteComposition({file, clock = Date.now,
       return {ok:true, matchId:id};
     },
     getMatch({sessionToken, matchId} = {}) {
-      if (!UUID.test(String(matchId ?? ''))) return denied('NOT_FOUND');
       // The lobby metadata is security-sensitive too: a logout, change of
       // membership and the participant list must share one WAL snapshot.
       return readSnapshot(() => {
         const user = sessions.resolveSession(sessionToken);
         if (!user) return denied('UNAUTHENTICATED');
+        if (!UUID.test(String(matchId ?? ''))) return denied('NOT_FOUND');
         const match = getMember.get(matchId);
         if (!match || !checkActor(match, user.userId)) return denied('NOT_FOUND');
         const owner = db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.owner_id);
