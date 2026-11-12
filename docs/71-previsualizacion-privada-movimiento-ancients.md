@@ -1,4 +1,4 @@
-# CCW-015 / R-04–R-05 — Previsualización privada y autenticada de movimiento
+# LAB-ANC / R-04–R-05 — Previsualización privada y autenticada de movimiento
 
 **Fecha:** 12/11/2026. **Dependencia:** PR #89 (filtro puro), que depende de la PR #88 (sesión y transacciones SQLite). **Alcance:** laboratorio interno, sin ruta HTTP, sin escritura ni movimiento real.
 
@@ -79,3 +79,6 @@ $LASTEXITCODE
 ## Bloqueos para la integración real
 
 Siguen pendientes la regresión de 69 suites, Windows 11 sin WSL, validación HTTP/SSE y dos navegadores, escenarios oficiales, reglas completas de movimiento/líderes y transición de escritura con autorización transaccional. **No fusionar ni desplegar todavía.**
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `LAB-ANC` (laboratorio privado de cartas, órdenes o movimiento de *Ancients*).
