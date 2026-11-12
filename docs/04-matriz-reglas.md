@@ -294,3 +294,31 @@ Además, el comando sintético `pass_demo_turn` vuelve a comprobar la modalidad 
 ## Exclusión entre laboratorio Ancients y mazo sintético (12/11/2026)
 
 La inicialización ordinaria del mazo debía rechazar `ancientsSectionHistoryLab` **dentro de su propia transacción SQLite**, no solo en el preflight de la composición: otra conexión podía activar el diario entre ambos. Se añade ese guard bajo `BEGIN IMMEDIATE` y bloqueos equivalentes para `dispatch` y `view` del mazo ante estados mixtos. **Cuatro nuevos casos de integración SQLite** repartidos en `packages/command-deck/sqlite-game.test.mjs` y `packages/sqlite-store/ancients-section-history.test.mjs`; pendientes de ejecución nativa en esta rama. Se han superado **5/5 comprobaciones aisladas con transacción simulada** sobre el código Git exacto, que no sustituyen los tests SQLite. Total inventariado: **71 suites**. Documento: [exclusión atómica de modos](73-exclusion-atomica-mazo-laboratorio.md). Las reglas y combates oficiales no se habilitan.
+
+
+## R-04/R-05 — prevalidación individual de líder ordenado (LAB-ANC, 12/11/2026)
+
+Se incorpora un filtro **de solo lectura** para líderes a partir de las
+reglas básicas de *Ancients* (tercera edición, 2009), sin mezclarlo con
+los límites de desplazamiento de unidades. Se comprueban 1–3 pasos
+adyacentes, ocupación, paso por unidades y líderes amigos, prohibición
+de terminar sobre otro líder y restricciones normales de bosque/terreno
+accidentado. Exige orden explícita del líder extraída de un diario
+CCWB verificado, sesión y bando obtenidos del servidor y una única
+instantánea WAL. No hay comandos de movimiento, endpoints, escrituras,
+excepciones de escenario, evasión ni resolución de combate.
+
+**Contratos:** `leader-movement-preflight.mjs` (geometría/ocupación),
+`staged-movement-preflight.mjs` (turno, órdenes y revisión),
+`sqlite-section-ccwb-bridge.mjs` (replay) y
+`sqlite.mjs` (sesión y snapshot WAL), con
+`precheckExperimentalSectionLeaderMovement` **solo interno**.
+
+**Pruebas preparadas:** 8 casos nuevos del módulo puro, 5 en el
+filtro staged y 3 integraciones con SQLite y sesiones. Ejecutadas en
+**V8 aislado** las 8 pruebas puras nuevas y las 15 de la suite staged
+(10 previas + 5 nuevas) sobre los blobs exactos de GitHub, todas
+correctas. **Los 3 casos SQLite y las 72 suites nativas siguen
+pendientes**. Conservar la rama y PR en borrador sin prometer legalidad
+ni cambiar `main`. Véase
+[prevalidación de líderes](75-preflight-lideres-ancients.md).
