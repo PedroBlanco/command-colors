@@ -5,7 +5,7 @@
 import {fileURLToPath} from 'node:url';
 import {dirname, resolve} from 'node:path';
 import {LOCAL_TEST_FILES} from './check-browser-lab.mjs';
-import {runTestBatch} from './run-test-suite.mjs';
+import {runTestBatch, auditLocalTestManifest} from './run-test-suite.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const CCWB_SECURITY_SUITES = Object.freeze([
@@ -67,9 +67,12 @@ function reportName(type, date, pid) {
  */
 export async function validateCcwHttp({fullRegression=false, rootDir=ROOT,
   manifest=LOCAL_TEST_FILES, runBatch=runTestBatch,
-  version=process.versions.node, now=()=>new Date(), pid=process.pid} = {}) {
+  auditManifest=auditLocalTestManifest, version=process.versions.node,
+  now=()=>new Date(), pid=process.pid} = {}) {
   if (!validNodeVersion(version)) return {exitCode:2, reason:'NODE_22_16_REQUIRED', results:[]};
   const securityFiles = assertSecurityManifest(manifest);
+  const inventory = auditManifest(rootDir,manifest);
+  if (!inventory.ok) return {exitCode:2,reason:'TEST_MANIFEST_DRIFT',inventory,results:[]};
   const date=now(), results=[];
   const priority=await runBatch({
     rootDir,files:securityFiles,logFile:reportName('security',date,pid)
@@ -97,6 +100,10 @@ async function main(args) {
   }
   const result=await validateCcwHttp({fullRegression});
   if (result.reason) console.error(result.reason);
+  if (result.inventory && !result.inventory.ok) {
+    if (result.inventory.missing.length) console.error('Faltan suites: '+result.inventory.missing.join(', '));
+    if (result.inventory.unregistered.length) console.error('Suites sin registrar: '+result.inventory.unregistered.join(', '));
+  }
   for(const run of result.results) {
     console.log(`CCWB ${run.type}: ${run.suites} suites; salida=${run.exitCode}`);
     if (run.missing?.length) console.error('Faltan archivos: '+run.missing.join(', '));
