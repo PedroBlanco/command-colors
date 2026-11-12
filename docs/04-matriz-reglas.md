@@ -346,3 +346,24 @@ la existencia del bloqueo durante la autenticación y la negativa tras un
 logout confirmado desde otra conexión WAL. **Pendientes ejecución nativa y
 regresión completa**: la sintaxis y la inspección estática no son evidencia
 suficiente para fusionar la PR #93.
+
+
+## Lanzador portátil de pruebas de seguridad CCWB (SEC-001, 12/11/2026)
+
+Se detectó que el lanzador prioritario original de ocho suites omitía
+`packages/sqlite-store/sqlite.test.mjs`, que contiene los cuatro casos nuevos
+de sesión/lobby, así como varias pruebas preexistentes de transacciones y
+revocación WAL. Se sustituye la lista duplicada de PowerShell por
+`scripts/validate-ccwb-http.mjs`, con **12 suites prioritarias** sobre
+el manifiesto de **72 suites** (71 históricas y la nueva suite del propio
+validador). En Windows, `scripts/validate-ccwb-http.ps1` solo delega en
+Node.js nativo; en Debian se ejecuta directamente el archivo `.mjs`.
+
+El validador rechaza Node anterior a 22.16.0, manifiestos incompatibles,
+argumentos ajenos y rutas inyectadas; guarda resultados en TAP inmutables
+con hash SHA-256 y bloquea la regresión completa cuando falla la fase de
+seguridad. Cinco casos de la nueva suite describen este comportamiento.
+La lógica del validador se inspeccionó y comprobó de forma aislada mediante
+V8 y lotes simulados; **no es una ejecución de las 12 ni las 72 suites**.
+La PR #93 sigue bloqueada hasta integrar y ejecutar pruebas reales de SQLite,
+HTTP y SSE.
