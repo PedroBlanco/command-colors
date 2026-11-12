@@ -212,3 +212,84 @@ test('SEC-001: lobby read denies session revoked by a second WAL connection',()=
     {ok:false,code:'UNAUTHENTICATED'});
   assert.equal(first.unsafeTestDatabase().isTransaction,false);
 }));
+
+
+test('SEC-001: all match and invitation mutations validate session under writer transaction',()=>local(async open=>{
+  let enforce=false,db;
+  const service=open({clock:()=>{
+    if(enforce)assert.equal(db.isTransaction,true,'session must be checked after BEGIN IMMEDIATE');
+    return Date.now();
+  }});
+  db=service.unsafeTestDatabase();
+  const alice=await account(service,'alice'),bob=await account(service,'bob'),
+    charlie=await account(service,'charlie');
+  enforce=true;
+  const joinedMatch=service.invitations.createMatch({sessionToken:alice});
+  assert.equal(joinedMatch.ok,true);
+  const inviteBob=service.invitations.issueInvitation({
+    sessionToken:alice,matchId:joinedMatch.matchId,targetHandle:'bob'
+  });
+  assert.equal(inviteBob.ok,true);
+  const joined=service.invitations.acceptInvitation({
+    sessionToken:bob,invitationToken:inviteBob.token
+  });
+  assert.equal(joined.ok,true);
+  const rejectMatch=service.invitations.createMatch({sessionToken:alice});
+  const inviteToReject=service.invitations.issueInvitation({
+    sessionToken:alice,matchId:rejectMatch.matchId,targetHandle:'charlie'
+  });
+  assert.equal(service.invitations.rejectInvitation({
+    sessionToken:charlie,invitationToken:inviteToReject.token
+  }).ok,true);
+  const revokeMatch=service.invitations.createMatch({sessionToken:alice});
+  const inviteToRevoke=service.invitations.issueInvitation({
+    sessionToken:alice,matchId:revokeMatch.matchId,targetHandle:'charlie'
+  });
+  assert.equal(service.invitations.revokeInvitation({
+    sessionToken:alice,matchId:revokeMatch.matchId,invitationId:inviteToRevoke.invitationId
+  }).ok,true);
+  assert.equal(db.isTransaction,false);
+  const statuses=db.prepare('SELECT status FROM invitations ORDER BY rowid').all()
+    .map(row=>row.status);
+  assert.deepEqual(statuses,['ACCEPTED','REJECTED','REVOKED']);
+}));
+
+test('SEC-001: committed cross-connection logout prevents all invitation and match writes',()=>local(async open=>{
+  const first=open(),alice=await account(first,'alice'),bob=await account(first,'bob'),
+    charlie=await account(first,'charlie');
+  const joinMatch=first.invitations.createMatch({sessionToken:alice}).matchId;
+  const join=first.invitations.issueInvitation({
+    sessionToken:alice,matchId:joinMatch,targetHandle:'bob'
+  });
+  const rejectMatch=first.invitations.createMatch({sessionToken:alice}).matchId;
+  const reject=first.invitations.issueInvitation({
+    sessionToken:alice,matchId:rejectMatch,targetHandle:'bob'
+  });
+  const revokeMatch=first.invitations.createMatch({sessionToken:alice}).matchId;
+  const revoke=first.invitations.issueInvitation({
+    sessionToken:alice,matchId:revokeMatch,targetHandle:'charlie'
+  });
+  const db=first.unsafeTestDatabase(),other=open();
+  const count=table=>db.prepare('SELECT count(*) AS n FROM '+table).get().n;
+  const before={matches:count('matches'),invitations:count('invitations')};
+  other.identity.logOut(alice);
+  other.identity.logOut(bob);
+  assert.equal(first.invitations.createMatch({sessionToken:alice}).code,'UNAUTHENTICATED');
+  assert.equal(first.invitations.issueInvitation({
+    sessionToken:alice,matchId:joinMatch,targetHandle:'charlie'
+  }).code,'UNAUTHENTICATED');
+  assert.equal(first.invitations.revokeInvitation({
+    sessionToken:alice,matchId:revokeMatch,invitationId:revoke.invitationId
+  }).code,'UNAUTHENTICATED');
+  assert.equal(first.invitations.acceptInvitation({
+    sessionToken:bob,invitationToken:join.token
+  }).code,'UNAUTHENTICATED');
+  assert.equal(first.invitations.rejectInvitation({
+    sessionToken:bob,invitationToken:reject.token
+  }).code,'UNAUTHENTICATED');
+  assert.deepEqual({matches:count('matches'),invitations:count('invitations')},before);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM invitations WHERE status!='PENDING'").get().n,0);
+  assert.equal(first.invitations.getMatch({sessionToken:charlie,matchId:joinMatch}).code,
+    'NOT_FOUND');
+  assert.equal(db.isTransaction,false);
+}));
