@@ -245,10 +245,22 @@ export function openSqliteComposition({file, clock = Date.now,
     return {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
-      view(actor) {
-        const row = rowOrThrow();
-        if (hasExperimentalSectionHistory(row)) return sectionHistory.view(actor);
-        return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+      view(actor, {denyExperimentalLab = false} = {}) {
+        // A single WAL snapshot binds mode selection and the private
+        // projection. Another connection cannot switch from a demo deck
+        // to the Ancients lab between separate SELECTs.
+        return readSnapshot(() => {
+          const row = rowOrThrow();
+          if (hasExperimentalSectionHistory(row)) {
+            // Only explicitly trusted internal callers can obtain a lab view.
+            // The HTTP gateway and SSE use the deny flag and never construct
+            // the private lab projection, even for a short-lived response.
+            if (denyExperimentalLab)
+              return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+            return sectionHistory.view(actor);
+          }
+          return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+        });
       },
       initializeCommandDeck(actor) {
         const row=rowOrThrow();
