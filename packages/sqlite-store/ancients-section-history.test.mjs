@@ -501,7 +501,7 @@ test('CCWB mode exclusivity: deck initialization after active lab remains blocke
 
 
 /** Leader preview stays in the private authenticated CCWB laboratory. */
-function stageForLeader(store,token){
+function stageForLeader(store,token,{orderUnit=false}={}){
   const lab=setup();
   lab.board.leaders=[
     {id:'leaderA',side:'A',col:2,row:4},
@@ -518,7 +518,7 @@ function stageForLeader(store,token){
   }).status,200);
   assert.equal(store.dispatchExperimentalSectionHistory({
     sessionToken:token,type:'ASSIGN_SECTION_ORDERS',expectedRevision:1,
-    idempotencyKey:'leader_preview_orders_01',unitIds:[],leaderIds:['leaderA']
+    idempotencyKey:'leader_preview_orders_01',unitIds:orderUnit?['unitA']:[],leaderIds:['leaderA']
   }).status,200);
 }
 const leaderRequest=(sessionToken,extra={})=>({
@@ -598,4 +598,87 @@ test('CCWB composition: leader preview rejects injection and missing trusted ter
   const denied=store.precheckExperimentalSectionLeaderMovement(
     leaderRequest(tokens.A,{leaderId:'leaderB'}),{terrain:[]});
   assert.equal(denied.preview.reason,'LEADER_NOT_ORDERED');
+}));
+
+
+const sequenceLeader=()=>({kind:'LEADER',id:'leaderA',path:[{col:2,row:5}]});
+const sequenceUnit=()=>({kind:'UNIT',id:'unitA',path:[{col:3,row:4}]});
+const sequenceRequest=(sessionToken,actions,extra={})=>({
+  sessionToken,expectedRevision:2,actions,...extra
+});
+
+test('CCWB composition: authenticated movement sequence enforces leader/unit order without writes',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),trusted=movementContext();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const db=app.unsafeTestDatabase();
+  const capture=()=>({
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all()
+  });
+  const before=capture();
+  const first=store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.A,[sequenceLeader(),sequenceUnit()]),trusted);
+  assert.equal(first.status,200);
+  assert.equal(first.code,'SECTION_LAB_SEQUENCE_PREVIEW');
+  assert.equal(first.preview.status,'CANDIDATE_SEQUENCE');
+  assert.equal(first.preview.reviewedMoves,2);
+  assert.equal(first.preview.movementAuthorized,false);
+  assert.equal(first.preview.attackAuthorized,false);
+  assert.equal(first.preview.stateChanged,false);
+  const reverse=store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.A,[sequenceUnit(),sequenceLeader()]),trusted);
+  assert.equal(reverse.status,200);
+  assert.equal(reverse.preview.status,'BLOCKED');
+  assert.equal(reverse.preview.reason,'LEADER_ALREADY_MOVED');
+  assert.equal(reverse.preview.step,1);
+  assert.deepEqual(capture(),before);
+  assert.equal(db.isTransaction,false);
+  assert.equal(JSON.stringify(first).includes('card_a_left'),false);
+  assert.equal(JSON.stringify(first).includes('PRIVATE_'),false);
+}));
+
+test('CCWB composition: movement sequence reads session and membership in WAL snapshot',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),other=connect();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const request=sequenceRequest(tokens.A,[sequenceLeader()]);
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    request,movementContext()).status,200);
+  other.identity.logOut(tokens.A);
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    request,movementContext()).code,'UNAUTHENTICATED');
+  const guest=store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.B,[sequenceLeader()]),movementContext());
+  assert.equal(guest.preview.reason,'NOT_ACTING_PLAYER');
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.outsider,[sequenceLeader()]),movementContext()).code,'NOT_FOUND');
+  other.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?').run(matchId);
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.B,[sequenceLeader()]),movementContext()).code,'NOT_FOUND');
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB composition: movement sequence rejects client-controlled actor, path injection and missing context',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const valid=sequenceRequest(tokens.A,[sequenceLeader()]);
+  const invalid=[
+    {...valid,actor:'B'},
+    {...valid,actions:[{...sequenceLeader(),actor:'B'}]},
+    {...valid,actions:[{...sequenceLeader(),path:[{col:2,row:5,side:'B'}]}]},
+    {...valid,actions:[{...sequenceLeader(),id:'__proto__'}]},
+    {...valid,actions:[]},
+    {...valid,expectedRevision:2.5}
+  ];
+  for(const request of invalid)
+    assert.equal(store.precheckExperimentalSectionMovementSequence(
+      request,movementContext()).code,'INVALID_SECTION_LAB_SEQUENCE_REQUEST');
+  assert.throws(()=>store.precheckExperimentalSectionMovementSequence(
+    valid,{terrain:[]}),/INVALID_STAGED_MOVEMENT_CONTEXT/);
+  assert.equal(store.precheckExperimentalSectionMovementSequence(
+    sequenceRequest(tokens.A,[sequenceUnit()],{expectedRevision:1}),
+    movementContext()).preview.reason,'STALE_REVISION');
 }));
