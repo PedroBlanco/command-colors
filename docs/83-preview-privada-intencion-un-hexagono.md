@@ -34,3 +34,21 @@ No existe un reductor reglamentario completo ni una operación que consuma una o
 ### Integración privada autenticada con CCWB
 
 El nuevo método interno `precheckExperimentalSectionOneHexIntent` une validación de sesión y pertenencia, selección de partida y replay completo del diario dentro de una sola instantánea SQLite/WAL. El puente calcula únicamente `PRIVATE_LAB_SIMULATION`, nunca autoriza un movimiento. Se han escrito **7 casos nuevos de integración** aún no ejecutados; véase [documento 84](84-composicion-ccwb-simulacion-autenticada.md). El contrato no ha sido conectado a HTTP/SSE ni a ninguna mutación de partida.
+
+
+## Blindaje de la proyección pública (12/11/2026)
+
+La salida del reductor interno se ha limitado a identificadores, bandos
+y coordenadas: `simulatedBoard={units:[{id,side,col,row}],leaders:[]}`.
+Ya no se copia `state.board` completo y, por tanto, no se proyectan
+metadatos extra que el diario privado pudiera contener en unidades o tablero.
+Se ha añadido un caso de regresión que inyecta campos marcados privados
+y verifica que no aparecen en la respuesta.
+
+La suite de composición pura tiene ahora **12 casos** y la del reductor,
+otros **12**. Su evaluación conjunta fue **24/24** en un V8 aislado,
+modo estricto, con los módulos de reglas de esta rama. Los imports nativos
+`node:crypto`/`node:util` no ejercitados y `structuredClone`
+fueron sustituidos; **no es evidencia de Node.js nativo ni de SQLite**.
+La integración CCWB dispone ahora de ocho casos nuevos **escritos pero
+pendientes de ejecución nativa** (documento 84).
