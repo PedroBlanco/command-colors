@@ -814,11 +814,24 @@ test('CCWB draft: advancing the journal invalidates old candidate without exposi
   stageForLeader(store,tokens.A,{orderUnit:true});
   assert.equal(store.saveExperimentalSectionMovementDraft(
     saveDraftRequest(tokens.A),movementContext()).status,200);
+  const db=app.unsafeTestDatabase();
+  const readRow=()=>db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  assert.equal(Object.hasOwn(JSON.parse(readRow().private_state),
+    'ancientsSectionMovementDraft'),true);
   const ended=store.dispatchExperimentalSectionHistory({
     sessionToken:tokens.A,type:'END_EXPERIMENTAL_TURN',expectedRevision:2,
     idempotencyKey:'turn_end_after_draft'
   });
   assert.equal(ended.status,200);
+  // Cleanup and journal advance happen under the same writer transaction.
+  const after=readRow();
+  assert.equal(Object.hasOwn(JSON.parse(after.private_state),
+    'ancientsSectionMovementDraft'),false);
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,type:'END_EXPERIMENTAL_TURN',expectedRevision:2,
+    idempotencyKey:'turn_end_after_draft'
+  }).code,'ALREADY_APPLIED');
+  assert.deepEqual(readRow(),after);
   assert.equal(store.viewExperimentalSectionMovementDraft({
     sessionToken:tokens.A}).draft,null);
   assert.equal(store.viewExperimentalSectionMovementDraft({
@@ -854,5 +867,33 @@ test('CCWB draft: session is revalidated under BEGIN IMMEDIATE and a WAL reader 
       assert.equal(checks,2);
     } finally {writer.exec('ROLLBACK');}
   } finally {app.identity.resolveSession=original;}
+  assert.equal(db.isTransaction,false);
+}));
+
+
+test('CCWB draft: a denied or stale journal command preserves the private draft bytes',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  assert.equal(store.saveExperimentalSectionMovementDraft(
+    saveDraftRequest(tokens.A),movementContext()).code,'SECTION_LAB_DRAFT_SAVED');
+  const db=app.unsafeTestDatabase();
+  const read=()=>db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?')
+    .get(matchId);
+  const before=read();
+  const denied=store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.B,type:'END_EXPERIMENTAL_TURN',expectedRevision:2,
+    idempotencyKey:'turn_wrong_actor'
+  });
+  assert.equal(denied.code,'NOT_YOUR_TURN');
+  assert.deepEqual(read(),before);
+  const stale=store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,type:'END_EXPERIMENTAL_TURN',expectedRevision:1,
+    idempotencyKey:'turn_stale_draft'
+  });
+  assert.equal(stale.code,'STALE_REVISION');
+  assert.deepEqual(read(),before);
+  assert.equal(store.viewExperimentalSectionMovementDraft({
+    sessionToken:tokens.A}).draft.draftRevision,1);
   assert.equal(db.isTransaction,false);
 }));
