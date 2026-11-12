@@ -212,3 +212,38 @@ test('HTTP: malformed internal events fail closed instead of serializing a priva
   assert.deepEqual(response.body,{code:'SERVICE_UNAVAILABLE'});
   assert.equal(response.raw.includes('DO_NOT_LEAK'),false);
 }));
+
+
+test('HTTP: match, events and commands request a deny-on-read private lab snapshot',()=>fixture(async({app,tokens,matchId,start})=>{
+  const real=app.getStore(matchId);
+  assert.equal(real.initializeExperimentalSectionHistory({
+    sessionToken:tokens.alice,trustedSetup:setup()
+  }).status,201);
+  const readFlags=[];
+  const filtered={
+    view:(actor,options)=>{
+      readFlags.push(options?.denyExperimentalLab);
+      assert.equal(options?.denyExperimentalLab,true,
+        'HTTP must request a private-lab-denying SQLite read snapshot');
+      return real.view(actor,options);
+    },
+    publicEvents:(...args)=>real.publicEvents(...args),
+    dispatch:(...args)=>real.dispatch(...args)
+  };
+  const {origin}=await start({storeFactory:()=>filtered});
+  const routes=[
+    ['GET',`/api/matches/${matchId}`],
+    ['GET',`/api/matches/${matchId}/events`],
+    ['POST',`/api/matches/${matchId}/commands`]
+  ];
+  for(const [method,path] of routes){
+    const response=await api(origin,path,tokens.alice,{
+      method,...(method==='POST'?{body:{type:'pass_demo_turn',expectedRevision:0,
+        idempotencyKey:'safe_private_view_001'}}:{})
+    });
+    assert.equal(response.status,409);
+    assert.deepEqual(response.body,{code:'SECTION_LAB_INTERNAL_ONLY'});
+    assert.doesNotMatch(response.raw,/yourHand|privateJournal|card_a_left/);
+  }
+  assert.deepEqual(readFlags,[true,true,true]);
+}));
