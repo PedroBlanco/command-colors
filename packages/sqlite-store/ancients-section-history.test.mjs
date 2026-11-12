@@ -498,3 +498,104 @@ test('CCWB mode exclusivity: deck initialization after active lab remains blocke
   assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
   assert.equal(db.isTransaction,false);
 }));
+
+
+/** Leader preview stays in the private authenticated CCWB laboratory. */
+function stageForLeader(store,token){
+  const lab=setup();
+  lab.board.leaders=[
+    {id:'leaderA',side:'A',col:2,row:4},
+    {id:'leaderB',side:'B',col:10,row:4}
+  ];
+  assert.equal(store.initializeExperimentalSectionHistory({
+    sessionToken:token,trustedSetup:lab
+  }).status,201);
+  const card=store.viewExperimentalSectionHistory({sessionToken:token})
+    .view.yourHand[0].instanceId;
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    sessionToken:token,type:'PLAY_SECTION_CARD',expectedRevision:0,
+    idempotencyKey:'leader_preview_card_01',cardInstanceId:card
+  }).status,200);
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    sessionToken:token,type:'ASSIGN_SECTION_ORDERS',expectedRevision:1,
+    idempotencyKey:'leader_preview_orders_01',unitIds:[],leaderIds:['leaderA']
+  }).status,200);
+}
+const leaderRequest=(sessionToken,extra={})=>({
+  sessionToken,expectedRevision:2,leaderId:'leaderA',
+  path:[{col:3,row:4}],...extra
+});
+
+test('CCWB composition: preview of ordered leader is private and never persists a move',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A);
+  const db=app.unsafeTestDatabase();
+  const before={
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all()
+  };
+  const candidate=store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.A),{terrain:[]});
+  assert.equal(candidate.status,200);
+  assert.equal(candidate.code,'SECTION_LAB_LEADER_MOVEMENT_PREVIEW');
+  assert.equal(candidate.preview.status,'CANDIDATE');
+  assert.equal(candidate.preview.detachesFromUnit,true);
+  assert.equal(candidate.preview.movementAuthorized,false);
+  assert.equal(candidate.preview.attackAuthorized,false);
+  assert.equal(candidate.preview.stateChanged,false);
+  assert.equal(JSON.stringify(candidate).includes('card_a_left'),false);
+  assert.equal(store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.B),{terrain:[]}).preview.reason,'NOT_ACTING_PLAYER');
+  assert.equal(store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.outsider),{terrain:[]}).code,'NOT_FOUND');
+  const after={
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),
+    commands:db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all()
+  };
+  assert.deepEqual(after,before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB composition: leader preview binds session and membership in read snapshot',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A);
+  const other=connect();
+  other.identity.logOut(tokens.A);
+  assert.equal(store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.A),{terrain:[]}).code,'UNAUTHENTICATED');
+  const resumed=app.identity.logIn({handle:'alice',password:PASSWORD});
+  const again=await resumed;
+  assert.equal(again.ok,true);
+  const second=store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(again.token),{terrain:[]});
+  assert.equal(second.status,200);
+  assert.equal(second.preview.movementAuthorized,false);
+  other.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?').run(matchId);
+  assert.equal(store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.B),{terrain:[]}).code,'NOT_FOUND');
+}));
+
+test('CCWB composition: leader preview rejects injection and missing trusted terrain',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A);
+  const invalid=[
+    leaderRequest(tokens.A,{actor:'B'}),
+    leaderRequest(tokens.A,{leaderId:'__proto__'}),
+    leaderRequest(tokens.A,{path:[{col:-1,row:4}]}),
+    leaderRequest(tokens.A,{expectedRevision:1.5}),
+    {...leaderRequest(tokens.A),path:[{col:3,row:4,side:'B'}]}
+  ];
+  for(const request of invalid)
+    assert.equal(store.precheckExperimentalSectionLeaderMovement(
+      request,{terrain:[]}).code,'INVALID_SECTION_LAB_LEADER_REQUEST');
+  assert.throws(()=>store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.A),{}),/INVALID_STAGED_LEADER_CONTEXT/);
+  const denied=store.precheckExperimentalSectionLeaderMovement(
+    leaderRequest(tokens.A,{leaderId:'leaderB'}),{terrain:[]});
+  assert.equal(denied.preview.reason,'LEADER_NOT_ORDERED');
+}));
