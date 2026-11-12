@@ -9,6 +9,7 @@ La API obtenía `identity.resolveSession(token)`, `invitations.getMatch(...)` y 
 ## Contrato implementado
 
 - `view(actor,{denyExperimentalLab:true})` conserva el contrato interno anterior: selección de modalidad y proyección dentro de una instantánea `BEGIN`/SELECT/`COMMIT`; devuelve `SECTION_LAB_INTERNAL_ONLY` antes de calcular una mano de laboratorio.
+- `invitations.getMatch({sessionToken,matchId})` consulta **sesión, pertenencia, revision del lobby y lista de participantes** en una instantánea WAL única. Revocaciones o cambios de pertenencia confirmados por otra conexión antes de la primera lectura se reflejan en la respuesta; la transacción finaliza antes de responder.
 - `viewForSession({sessionToken})` **siempre deniega el laboratorio** y consulta la sesión, su vencimiento y la pertenencia a la partida **dentro de la misma instantánea WAL** que emplea para seleccionar el modo, reconstruir la vista y determinar el bando. No acepta el bando del cliente. Fallos: `401 UNAUTHENTICATED`, `404 NOT_FOUND`, `409 SECTION_LAB_INTERNAL_ONLY`.
 - `publicEventsForSession({sessionToken})` vincula sesión, pertenencia, modalidad y consulta de eventos públicos en su propia instantánea, aunque el estado se haya consultado anteriormente. Mantiene el comportamiento interno de `publicEvents(actor,{denyExperimentalLab:true})` para adaptadores y pruebas precedentes.
 - El gateway utiliza los métodos de sesión cuando los proporciona el almacén real. En los adaptadores antiguos conserva los métodos basados en `actor`. GET de partida, GET de eventos, POST de comandos y negociación SSE deniegan el laboratorio antes de serializar información. Un rechazo de sesión se convierte en 401/404, sin exponer objetos privados ni detalles de SQLite.
@@ -23,9 +24,11 @@ Una revocación que **se ha confirmado antes de la primera lectura del snapshot*
 
 ## Pruebas y evidencia
 
-La PR #93 tenía cinco casos nuevos de snapshot/laboratorio en tres suites. Esta ampliación añade **12 casos de prueba** (6 SQLite, 4 HTTP y 2 SSE) dentro de suites existentes:
+La PR #93 tenía cinco casos nuevos de snapshot/laboratorio en tres suites. Esta ampliación añade **14 casos de prueba** (8 SQLite, 4 HTTP y 2 SSE) dentro de suites existentes:
 
-- SQLite: sesión vigente y bando correcto, usuario ajeno, revocación desde segunda conexión WAL, pérdida de pertenencia, laboratorio sin exposición de mano, guardia transaccional de comandos demo/mazo e inicialización autenticada.
+- SQLite: sesión vigente y bando correcto, usuario ajeno, revocación desde segunda conexión WAL, pérdida de pertenencia, laboratorio sin exposición de mano, guardia transaccional de comandos demo/mazo e inicialización autenticada. También se verifica la lectura de lobby tras logout desde otra conexión o cambio de guest confirmado.
+
+Total nuevos en esta PR: **19 casos** (5 iniciales y 14 adicionales) sobre las **71 suites existentes**.
 - HTTP: revocación entre lobby y lectura de partida/eventos/comandos, revocación entre vista y consulta de eventos, revocación entre vista y escritura, y revocación durante inicialización de mazo. Nunca se publican manos ni eventos privados.
 - SSE: preferencia obligatoria de vista vinculada a sesión y cierre al revocar durante una espera asíncrona de almacenamiento.
 
