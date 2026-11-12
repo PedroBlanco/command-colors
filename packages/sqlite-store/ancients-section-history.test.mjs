@@ -543,3 +543,66 @@ test('CCWB generic public read: second SQLite connection activates lab before ne
     {status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
   assert.equal(app.unsafeTestDatabase().isTransaction,false);
 }));
+
+
+test('SEC-001: session-bound ordinary reads authorize a live side and reject outsiders',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const a=store.viewForSession({sessionToken:tokens.A});
+  const b=store.viewForSession({sessionToken:tokens.B});
+  assert.equal(a.you,'A');assert.equal(b.you,'B');
+  assert.equal(a.matchId,matchId);assert.equal(b.matchId,matchId);
+  assert.deepEqual(a.yourHand,['PRIVATE_A_1','PRIVATE_A_2']);
+  assert.equal(JSON.stringify(b).includes('PRIVATE_A_1'),false);
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.A}),[]);
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.outsider}),
+    {status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.outsider}),
+    {status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.viewForSession({sessionToken:'invalid'}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:'invalid'}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.equal(db.isTransaction,false);
+}));
+
+test('SEC-001: committed logout on another WAL connection denies next public view and events',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),other=connect();
+  assert.equal(store.viewForSession({sessionToken:tokens.A}).you,'A');
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.A}),[]);
+  other.identity.logOut(tokens.A);
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.A}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.A}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.equal(store.viewForSession({sessionToken:tokens.B}).you,'B');
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('SEC-001: same-snapshot membership change revokes session-bound guest projection',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  assert.equal(store.viewForSession({sessionToken:tokens.B}).you,'B');
+  const writer=connect().unsafeTestDatabase();
+  writer.prepare('UPDATE matches SET guest_id=NULL,lobby_revision=lobby_revision+1 WHERE id=?')
+    .run(matchId);
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.B}),
+    {status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.B}),
+    {status:404,code:'NOT_FOUND'});
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('SEC-001: session-bound public APIs never project a laboratory hand',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  assert.equal(store.initializeExperimentalSectionHistory({
+    sessionToken:tokens.A,trustedSetup:setup()
+  }).status,201);
+  for(const sessionToken of [tokens.A,tokens.B]){
+    const state=store.viewForSession({sessionToken});
+    assert.deepEqual(state,{status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+    assert.deepEqual(store.publicEventsForSession({sessionToken}),
+      {status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+    assert.equal(JSON.stringify(state).includes('yourHand'),false);
+  }
+  assert.equal(store.viewExperimentalSectionHistory({sessionToken:tokens.A}).status,200);
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
