@@ -79,3 +79,27 @@ Además de las 54 pruebas SQLite y de las comprobaciones aisladas de V8 ya descr
 
 
 **Ejecución conjunta adicional de ambos ensayos nativos del transporte** (servidor HTTP con servicios simulados, más aislamiento directo SSE): **16/16 PASS, 0 FAIL, 0 SKIP**, Node 22.16.0, exit 0. TAP SHA-256 `4f2a5fd7608873158214c4f53cd537f072aeff547391b709772a21c65a6cfd8c`. Esta es una ejecución única de esas 16 pruebas; no incluye los 7 tests integrados HTTP + SQLite todavía pendientes, ni equivale a la regresión completa.
+
+
+## Ejecutar la validación pendiente en Windows 11 sin afectar a `main`
+
+Se incorpora `scripts/validate-ccwb-http.ps1`, orquestador PowerShell **sin WSL ni GitHub Actions**, que reutiliza `scripts/run-test-suite.mjs`. Solo consume datos sintéticos de pruebas y no inicia un servicio persistente ni despliega nada. Requiere Node.js 22.16.0 o superior.
+
+Para evitar modificar el checkout habitual del usuario, se recomienda probar desde un **worktree independiente** de la rama de esta PR:
+
+```powershell
+git fetch origin
+git worktree add ..\command-colors-ccwb-91 origin/fix/i4-ccwb-lab-http-read-boundary
+Set-Location ..\command-colors-ccwb-91
+.\scripts\validate-ccwb-http.ps1
+```
+
+El script ejecuta de una vez **cinco suites prioritarias**: la HTTP + SQLite de siete casos, SSE de seis casos, composición real SQLite, puente y prevalidación de movimiento. Consulta el manifiesto existente antes de lanzar cada archivo, conserva el código de salida y crea un informe TAP inmutable en `.local-test-reports/ccwb-http-AAAAmmdd-HHMMSS-fff.tap`. El ejecutor nativo imprime también el **SHA-256** del informe. Si alguna prueba falla, se detiene con código distinto de cero y no continúa silenciosamente.
+
+Para ampliar a **todas las suites inventariadas** solo si las cinco prioritarias pasan:
+
+```powershell
+.\scripts\validate-ccwb-http.ps1 -FullRegression
+```
+
+Este modo genera dos informes independientes —prioritario y global— y nunca sobrescribe uno anterior; `.local-test-reports/` está excluido de Git. El resultado **solo debe considerarse validado** cuando lo ejecute un entorno real Windows/Node con los módulos descargados y se revisen los códigos de salida. La creación del script no demuestra que hayan pasado estas pruebas en Windows.
