@@ -71,3 +71,35 @@ escritos de composición SQLite**, no siete. **No se ha ejecutado
 `node:test` con SQLite/WAL real** sobre este árbol, ni la regresión
 de las 79 suites. La PR continúa en borrador y no debe integrarse en
 `main` por estas comprobaciones parciales.
+
+
+## Barrera HTTP — regresión añadida (13/11/2026)
+
+La simulación autenticada permanece exclusivamente en los métodos internos del
+almacén. Se han añadido **dos tests de regresión de API HTTP** a la suite
+existente `packages/local-api/gateway.test.mjs` para preservar esta frontera
+aunque cambien posteriormente el reductor o el router:
+
+1. Un actor autenticado intenta usar GET y POST contra cuatro variantes
+   de ruta (`lab/one-hex`, `one-hex`, `preview` y el nombre del método
+   interno): deben devolver **404 NOT_FOUND**, sin resolver siquiera un
+   almacén ni llamar al método de simulación.
+2. Con una partida cuyo almacén proyecta `status:'LAB_ONLY'`, dos
+   participantes intentan invocar `precheckExperimentalSectionOneHexIntent`
+   a través de POST `/commands`, así como leer GET de la partida y su
+   colección de eventos. Los tres accesos deben devolver **409
+   SECTION_LAB_INTERNAL_ONLY**; los dobles de prueba fallan inmediatamente
+   si se llama a `dispatch`, `publicEvents` o al método privado.
+
+Se verificó la **sintaxis V8** del archivo de pruebas exacto de GitHub,
+blob `3fbcc652cf14bcb58a50a7eefd7bd2de80fe50a3`; se registran
+**10 casos** en esa suite, incluidos estos dos. **No se ha ejecutado la
+suite con Node.js/HTTP nativos** ni la regresión de 79 suites. No se crea
+ninguna ruta nueva de laboratorio ni se modifica el gateway de producción.
+
+La ejecución nativa de SQLite y HTTP permanece bloqueada en este entorno
+por la falta de checkout y de resolución DNS para GitHub. Hay Node.js
+22.16.0 y `node:sqlite` instalados, pero esa disponibilidad **no
+equivale a haber ejecutado las pruebas**. SEC-001 (#93) y la integración
+completa continúan pendientes antes de cualquier despliegue o fusión en
+`main`.
