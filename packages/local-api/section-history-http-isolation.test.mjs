@@ -247,3 +247,50 @@ test('HTTP: match, events and commands request a deny-on-read private lab snapsh
   }
   assert.deepEqual(readFlags,[true,true,true]);
 }));
+
+
+test('SEC-001 HTTP: logout between lobby check and store lookup denies every public read',async()=>{
+  for(const [method,pathEnd] of [['GET',''],['GET','/events'],['POST','/commands']]){
+    await fixture(async({app,tokens,matchId,start})=>{
+      let revocations=0;
+      const {origin}=await start({storeFactory:id=>{
+        revocations++;
+        app.identity.logOut(tokens.alice);
+        return app.getStore(id);
+      }});
+      const response=await api(origin,`/api/matches/${matchId}${pathEnd}`,tokens.alice,{
+        method,...(method==='POST'?{body:{
+          type:'pass_demo_turn',expectedRevision:0,idempotencyKey:'revoked_before_read_001'
+        }}:{})
+      });
+      assert.equal(revocations,1);
+      assert.equal(response.status,401);
+      assert.deepEqual(response.body,{code:'UNAUTHENTICATED'});
+      assert.doesNotMatch(response.raw,/yourHand|PRIVATE_A|card_a_left|gameRevision/);
+      assert.equal(app.getStore(matchId).view('A').revision,0);
+    });
+  }
+});
+
+test('SEC-001 HTTP: events revalidate session after earlier authorized match view',()=>fixture(async({app,tokens,matchId,start})=>{
+  const real=app.getStore(matchId),calls=[];
+  const {origin}=await start({storeFactory:()=>({
+    viewForSession:request=>{
+      calls.push('view');
+      const response=real.viewForSession(request);
+      app.identity.logOut(request.sessionToken);
+      return response;
+    },
+    publicEventsForSession:request=>{
+      calls.push('events');
+      return real.publicEventsForSession(request);
+    },
+    view:()=>{throw new Error('UNSAFE_ACTOR_VIEW_CALLED');},
+    publicEvents:()=>{throw new Error('UNSAFE_ACTOR_EVENTS_CALLED');}
+  })});
+  const response=await api(origin,`/api/matches/${matchId}/events`,tokens.alice);
+  assert.equal(response.status,401);
+  assert.deepEqual(response.body,{code:'UNAUTHENTICATED'});
+  assert.deepEqual(calls,['view','events']);
+  assert.doesNotMatch(response.raw,/yourHand|gameRevision|PRIVATE_A/);
+}));
