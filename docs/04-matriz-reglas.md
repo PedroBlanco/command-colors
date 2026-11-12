@@ -469,4 +469,4 @@ del manifiesto, pendiente de ejecución nativa Node.js y de regresión
 integral. El siguiente hito es la transición oficial segura y
 reproducible, con validación de escenario, revisión, órdenes, efectos,
 comandos y transacción de persistencia. Véase
-[contrato del reductor de laboratorio](80-reductor-movimientos-lab-un-hexagono.md).
+[contrato del reductor de laboratorio](81-reductor-movimientos-lab-un-hexagono.md).
