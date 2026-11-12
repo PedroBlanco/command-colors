@@ -37,7 +37,7 @@ Un resultado favorable indica `status:'LAB_REDUCTION_CANDIDATE'`, `moveCount`, u
 
 ## Pruebas
 
-Se añade `packages/ancients-rules/clear-lab-movement-reducer.test.mjs` con **11 casos**:
+Se añadió inicialmente `packages/ancients-rules/clear-lab-movement-reducer.test.mjs` con **11 casos** (ahora **12**, tras añadir la regresión de privacidad indicada al final):
 
 - Movimiento válido de una infantería, inmutabilidad de entrada y salida y banderas de no autorización.
 - Movimiento secuencial de dos unidades expresamente ordenadas.
@@ -49,7 +49,7 @@ Se añade `packages/ancients-rules/clear-lab-movement-reducer.test.mjs` con **11
 - Atomicidad de la **proyección**: si falla la segunda ruta no queda un primer movimiento parcial.
 - Resultado determinista en evaluaciones independientes.
 
-**Evidencia actual:** **11/11** evaluaciones correctas al reconstruir dependencias puras y la suite desde los archivos reales recuperados de GitHub dentro de V8 aislado. Blobs Git SHA-1: módulo `e5eda99473411fc74beacac25a93cef4b130a906`, suite `71743ea6c38563a89bba9c0b97ff473ee0138e4e`. El digest SHA-256 se sustituyó en una dependencia de auditoría no utilizada por el reductor. **Esta comprobación no equivale a Node.js nativo, SQLite ni a la regresión total.** Quedó registrada inicialmente como suite **78** tras la consolidación con las 13 pruebas del contrato de entrada; la posterior composición privada registra la **79**.
+**Evidencia histórica de la primera versión:** **11/11** evaluaciones correctas al reconstruir dependencias puras y la suite desde los archivos reales recuperados de GitHub dentro de V8 aislado. Blobs Git SHA-1: módulo `e5eda99473411fc74beacac25a93cef4b130a906`, suite `71743ea6c38563a89bba9c0b97ff473ee0138e4e`. El digest SHA-256 se sustituyó en una dependencia de auditoría no utilizada por el reductor. **Esta comprobación no equivale a Node.js nativo, SQLite ni a la regresión total.** Quedó registrada inicialmente como suite **78** tras la consolidación con las 13 pruebas del contrato de entrada; la posterior composición privada registra la **79**.
 
 ## Próximo hito
 
