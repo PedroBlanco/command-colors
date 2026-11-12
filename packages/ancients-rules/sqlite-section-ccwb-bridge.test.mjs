@@ -5,6 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createSqliteAncientsSectionBridge as create,hasExperimentalSectionHistory as hasMode} from './sqlite-section-ccwb-bridge.mjs';
+import {precheckStagedAncientsMovement} from './staged-movement-preflight.mjs';
 
 const MATCH='123e4567-e89b-42d3-a456-426614174000';
 const setup=()=>({cardInstances:[
@@ -299,4 +300,31 @@ test('CCWB: passing authorization guard is checked exactly once inside transacti
  }).status,200);
  assert.equal(calls,2);
  assert.equal(root.bridge.view('A').revision,1);
+}));
+
+test('CCWB: staged movement screen reads private persisted orders without mutations',()=>fixture(({root})=>{
+ root.bridge.initialize('A',setup());play(root);order(root);
+ const rowBefore=root.getRow(MATCH);
+ const eventsBefore=root.db.prepare('SELECT * FROM game_events ORDER BY sequence').all();
+ const commandsBefore=root.db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all();
+ const state=JSON.parse(rowBefore.private_state).ancientsSectionHistoryLab.state;
+ const trusted={unitTypes:{unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'},terrain:[]};
+ const proposal=precheckStagedAncientsMovement({
+   state,actor:'A',expectedRevision:2,unitId:'unitA',
+   path:[{col:3,row:4}],serverContext:trusted
+ });
+ assert.equal(proposal.status,'CANDIDATE');
+ assert.equal(proposal.movementAuthorized,false);
+ assert.equal(proposal.attackAuthorized,false);
+ assert.equal(proposal.stateChanged,false);
+ const denied=precheckStagedAncientsMovement({
+   state,actor:'A',expectedRevision:2,unitId:'unitB',
+   path:[{col:9,row:4}],serverContext:trusted
+ });
+ assert.equal(denied.reason,'UNIT_NOT_ORDERED');
+ assert.deepEqual(root.getRow(MATCH),rowBefore);
+ assert.deepEqual(root.db.prepare('SELECT * FROM game_events ORDER BY sequence').all(),eventsBefore);
+ assert.deepEqual(root.db.prepare('SELECT * FROM game_commands ORDER BY committed_revision').all(),commandsBefore);
+ assert.equal(root.bridge.view('A').revision,2);
+ assert.equal(root.bridge.view('B').revision,2);
 }));
