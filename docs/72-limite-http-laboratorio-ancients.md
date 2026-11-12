@@ -61,3 +61,18 @@ La suite `section-history-http-isolation.test.mjs` dispone ahora de **7 casos**,
 Se ejecutaron **seis comprobaciones aisladas** del código exacto de `gateway.mjs`, cargado desde el blob Git `e15befeea957506747e4db9fca6d506629ec94ef`, con un servidor y servicios simulados en el proceso de evaluación JS (no socket TCP ni SQLite). **6/6 comportamiento esperado**: GET laboratorio 409, eventos laboratorio 409, comandos laboratorio 409, resultado de eventos interno inesperado 503 sin campo privado, bloqueo 409 al detectar modalidad de laboratorio en la lectura final y array normal de eventos 200. No se llamó al ejecutor de comandos. También se ejercitó aisladamente el `startRevisionStream` auténtico (blob `bc24e384a2610028d0e0e3d5c5c0ea166b52953a`) con planificador y respuesta falsos: al pasar a `LAB_ONLY`, cierra la conexión y no transmite manos.
 
 Estas comprobaciones son **revisiones funcionales aisladas**, no un resultado del ejecutor Node `node --test` ni prueba de extremo a extremo. La suite HTTP/SSE con Node real y la regresión global de 70 suites **siguen pendientes**.
+
+
+## Pruebas nativas complementarias de transporte (12/11/2026)
+
+Además de las 54 pruebas SQLite y de las comprobaciones aisladas de V8 ya descritas, se reconstruyeron **tres módulos originales del servidor** directamente a partir de GitHub, cotejando los hashes Git de sus bytes locales:
+
+- `packages/local-api/gateway.mjs`: `e15befeea957506747e4db9fca6d506629ec94ef`.
+- `packages/local-api/browser-session.mjs`: `0d23fc813d515bc3a618752426f4f0f0064852b9`.
+- `packages/local-api/revision-stream.mjs`: `bc24e384a2610028d0e0e3d5c5c0ea166b52953a`.
+
+**Pruebas HTTP nativas realmente ejecutadas:** `node --test` contra el servidor **HTTP original** escuchando en `127.0.0.1`, con peticiones `fetch` reales, incluyendo cookies y SSE. Se usaron *dobles de identidad y almacenamiento* para no necesitar una base SQLite ni cuentas productivas. Resultado: **10/10 PASS, 0 FAIL, 0 SKIP**, Node.js 22.16.0/Linux nativo. Cobertura: partida ordinaria, vista privada denegada a ambos participantes, eventos y comandos genéricos bloqueados, denegación en una simulación de carrera, rechazo 503 del objeto de eventos privado inesperado, eventos públicos normales, usuario externo, sesión revocada, nueva conexión SSE bloqueada y cierre de una conexión SSE preexistente al activarse el laboratorio. Informe TAP SHA-256: `852c95eacbca120d82d0f2f664355be2e3e418286f45ce969670dd7da89d4ea1`.
+
+**Pruebas nativas directas SSE realmente ejecutadas:** se añadió `packages/local-api/revision-stream-lab-isolation.test.mjs` al repositorio. Usa el módulo SSE original y simula exclusivamente la respuesta y los servicios de identidad, pero **temporizadores y Node.js reales**: **6/6 PASS**, sin errores ni omisiones. Casos: revisión pública, modo laboratorio activo antes de conectar, activación durante la conexión, logout, pérdida de pertenencia y revisión inválida. El test publicado coincide byte a byte con el test ejecutado (blob `648bf92b59c2ef9e5c75946e10cbebbf9f2b4b5d`); informe TAP SHA-256: `572adb7d0e03f40b7dd77d1f9e9d52d84302bc48c7c0d45c615567bb869f113c`.
+
+**Límite importante:** ninguna de estas dos pruebas del transporte incluye el almacenamiento SQLite real del CCWB en el mismo proceso HTTP. La suite `section-history-http-isolation.test.mjs` con **siete pruebas integradas HTTP + SQLite** continúa **sin ejecutar**. Tampoco se ha realizado la regresión total en Windows 11 ni en dos navegadores. El inventario crece a **71 suites**. Mantener esta PR en borrador hasta completar la validación integrada.
