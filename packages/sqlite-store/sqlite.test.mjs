@@ -207,5 +207,8 @@ test('SEC-001: lobby read denies session revoked by a second WAL connection',()=
   assert.deepEqual(first.invitations.getMatch({sessionToken:alice,matchId:id}),
     {ok:false,code:'UNAUTHENTICATED'});
   assert.equal(first.invitations.getMatch({sessionToken:bob,matchId:id}).ok,true);
+  // Keep 401 precedence even when the requested match ID is malformed.
+  assert.deepEqual(first.invitations.getMatch({sessionToken:'invalid',matchId:'invalid'}),
+    {ok:false,code:'UNAUTHENTICATED'});
   assert.equal(first.unsafeTestDatabase().isTransaction,false);
 }));
