@@ -4,7 +4,9 @@ import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as app
   from './section-history-journal.mjs';
 import {precheckStagedAncientsMovement as preview,
   precheckStagedAncientsLeaderMovement as leaderPreview,
-  precheckStagedAncientsMovementSequence as sequencePreview} from './staged-movement-preflight.mjs';
+  precheckStagedAncientsMovementSequence as sequencePreview,
+  precheckStagedAncientsMovementEvidence as evidencePreview} from './staged-movement-preflight.mjs';
+import {verifyAncientsCandidateJournal} from './movement-candidate-journal.mjs';
 
 const at=(col,row)=>({col,row});
 const setup=()=>init({
@@ -256,5 +258,78 @@ test('staged sequence requires complete trusted profiles and does not accept ext
   assert.throws(()=>checkSequence(state,[leaderMove()],{serverContext:{terrain:[]}}),
     /INVALID_STAGED_MOVEMENT_CONTEXT/);
   assert.throws(()=>checkSequence(state,[{...leaderMove(),actor:'B'}]),
+    /INVALID_SEQUENCE_CONTEXT/);
+});
+
+
+const evidenceMatch='123e4567-e89b-42d3-a456-426614174000';
+const evidenceActions=()=>[leaderMove(),unitMove()];
+const checkEvidence=(state,overrides={})=>evidencePreview({
+  matchId:evidenceMatch,state,actor:'A',expectedRevision:state.revision,
+  actions:evidenceActions(),serverContext:context(),...overrides
+});
+
+test('candidate evidence uses verified staged identities and a read-only sequence',()=>{
+  const {state}=readyLeader({includeUnit:true}),before=structuredClone(state);
+  const r=checkEvidence(state);
+  assert.equal(r.status,'CANDIDATE_EVIDENCE');
+  assert.equal(r.journal.entries.length,2);
+  assert.equal(r.journal.baseRevision,2);
+  assert.equal(r.journal.actor,'A');
+  assert.equal(r.journal.entries[0].detachedFromUnit,'unitA');
+  assert.equal(r.journal.movementAuthorized,false);
+  assert.equal(r.journal.stateChanged,false);
+  assert.equal(r.movementAuthorized,false);
+  const units=state.board.units.map(u=>({...u,type:context().unitTypes[u.id]}));
+  assert.equal(verifyAncientsCandidateJournal({
+    journal:r.journal,matchId:evidenceMatch,actor:'A',baseRevision:state.revision,
+    units,leaders:state.board.leaders,terrain:context().terrain,
+    orderedUnitIds:['unitA'],orderedLeaderIds:['leaderA'],
+    actions:evidenceActions()
+  }),true);
+  assert.deepEqual(state,before);
+});
+
+test('evidence rejects wrong actor, stale revision and missing staged orders without trace',()=>{
+  const {initial,played,state}=readyLeader({includeUnit:true});
+  for(const r of [
+    checkEvidence(initial),checkEvidence(played),
+    checkEvidence(state,{actor:'B'}),
+    checkEvidence(state,{actor:'invalid'}),
+    checkEvidence(state,{expectedRevision:1})
+  ]){
+    assert.equal(r.status,'BLOCKED');
+    assert.equal(r.journal,null);
+    assert.equal(r.movementAuthorized,false);
+    assert.equal(r.stateChanged,false);
+  }
+});
+
+test('evidence rejects unstaged units, invalid order snapshot and reversed leader move',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const onlyLeader=readyLeader().state;
+  for(const r of [
+    checkEvidence(onlyLeader),
+    checkEvidence(state,{actions:[unitMove(),leaderMove()]})
+  ]){
+    assert.equal(r.status,'BLOCKED');
+    assert.equal(r.journal,null);
+  }
+  const forged=structuredClone(state);
+  forged.orderSnapshot.pieces[0].row=0;
+  assert.equal(checkEvidence(forged).reason,'ORDER_LEDGER_MISMATCH');
+  assert.equal(checkEvidence(forged).journal,null);
+});
+
+test('evidence binds terrain and match revision, not caller-provided card or actor',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const one=checkEvidence(state);
+  const other=checkEvidence(state,{serverContext:{
+    ...context(),terrain:[{col:9,row:8,kind:'HILL'}]
+  }});
+  assert.equal(other.status,'CANDIDATE_EVIDENCE');
+  assert.notEqual(one.journal.contextDigest,other.journal.contextDigest);
+  assert.throws(()=>checkEvidence(state,{matchId:'bad'}),/INVALID_CANDIDATE_JOURNAL_SCOPE/);
+  assert.throws(()=>checkEvidence(state,{actions:[{...leaderMove(),actor:'B'}]}),
     /INVALID_SEQUENCE_CONTEXT/);
 });
