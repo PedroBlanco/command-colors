@@ -211,6 +211,9 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const result = typeof store.initializeCommandDeckForSession === 'function'
           ? await store.initializeCommandDeckForSession({sessionToken:token})
           : await store.initializeCommandDeck(actor);
+        // Never return a private deck projection belonging to another match.
+        if (result.view && result.view.matchId !== matchId)
+          return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
         return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
       }
       if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
