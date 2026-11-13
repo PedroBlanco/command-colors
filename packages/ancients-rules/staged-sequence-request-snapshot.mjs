@@ -8,6 +8,9 @@ import {inBounds} from '../hex-grid/hex.mjs';
 
 const ID=/^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const ROOT=Object.freeze(['sessionToken','expectedRevision','actions']);
+const DRAFT_ROOT=Object.freeze(['sessionToken','expectedRevision',
+  'expectedDraftRevision','idempotencyKey','actions']);
+const DRAFT_KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const ACTION=Object.freeze(['kind','id','path']);
 const COORD=Object.freeze(['col','row']);
 
@@ -73,6 +76,31 @@ export function snapshotStagedSequenceRequest(request){
     if(actions===null)return null;
     return Object.freeze({
       sessionToken:r.sessionToken,expectedRevision:r.expectedRevision,actions
+    });
+  }catch{
+    return null;
+  }
+}
+
+/**
+ * Immutable PRIVATE DRAFT WRITE input. The caller authenticates the captured
+ * token and validates the replay under BEGIN IMMEDIATE before saving.
+ * This only snapshots untrusted data: never a commit or rule authorization.
+ */
+export function snapshotStagedMovementDraftRequest(request){
+  try {
+    const r=record(request,DRAFT_ROOT);
+    if(!r||typeof r.sessionToken!=='string'||
+       !Number.isSafeInteger(r.expectedRevision)||r.expectedRevision<0||
+       !Number.isSafeInteger(r.expectedDraftRevision)||r.expectedDraftRevision<0||
+       typeof r.idempotencyKey!=='string'||!DRAFT_KEY.test(r.idempotencyKey))
+      return null;
+    const actions=dense(r.actions,1,117,action);
+    if(actions===null)return null;
+    return Object.freeze({
+      sessionToken:r.sessionToken,expectedRevision:r.expectedRevision,
+      expectedDraftRevision:r.expectedDraftRevision,
+      idempotencyKey:r.idempotencyKey,actions
     });
   }catch{
     return null;
