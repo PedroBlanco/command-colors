@@ -1162,3 +1162,44 @@ test('CCWB one-hex simulation: private fixture metadata cannot leak through boar
   assert.deepEqual(db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId),before);
   assert.equal(db.isTransaction,false);
 }));
+
+
+test('CCWB one-hex simulation: mutation after shape check cannot retarget session, unit or revision',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const request=oneHexIntent(tokens.A);
+  const before=db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId);
+  const resolve=app.identity.resolveSession;
+  let calls=0;
+  try {
+    app.identity.resolveSession=token=>{
+      if(token===tokens.A) {
+        calls++;
+        // Simulate a mutable internal caller changing the original object
+        // between the first shape check and the replay-verified preview.
+        request.sessionToken=tokens.B;
+        request.expectedRevision=0;
+        request.pieceId='unitB';
+        request.path=[{col:9,row:4}];
+        request.idempotencyKey='mutated_request_0001';
+      }
+      return resolve(token);
+    };
+    const response=store.precheckExperimentalSectionOneHexIntent(
+      request,movementContext(),openHexPolicy());
+    assert.equal(calls,1);
+    assert.equal(response.status,200);
+    assert.equal(response.simulation.status,'PRIVATE_LAB_SIMULATION');
+    assert.deepEqual(response.simulation.moves,[{
+      unitId:'unitA',from:{col:2,row:4},to:{col:3,row:4}
+    }]);
+    assert.equal(response.simulation.simulatedBoard.units[0].col,3);
+    assert.equal(response.simulation.canCommit,false);
+    assert.equal(response.boardChanged,false);
+    assert.equal(JSON.stringify(response).includes(tokens.A),false);
+    assert.equal(JSON.stringify(response).includes(tokens.B),false);
+    assert.deepEqual(db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId),before);
+    assert.equal(db.isTransaction,false);
+  } finally {app.identity.resolveSession=resolve;}
+}));
