@@ -11,6 +11,7 @@ import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
 import {previewPrivateOneHexAncientsIntent} from './private-one-hex-intent-preview.mjs';
 import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
+import {previewStagedAncientsOrderBudget} from './staged-order-budget.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence,
@@ -220,6 +221,24 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       boardChanged:false,canCommit:false
     });
   }
+  /**
+   * INTERNAL LAB ONLY: preview used, locked and available section orders
+   * from a replay-verified state. Private order identities never leave this
+   * adapter through any HTTP/SSE route. This is NOT a spend/commit.
+   */
+  function previewOrderBudget(actor,request,trustedContext){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const budget=previewStagedAncientsOrderBudget({
+      state:snapshot,actor,expectedRevision:request.expectedRevision,
+      actions:request.actions,serverContext:trustedContext
+    });
+    return Object.freeze({
+      status:200,code:'SECTION_LAB_ORDER_BUDGET_PREVIEW',
+      budget,movementAuthorized:false,attackAuthorized:false,
+      boardChanged:false,canCommit:false
+    });
+  }
   /** INTERNAL LAB ONLY. Replay verifies the private journal under the
    *  caller's WAL snapshot before building immutable audit evidence.
    *  Never persist or broadcast this trace as an executed movement. */
@@ -257,5 +276,5 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
   }
   return Object.freeze({initialize,view,dispatch,previewMovement,
     previewLeaderMovement,previewMovementSequence,previewBoardProjection,
-    previewMovementEvidence,previewOneHexIntent});
+    previewOrderBudget,previewMovementEvidence,previewOneHexIntent});
 }
