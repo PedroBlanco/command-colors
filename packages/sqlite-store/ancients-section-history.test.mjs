@@ -1838,3 +1838,193 @@ test('CCWB order budget: WAL read survives concurrent writer without exposing dr
   }
   assert.equal(app.unsafeTestDatabase().isTransaction,false);
 }));
+
+const trustedOpenFootScenario=()=>({
+  scope:'SYNTHETIC_OPEN_HEX_V1',
+  ruleset:'ancients-base-3e-2009',
+  unitTypes:{unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'},
+  terrain:[],scenarioExceptions:[]
+});
+const verifiedFootRequest=(token,changes={})=>sequenceRequest(token,[sequenceUnit()],changes);
+
+test('CCWB verified foot core: first step from authenticated replay is read-only',()=>fixture(async({
+  app,connect,matchId,tokens
+})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const read=()=>({
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  });
+  const before=read(),query=verifiedFootRequest(tokens.A);
+  const first=store.precheckExperimentalSectionVerifiedFootCore(
+    query,trustedOpenFootScenario());
+  assert.equal(first.status,200);
+  assert.equal(first.code,'SECTION_LAB_VERIFIED_FOOT_CORE_PREVIEW');
+  assert.equal(first.preview.status,'PRIVATE_CORE_FOOT_PROPOSAL');
+  assert.equal(first.preview.proposal.status,'RULE_TRANSITION_CANDIDATE');
+  assert.equal(first.preview.proposal.nextState.revision,3);
+  assert.deepEqual(first.preview.proposal.nextState.orderLedger,{
+    issuedUnitIds:['unitA'],movedUnitIds:['unitA']
+  });
+  assert.equal(first.preview.proposal.nextState.board.units[0].col,3);
+  for(const key of ['movementAuthorized','officialMovementAuthorized',
+    'attackAuthorized','boardChanged','canCommit'])
+    assert.equal(first[key],false);
+  assert.equal(first.preview.proposal.canCommit,false);
+  assert.equal(first.preview.proposal.dbChanged,false);
+  assert.equal(JSON.stringify(first).includes(tokens.A),false);
+  for(const secret of ['handAtPlay','cardInstanceId','drawPile',
+    'idempotencyKey','ANCIENTS_MOVEMENT_COMMITTED_V1'])
+    assert.equal(JSON.stringify(first).includes(secret),false);
+  assert.deepEqual(connect().getStore(matchId)
+    .precheckExperimentalSectionVerifiedFootCore(query,trustedOpenFootScenario()),first);
+  assert.deepEqual(read(),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB verified foot core: rival, outsider, logout and lost membership never get a proposal',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForMovement(store,tokens.A);
+  const scenario=trustedOpenFootScenario();
+  const rival=store.precheckExperimentalSectionVerifiedFootCore(
+    verifiedFootRequest(tokens.B),scenario);
+  assert.equal(rival.status,200);
+  assert.equal(rival.preview.status,'BLOCKED');
+  assert.equal(rival.preview.proposal,null);
+  assert.equal(rival.preview.reason,'NOT_ACTING_PLAYER');
+  assert.deepEqual(store.precheckExperimentalSectionVerifiedFootCore(
+    verifiedFootRequest(tokens.outsider),scenario),{status:404,code:'NOT_FOUND'});
+  const second=connect();
+  second.identity.logOut(tokens.A);
+  assert.deepEqual(store.precheckExperimentalSectionVerifiedFootCore(
+    verifiedFootRequest(tokens.A),scenario),{status:401,code:'UNAUTHENTICATED'});
+  second.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?')
+    .run(matchId);
+  assert.deepEqual(store.precheckExperimentalSectionVerifiedFootCore(
+    verifiedFootRequest(tokens.B),scenario),{status:404,code:'NOT_FOUND'});
+}));
+
+test('CCWB verified foot core: forged request fields and multiple actions rejected before read',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForMovement(store,tokens.A);
+  for(const patch of [
+    {actor:'A'},{board:{}},{trustedScenario:{}},{expectedRevision:'2'},
+    {idempotencyKey:'fake_request_1'},{actions:[]},
+    {actions:[{...sequenceUnit(),actor:'A'}]},
+    {actions:[{kind:'UNIT',id:'unitA',path:[{col:3,row:4,side:'A'}]}]}
+  ]){
+    assert.deepEqual(store.precheckExperimentalSectionVerifiedFootCore(
+      verifiedFootRequest(tokens.A,patch),trustedOpenFootScenario()),
+      {status:400,code:'INVALID_SECTION_LAB_FOOT_CORE_REQUEST'});
+  }
+  const two=store.precheckExperimentalSectionVerifiedFootCore(
+    sequenceRequest(tokens.A,[sequenceUnit(),sequenceUnit()]),trustedOpenFootScenario());
+  assert.equal(two.status,200);
+  assert.equal(two.preview.status,'BLOCKED');
+  assert.equal(two.preview.reason,'ONLY_ONE_FOOT_STEP_SUPPORTED');
+  assert.equal(two.preview.proposal,null);
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB verified foot core: unsupported scenario or non-foot movement denies all state',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForMovement(store,tokens.A);
+  for(const change of [
+    p=>p.scope='UNKNOWN',
+    p=>p.terrain.push({col:10,row:8,kind:'FOREST'}),
+    p=>p.scenarioExceptions.push('SPECIAL'),
+    p=>p.unitTypes.unitA='ELEPHANT',
+    p=>delete p.unitTypes.unitB
+  ]){
+    const scenario=trustedOpenFootScenario();change(scenario);
+    const r=store.precheckExperimentalSectionVerifiedFootCore(
+      verifiedFootRequest(tokens.A),scenario);
+    assert.equal(r.status,200);
+    assert.equal(r.preview.status,'BLOCKED');
+    assert.equal(r.preview.proposal,null);
+    assert.equal(r.preview.canCommit,false);
+  }
+  const enemy=store.precheckExperimentalSectionVerifiedFootCore(
+    sequenceRequest(tokens.A,[{kind:'UNIT',id:'unitB',path:[{col:9,row:4}]}]),
+    trustedOpenFootScenario());
+  assert.equal(enemy.preview.status,'BLOCKED');
+  assert.equal(enemy.preview.proposal,null);
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB verified foot core: descriptor-captured request survives session-time mutation',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),raw=verifiedFootRequest(tokens.A),gets=[];
+  stageForMovement(store,tokens.A);
+  const original=app.identity.resolveSession;
+  let calls=0;
+  const proxy=new Proxy(raw,{get(){gets.push('GET');throw Error('GET_FORBIDDEN')}});
+  try{
+    app.identity.resolveSession=token=>{
+      if(token===tokens.A){
+        calls++;
+        raw.sessionToken='forged';
+        raw.expectedRevision=77;
+        raw.actions[0].id='unitB';
+        raw.actions[0].path[0].col=12;
+      }
+      return original(token);
+    };
+    const r=store.precheckExperimentalSectionVerifiedFootCore(
+      proxy,trustedOpenFootScenario());
+    assert.equal(r.status,200);
+    assert.equal(r.preview.status,'PRIVATE_CORE_FOOT_PROPOSAL');
+    assert.equal(r.preview.proposal.transition.unitId,'unitA');
+    assert.equal(r.preview.proposal.transition.to.col,3);
+    assert.equal(calls,1);
+  } finally{
+    app.identity.resolveSession=original;
+  }
+  assert.deepEqual(gets,[]);
+  const accessor=verifiedFootRequest(tokens.A);
+  let hits=0;
+  Object.defineProperty(accessor.actions[0].path[0],'col',{
+    enumerable:true,get(){hits++;throw Error('GETTER_FORBIDDEN')}
+  });
+  assert.deepEqual(store.precheckExperimentalSectionVerifiedFootCore(
+    accessor,trustedOpenFootScenario()),{
+      status:400,code:'INVALID_SECTION_LAB_FOOT_CORE_REQUEST'
+    });
+  assert.equal(hits,0);
+}));
+
+test('CCWB verified foot core: WAL snapshot allows concurrent writer without producing writes',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForMovement(store,tokens.A);
+  const writer=connect().unsafeTestDatabase();
+  writer.exec('BEGIN IMMEDIATE');
+  try{
+    const r=store.precheckExperimentalSectionVerifiedFootCore(
+      verifiedFootRequest(tokens.A),trustedOpenFootScenario());
+    assert.equal(r.status,200);
+    assert.equal(r.preview.status,'PRIVATE_CORE_FOOT_PROPOSAL');
+    assert.equal(r.preview.canCommit,false);
+  } finally {writer.exec('ROLLBACK');}
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB verified foot core: tampered persisted journal is detected before proposal',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const row=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const state=JSON.parse(row.private_state);
+  state.ancientsSectionHistoryLab.state.board.units[0].col=8;
+  db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(state),matchId);
+  assert.throws(()=>store.precheckExperimentalSectionVerifiedFootCore(
+    verifiedFootRequest(tokens.A),trustedOpenFootScenario()),
+    /SECTION_CCWB_SNAPSHOT_DRIFT/);
+  assert.equal(db.isTransaction,false);
+}));
