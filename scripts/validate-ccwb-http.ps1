@@ -15,13 +15,18 @@ $fullLog = "$reports/ccwb-all-$stamp.tap"
 # These are exact paths in LOCAL_TEST_FILES, not dynamically supplied commands.
 $suites = @(
   'packages/local-api/section-history-http-isolation.test.mjs',
+  'packages/local-api/browser-sqlite-smoke.test.mjs',
+  'packages/local-api/command-deck-sse.test.mjs',
   'packages/local-api/revision-stream-lab-isolation.test.mjs',
+  'packages/sqlite-store/sqlite.test.mjs',
   'packages/sqlite-store/ancients-section-history.test.mjs',
+  'packages/sqlite-store/wal-transaction-contract.test.mjs',
+  'packages/sqlite-store/wal-cross-process-revocation.test.mjs',
+  'packages/sqlite-store/section-mutation-session-guard.test.mjs',
   'packages/command-deck/sqlite-game.test.mjs',
   'packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs',
   'packages/ancients-rules/staged-movement-preflight.test.mjs'
 )
-
 Push-Location $root
 try {
   & node -e "const v=process.versions.node.split('.').map(Number); process.exit(v[0]>22 || v[0]===22 && v[1]>=16 ? 0 : 2)"
@@ -31,11 +36,11 @@ try {
 
   foreach ($file in $suites) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
-      throw "Falta la suite $file. Ejecuta esta validación desde la rama de la PR #91."
+      throw "Falta la suite $file. Comprueba la rama de trabajo y el manifiesto de pruebas."
     }
   }
 
-  Write-Host "CCWB: ejecutando $($suites.Count) suites con Node.js nativo."
+  Write-Host "CCWB: ejecutando $($suites.Count) suites prioritarias de seguridad con Node.js nativo."
   & node scripts/run-test-suite.mjs "--only=$($suites -join ',')" "--log=$targetLog"
   $targetCode = $LASTEXITCODE
   Write-Host "Informe prioritario: $targetLog"
