@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
 import assert from 'node:assert/strict';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply}
   from './section-history-journal.mjs';
@@ -380,4 +381,101 @@ test('all previews reject duplicate, extra-field and mismatched sector ledgers',
     }
     assert.deepEqual(forged,original);
   }
+});
+
+const projectBoard=(state,actions,overrides={})=>projectStagedAncientsBoard({
+  state,actor:'A',expectedRevision:state.revision,actions,
+  serverContext:context(),...overrides
+});
+test('private staged board: leader detaches before unit and both positions are projected',()=>{
+  const {state}=readyLeader({includeUnit:true}),before=structuredClone(state);
+  const r=projectBoard(state,[leaderMove(),unitMove()]);
+  assert.equal(r.status,'PRIVATE_BOARD_CANDIDATE');
+  assert.equal(r.kind,'PRIVATE_STAGED_BOARD_PREVIEW_V1');
+  assert.equal(r.moveCount,2);
+  assert.deepEqual(r.projectedBoard.units.find(x=>x.id==='unitA'),{
+    id:'unitA',side:'A',col:3,row:4
+  });
+  assert.deepEqual(r.projectedBoard.leaders.find(x=>x.id==='leaderA'),{
+    id:'leaderA',side:'A',col:2,row:5
+  });
+  assert.equal(r.moves[0].detachedFromUnit,'unitA');
+  assert.equal(r.moves[1].leaderCarried,null);
+  for(const name of ['movementAuthorized','officialMovementAuthorized',
+    'attackAuthorized','stateChanged','canCommit'])
+    assert.equal(r[name],false);
+  assert.equal(r.needsFullLegalityCheck,true);
+  assert.equal(r.labSimulationOnly,true);
+  assert.deepEqual(state,before);
+});
+test('private staged board: unit carries attached leader without a second action',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const r=projectBoard(state,[unitMove()]);
+  assert.equal(r.status,'PRIVATE_BOARD_CANDIDATE');
+  const u=r.projectedBoard.units.find(x=>x.id==='unitA');
+  const l=r.projectedBoard.leaders.find(x=>x.id==='leaderA');
+  assert.deepEqual(at(u.col,u.row),at(3,4));
+  assert.deepEqual(at(l.col,l.row),at(3,4));
+  assert.equal(r.moves[0].leaderCarried,'leaderA');
+  assert.equal(r.moves[0].attachedLeader,'leaderA');
+  assert.equal(r.canCommit,false);
+});
+test('private staged board: invalid second move exposes no partial result',()=>{
+  const {state}=readyLeader({includeUnit:true}),before=structuredClone(state);
+  const r=projectBoard(state,[unitMove(),leaderMove()]);
+  assert.equal(r.status,'BLOCKED');
+  assert.equal(r.reason,'LEADER_ALREADY_MOVED');
+  assert.equal(r.projectedBoard,null);
+  assert.equal(r.moves,null);
+  assert.equal(r.moveCount,0);
+  assert.equal(r.stateChanged,false);
+  assert.deepEqual(state,before);
+});
+test('private staged board: forged sibling order, actor and revision cannot project',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const forged=structuredClone(state);
+  forged.orderSnapshot.pieces.find(p=>p.kind==='LEADER').col=9;
+  const failures=[
+    projectBoard(forged,[unitMove()]),
+    projectBoard(state,[unitMove()],{actor:'B'}),
+    projectBoard(state,[unitMove()],{expectedRevision:0})
+  ];
+  for(const r of failures){
+    assert.equal(r.status,'BLOCKED');
+    assert.equal(r.projectedBoard,null);
+    assert.equal(r.moves,null);
+    assert.equal(r.canCommit,false);
+  }
+  assert.equal(failures[0].reason,'ORDER_LEDGER_MISMATCH');
+});
+test('private staged board: result is deeply frozen and secrets are stripped',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  state.board.hiddenScenario='SCENARIO_SECRET_123';
+  state.board.units[0].secretMarker='UNIT_SECRET_123';
+  state.board.leaders[0].privateOrders='LEADER_SECRET_123';
+  const before=structuredClone(state);
+  const r=projectBoard(state,[unitMove()]);
+  assert.equal(r.status,'PRIVATE_BOARD_CANDIDATE');
+  const output=JSON.stringify(r);
+  for(const secret of ['SCENARIO_SECRET_123','UNIT_SECRET_123',
+    'LEADER_SECRET_123','hands','drawPile','cardInstanceId'])
+    assert.equal(output.includes(secret),false);
+  assert.deepEqual(Object.keys(r.projectedBoard).sort(),['leaders','units']);
+  for(const p of [...r.projectedBoard.units,...r.projectedBoard.leaders])
+    assert.deepEqual(Object.keys(p).sort(),['col','id','row','side']);
+  for(const frozen of [r,r.projectedBoard,r.projectedBoard.units,
+    r.projectedBoard.units[0],r.projectedBoard.leaders[0],r.moves,r.moves[0],r.moves[0].to])
+    assert.equal(Object.isFrozen(frozen),true);
+  assert.throws(()=>{r.projectedBoard.units[0].col=8},TypeError);
+  assert.deepEqual(state,before);
+});
+test('private staged board: repeated previews are deterministic, never persist',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const one=projectBoard(state,[leaderMove(),unitMove()]);
+  const two=projectBoard(state,[leaderMove(),unitMove()]);
+  assert.deepEqual(one,two);
+  assert.notEqual(one.projectedBoard,state.board);
+  assert.equal(state.revision,2);
+  assert.equal(state.board.units.find(x=>x.id==='unitA').col,2);
+  assert.equal(state.board.leaders.find(x=>x.id==='leaderA').row,4);
 });
