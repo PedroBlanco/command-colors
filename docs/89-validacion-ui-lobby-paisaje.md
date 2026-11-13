@@ -45,3 +45,21 @@ node scripts/browser-lab.mjs
 Abrir dos perfiles en `http://127.0.0.1:8788/`. Probar **ambos órdenes**: `alice` crea e invita a `bob` y `bob` crea e invita a `alice`. Comprobar que el anfitrión pasa a `READY` sin «Consultar partida» (el respaldo puede necesitar hasta unos segundos), que los paneles plegados no dejan huecos equivalentes a la altura de otra tarjeta y que **en partidas nuevas** el tablero es horizontal con cada bando abajo desde su propia perspectiva. Confirmar reconexión, persistencia y manos separadas. Se usa el **puerto de loopback** y cuentas ficticias; no usar Docker, WSL o Actions.
 
 No fusionar esta PR ni las anteriores a `main` hasta superar el SHA exacto en Windows, cerrar las verificaciones SEC-001 y validar la interfaz visual.
+
+
+## Regresión Windows y actualización de casos heredados (13/11/2026)
+
+Tras ejecutar la nueva PR #102, el usuario comunica **tests locales correctos** y **cuatro fallos en la regresión completa**. Se conservaron los cuatro nombres y las aserciones de la salida TAP:
+
+| Nº | Suite / caso | Diagnóstico |
+|---|---|---|
+| 637 | `browser-deck-ui.test.mjs`: `browser commands send expected revision and fields, never actor` | El test esperaba activar «Asignar órdenes» con el antiguo campo libre `deck-units`; ahora se debe seleccionar una **unidad propia** y pulsar «Añadir unidad». El test anterior incluso introducía el ID de una unidad enemiga como si fuera asignable. |
+| 638 | `browser-deck-ui.test.mjs`: `a forged card or invalid orders are rejected before HTTP mutation` | El test introducía `same,same` en el campo que ya no existe. La UI actual no admite identificadores arbitrarios: se debe comprobar la denegación del botón de añadir tanto para IDs inventados como para una unidad enemiga y la **ausencia de POST**. El módulo `deck-controls.test.mjs` sigue verificando por separado la validación de duplicados `ORDENES_INVALIDAS`. |
+| 690 | `command-deck-cookie.test.mjs`: `HTTP cookie/SQLite: both authorized players see a persisted move but cannot forge its actor` | El antiguo movimiento `(3,4)→(4,4)` ya no partía de la posición inicial. Ahora es `(3,6)→(4,6)`; la ruta ilegal de tres pasos conserva `MOVEMENT_LIMIT_EXCEEDED`, y se comprueba la fila 6 en ambas vistas. |
+| 697 | `command-deck-sse.test.mjs`: `SSE: authenticated movement reaches both players with counters only; rejected move is silent` | El test pedía el movimiento desde la fila 4 en vez de la 6. Se corrigen las rutas del jugador legítimo y del adversario, manteniendo el rechazo 403 del segundo, las revisiones y las pruebas de ausencia de información privada en SSE. |
+
+**Correcciones aplicadas exclusivamente a las suites de pruebas:** `packages/local-api/browser-deck-ui.test.mjs`, `command-deck-cookie.test.mjs` y `command-deck-sse.test.mjs`. También se ha hecho determinista el reloj de la prueba de navegador para que la vigilancia periódica de una sala pendiente no deje temporizadores de un test en otro. **No se ha cambiado** el motor de movimiento, las autorizaciones, el despliegue, el gateway ni el tratamiento de SSE para resolver estos fallos.
+
+**Evidencia de alcance limitado:** los **23/23** casos de `browser-deck-ui.test.mjs` pasaron en un ejecutor V8 aislado, con módulos de aplicación auténticos y DOM/red/ejecutor Node simulados. Sobre las funciones reales y puras de movimiento se verificaron **4/4** casos: ruta nueva de un hexágono aceptada, oponente no autorizado, ruta de tres pasos rechazada y segundo movimiento rechazado. Esto **no sustituye** el test HTTP real, la base SQLite real o la regresión completa ejecutada con `node --test` en Windows.
+
+La regresión completa de esta revisión **sigue pendiente**. No dar por corregidos los cuatro fallos en Windows hasta repetirla sobre el SHA final de PR #102. Las partidas existentes siguen sin migración.
