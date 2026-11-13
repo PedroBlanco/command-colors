@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {snapshotStagedSequenceRequest} from './staged-sequence-request-snapshot.mjs';
 import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
 import assert from 'node:assert/strict';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply}
@@ -478,4 +479,55 @@ test('private staged board: repeated previews are deterministic, never persist',
   assert.equal(state.revision,2);
   assert.equal(state.board.units.find(x=>x.id==='unitA').col,2);
   assert.equal(state.board.leaders.find(x=>x.id==='leaderA').row,4);
+});
+
+const sequenceInput=()=>({
+  sessionToken:'s'.repeat(48),expectedRevision:2,
+  actions:[{kind:'LEADER',id:'leaderA',path:[{col:2,row:5}]},
+    {kind:'UNIT',id:'unitA',path:[{col:3,row:4}]}]
+});
+test('sequence snapshot is frozen and cannot be changed by caller after parsing',()=>{
+  const input=sequenceInput(),before=structuredClone(input);
+  const stable=snapshotStagedSequenceRequest(input);
+  assert.deepEqual(stable,before);
+  assert.equal(Object.isFrozen(stable),true);
+  assert.equal(Object.isFrozen(stable.actions),true);
+  assert.equal(Object.isFrozen(stable.actions[0].path[0]),true);
+  input.expectedRevision=99;
+  input.actions[0].id='enemy';
+  input.actions[0].path[0].col=11;
+  input.actions.push({kind:'UNIT',id:'fake',path:[{col:4,row:4}]});
+  assert.deepEqual(stable,before);
+  assert.throws(()=>{stable.actions[0].path[0].col=12},TypeError);
+});
+test('sequence snapshot rejects extras, inherited fields, accessors and sparse paths',()=>{
+  const extras=[{...sequenceInput(),actor:'B'},
+    {...sequenceInput(),board:{}},
+    {...sequenceInput(),actions:[{...sequenceInput().actions[0],actor:'B'}]},
+    {...sequenceInput(),actions:[{kind:'UNIT',id:'unitA',path:[{col:3,row:4,side:'B'}]}]},
+    {...sequenceInput(),actions:[]},
+    {...sequenceInput(),actions:[{kind:'UNIT',id:'__proto__',path:[{col:3,row:4}]}]}];
+  for(const input of extras)assert.equal(snapshotStagedSequenceRequest(input),null);
+  const inherited=Object.create(sequenceInput());
+  assert.equal(snapshotStagedSequenceRequest(inherited),null);
+  const sparse=sequenceInput();
+  sparse.actions[0].path=new Array(1);
+  assert.equal(snapshotStagedSequenceRequest(sparse),null);
+  const getter=sequenceInput();let hits=0;
+  Object.defineProperty(getter.actions[0].path[0],'col',{enumerable:true,
+    get(){hits++;throw Error('never read');}});
+  assert.equal(snapshotStagedSequenceRequest(getter),null);
+  assert.equal(hits,0);
+});
+test('sequence snapshot never invokes hostile Proxy property getters',()=>{
+  const raw=sequenceInput(),gets=[];
+  raw.actions[0].path[0]=new Proxy(raw.actions[0].path[0],{
+    get(target,key){gets.push('cell:'+String(key));throw Error('cell getter');}
+  });
+  const proxied=new Proxy(raw,{
+    get(target,key){gets.push('root:'+String(key));throw Error('root getter');}
+  });
+  const r=snapshotStagedSequenceRequest(proxied);
+  assert.deepEqual(r.actions[0].path[0],{col:2,row:5});
+  assert.deepEqual(gets,[]);
 });
