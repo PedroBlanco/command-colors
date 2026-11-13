@@ -545,3 +545,22 @@ en el SHA vigente. El manifiesto no cambia: **79 suites**.
 
 No se introduce ningún endpoint ni movimiento reglamentario confirmado.
 Véase [contrato de integración y frontera HTTP](84-composicion-ccwb-simulacion-autenticada.md).
+
+
+## SEC-001 — contrato WAL validado nativamente en aislamiento (13/11/2026)
+
+Se añade `packages/sqlite-store/wal-snapshot-boundary.test.mjs` al manifiesto,
+que pasa a **80 suites**. Se ejecutaron con **Node.js 22.16.0 y SQLite real**
+seis pruebas autocontenidas sobre una base temporal y dos conexiones:
+revocación no confirmada/confirmada, sesión y pertenencia en el mismo
+snapshot, coherencia revisión-eventos, rollback de escrituras parciales
+y lector WAL concurrente con `BEGIN IMMEDIATE`.
+
+**Resultado: 6/6 PASS, 0 FAIL**, salida 0. El blob Git del archivo
+ejecutado coincide con el publicado:
+`1ceee42133c5333752f7440d7f709bb04e49db53`.
+Estas pruebas **no ejecutan los módulos CCWB**: los 8 casos de
+composición real SQLite, la suite HTTP y la regresión de 80 suites
+continúan pendientes. No se ha cerrado SEC-001 (#93), no hay movimiento
+reglamentariamente autorizado y no se fusiona `main`. Véase
+[documento 85, evidencia y límites](85-verificacion-nativa-sqlite-wal-aislada.md).
