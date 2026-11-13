@@ -9,6 +9,14 @@ import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFie
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const RADIUS = 24, OX = 35, OY = 34;
+// Presentation only: rotate the existing odd-q board so each viewer sees
+// their own army at the bottom. Never rotate command coordinates or state.
+const DISPLAY_WIDTH = 430, DISPLAY_HEIGHT = 510;
+function displayPoint(point, viewer) {
+  return viewer === 'B'
+    ? {x:DISPLAY_WIDTH-point.y,y:point.x}
+    : {x:point.y,y:DISPLAY_HEIGHT-point.x};
+}
 const boardCells = allCells();
 const key = ({col,row}) => `${col},${row}`;
 
@@ -19,8 +27,9 @@ function svgNode(doc, name, attrs = {}) {
 }
 
 /** Render public cells/units with keyboard and pointer selection. */
-export function renderMovementBoard(svg, board, draft, onSelect) {
-  if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117) {
+export function renderMovementBoard(svg, board, draft, onSelect, viewer='A') {
+  if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
+      !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
   }
   const doc = svg.ownerDocument;
@@ -48,7 +57,7 @@ export function renderMovementBoard(svg, board, draft, onSelect) {
     const unit = cellsById.get(key(cell));
     const origin = draft && key(draft.origin) === key(cell);
     const step = marked.get(key(cell));
-    const position = pixelCenter(cell,RADIUS,OX,OY);
+    const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
       'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}` : ''}`,
@@ -59,6 +68,7 @@ export function renderMovementBoard(svg, board, draft, onSelect) {
     if (origin) hex.classList.add('hex-origin');
     if (step) hex.classList.add('hex-route');
     const points = polygonPoints(cell,RADIUS,OX,OY)
+      .map(p=>displayPoint(p,viewer))
       .map(p=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
     hex.append(svgNode(doc,'polygon',{points,class:'hex-shape'}));
     if (unit) {
@@ -84,9 +94,14 @@ export function renderMovementBoard(svg, board, draft, onSelect) {
     hex.addEventListener('click',activate);
     hex.addEventListener('keydown',event=>{
       if (event.key==='Enter'||event.key===' ') {event.preventDefault();activate();return;}
-      const deltas={
-        ArrowLeft:[-1,0],ArrowRight:[1,0],
-        ArrowUp:[0,-1],ArrowDown:[0,1]
+      // Keyboard directions follow the rotated *display*, not the stored
+      // odd-q coordinates. Commands always keep their canonical col/row.
+      const deltas=viewer==='B' ? {
+        ArrowLeft:[0,1],ArrowRight:[0,-1],
+        ArrowUp:[-1,0],ArrowDown:[1,0]
+      } : {
+        ArrowLeft:[0,-1],ArrowRight:[0,1],
+        ArrowUp:[1,0],ArrowDown:[-1,0]
       };
       const delta=deltas[event.key];
       if (!delta) return;
@@ -103,7 +118,7 @@ export function renderMovementBoard(svg, board, draft, onSelect) {
   }
   svg.replaceChildren(group);
   if (hadBoardFocus) focusable.get(svg.dataset?.focusedCell ?? focusKey)?.focus?.();
-  svg.setAttribute('viewBox','0 0 510 430');
+  svg.setAttribute('viewBox',`0 0 ${DISPLAY_WIDTH} ${DISPLAY_HEIGHT}`);
   return {cells:boardCells.length,units:board.length,selectedSteps:draft?.path.length ?? 0};
 }
 
@@ -120,7 +135,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if (!svg?.ownerDocument?.createElementNS) return; // stub DOM in legacy tests
     const editable = !!view && deckActions(view).includes('move_synthetic_unit');
     let renderError = false;
-    try {renderMovementBoard(svg,view?.board??[],editable?draft:null,select);} catch(err) {
+    try {renderMovementBoard(svg,view?.board??[],editable?draft:null,select,view?.you??'A');} catch(err) {
       draft=null;keyForRetry=null;renderError=true;onError(err);
       svg.replaceChildren();
     }
