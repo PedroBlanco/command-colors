@@ -139,17 +139,17 @@ test('single Tab stop, arrow navigation and persistent focus across SVG redraws'
  cell(svg,0,0).focus();
  for(let i=0;i<3;i++){
    const current=svg.ownerDocument.activeElement;
-   let prevented=false;current.dispatch('keydown',{key:'ArrowUp',preventDefault(){prevented=true}});
+   let prevented=false;current.dispatch('keydown',{key:'ArrowRight',preventDefault(){prevented=true}});
    assert.equal(prevented,true);
  }
- for(let i=0;i<4;i++)svg.ownerDocument.activeElement.dispatch('keydown',{key:'ArrowRight'});
+ for(let i=0;i<4;i++)svg.ownerDocument.activeElement.dispatch('keydown',{key:'ArrowDown'});
  const unit=svg.ownerDocument.activeElement;
  assert.equal(unit.attrs['data-col'],'3');assert.equal(unit.attrs['data-row'],'4');
  assert.equal(controller.getDraft(),null);
  unit.dispatch('keydown',{key:'Enter'});
  assert.equal(controller.getDraft().unitId,'synthetic-a');
  assert.equal(svg.ownerDocument.activeElement,cell(svg,3,4));
- svg.ownerDocument.activeElement.dispatch('keydown',{key:'ArrowUp'});
+ svg.ownerDocument.activeElement.dispatch('keydown',{key:'ArrowRight'});
  assert.equal(svg.ownerDocument.activeElement,cell(svg,4,4));
  svg.ownerDocument.activeElement.dispatch('keydown',{key:' '});
  assert.deepEqual(controller.getDraft().path,[{col:4,row:4}]);
@@ -179,19 +179,22 @@ test('board redraw never steals focus from external controls',()=>{
 });
 
 
-test('orientation: own army appears below opponent for either viewer without rotating command cells',()=>{
- const {svg}=fixture(),board=view().board;
+test('landscape 13 × 9: each player sees their army along the bottom long edge',()=>{
+ const {svg}=fixture(),board=[
+   {id:'north',side:'B',col:9,row:2},
+   {id:'south',side:'A',col:3,row:6}
+ ];
  renderMovementBoard(svg,board,null,()=>{},'A');
- const ownA=cell(svg,3,4).children[1],enemyB=cell(svg,5,4).children[1];
- assert.equal(svg.attrs.viewBox,'0 0 430 510');
+ const ownA=cell(svg,3,6).children[1],enemyB=cell(svg,9,2).children[1];
+ assert.equal(svg.attrs.viewBox,'0 0 510 430');
  assert.ok(Number(ownA.attrs.cy)>Number(enemyB.attrs.cy),'A at the bottom for viewer A');
- assert.equal(cell(svg,3,4).attrs['data-col'],'3');
- assert.equal(cell(svg,3,4).attrs['data-row'],'4');
+ assert.equal(cell(svg,3,6).attrs['data-col'],'3');
+ assert.equal(cell(svg,3,6).attrs['data-row'],'6');
  renderMovementBoard(svg,board,null,()=>{},'B');
- const ownB=cell(svg,5,4).children[1],enemyA=cell(svg,3,4).children[1];
+ const ownB=cell(svg,9,2).children[1],enemyA=cell(svg,3,6).children[1];
  assert.ok(Number(ownB.attrs.cy)>Number(enemyA.attrs.cy),'B at the bottom for viewer B');
- assert.equal(cell(svg,5,4).attrs['data-col'],'5');
- assert.equal(cell(svg,5,4).attrs['data-row'],'4');
+ assert.equal(cell(svg,9,2).attrs['data-col'],'9');
+ assert.equal(cell(svg,9,2).attrs['data-row'],'2');
 });
 
 test('B viewer keyboard directions follow rotated display rather than stored hex axes',()=>{
@@ -199,7 +202,7 @@ test('B viewer keyboard directions follow rotated display rather than stored hex
  renderMovementBoard(svg,view().board,null,()=>{},'B');
  cell(svg,5,4).focus();
  cell(svg,5,4).dispatch('keydown',{key:'ArrowRight'});
- assert.equal(svg.ownerDocument.activeElement,cell(svg,5,3));
+ assert.equal(svg.ownerDocument.activeElement,cell(svg,4,4));
  svg.ownerDocument.activeElement.dispatch('keydown',{key:'ArrowDown'});
- assert.equal(svg.ownerDocument.activeElement,cell(svg,6,3));
+ assert.equal(svg.ownerDocument.activeElement,cell(svg,4,3));
 });
