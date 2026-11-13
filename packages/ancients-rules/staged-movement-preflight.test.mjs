@@ -333,3 +333,52 @@ test('evidence binds terrain and match revision, not caller-provided card or act
   assert.throws(()=>checkEvidence(state,{actions:[{...leaderMove(),actor:'B'}]}),
     /INVALID_SEQUENCE_CONTEXT/);
 });
+
+
+test('single-unit preview rejects an unrelated forged leader order',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const forged=structuredClone(state),before=structuredClone(forged);
+  const sibling=forged.orderSnapshot.pieces.find(p=>p.kind==='LEADER');
+  sibling.col+=1;
+  const result=check(forged);
+  assert.equal(result.status,'BLOCKED');
+  assert.equal(result.reason,'ORDER_LEDGER_MISMATCH');
+  assert.equal(result.movementAuthorized,false);
+  assert.equal(result.stateChanged,false);
+  assert.deepEqual(forged,{...before,
+    orderSnapshot:{...before.orderSnapshot,pieces:before.orderSnapshot.pieces.map(p=>
+      p.kind==='LEADER'?{...p,col:p.col+1}:p)}});
+});
+
+test('single-leader preview rejects a separately forged unit order',()=>{
+  const {state}=readyLeader({includeUnit:true}),forged=structuredClone(state);
+  forged.orderSnapshot.pieces.find(p=>p.kind==='UNIT').row=8;
+  const result=checkLeader(forged);
+  assert.equal(result.status,'BLOCKED');
+  assert.equal(result.reason,'ORDER_LEDGER_MISMATCH');
+  assert.equal(result.movementAuthorized,false);
+  assert.equal(result.stateChanged,false);
+});
+
+test('all previews reject duplicate, extra-field and mismatched sector ledgers',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  for(const corrupt of [
+    s=>s.orderSnapshot.pieces.push({...s.orderSnapshot.pieces[0]}),
+    s=>{s.orderSnapshot.pieces[0].permission='ALLOWED';},
+    s=>{s.orderSnapshot.sectorCells['2,4']=['RIGHT'];},
+    s=>s.orderSnapshot.pieces.push({id:'ghost',kind:'UNIT',side:'A',col:5,row:5})
+  ]) {
+    const forged=structuredClone(state);corrupt(forged);
+    const original=structuredClone(forged);
+    for(const result of [
+      check(forged),checkLeader(forged),
+      checkSequence(forged,[leaderMove()])
+    ]) {
+      assert.equal(result.status,'BLOCKED');
+      assert.equal(result.reason,'ORDER_LEDGER_MISMATCH');
+      assert.equal(result.movementAuthorized,false);
+      assert.equal(result.stateChanged,false);
+    }
+    assert.deepEqual(forged,original);
+  }
+});
