@@ -92,3 +92,30 @@ omitir una entrada o declarar otra inexistente produce un error, y el
 modo estricto rechaza continuar. **No se ejecutó `node:test` sobre el checkout**:
 la auditoría fue evaluada en V8 con una representación de solo lectura
 del árbol real. El bloqueo de fusión de #93 permanece.
+
+
+## Prioridad de sesión frente al estado LAB_ONLY (13/11/2026)
+
+La revisión detectó un caso residual de divulgación de estado en
+`getStore.dispatch`: cuando el juego estaba marcado como laboratorio
+privado, la función devolvía `409 SECTION_LAB_INTERNAL_ONLY`
+antes de ejecutar el `authGuard` del llamador HTTP. Una revocación
+de sesión entre el preflight y la inspección del modo podía producir
+un `409` en lugar del `401 UNAUTHENTICATED` que corresponde.
+No se ejecutaban órdenes, pero podía inferirse la existencia del lab.
+
+Se ha corregido: para las llamadas autenticadas, incluso el rechazo
+por modo laboratorio entra en `atomic`/`BEGIN IMMEDIATE`,
+revalida la sesión **antes** de devolver `409` y responde
+`401` a una sesión revocada. La llamada interna actor-based sin
+guardia mantiene `409` por compatibilidad.
+
+Se incorpora a la suite
+`packages/local-api/section-history-http-isolation.test.mjs`
+un caso que hace que la primera validación reconozca al participante
+pero lo desconecta antes del bloqueo escritor y exige `401`,
+ausencia de `SECTION_LAB` y cero cambios en partidas, eventos
+y comandos. **13 casos preparados en esa suite**. Se ha comprobado
+la sintaxis del módulo y de la suite, pero **no se han ejecutado
+nativamente estos nuevos casos** ni la regresión completa.
+La PR #93 sigue en borrador y no debe fusionarse todavía.
