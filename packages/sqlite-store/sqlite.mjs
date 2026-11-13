@@ -138,48 +138,58 @@ export function openSqliteComposition({file, clock = Date.now,
 
   const invitations = {
     createMatch({sessionToken} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      const id = randomUUID();
-      db.prepare('INSERT INTO matches(id, owner_id, private_state) VALUES (?,?,?)')
-        .run(id, user.userId, JSON.stringify(initialState(id)));
-      return {ok:true, matchId:id};
+      // Authorization must be observed after BEGIN IMMEDIATE: a concurrent
+      // logout must not leave an orphan match created by a revoked session.
+      return atomic(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const id = randomUUID();
+        db.prepare('INSERT INTO matches(id, owner_id, private_state) VALUES (?,?,?)')
+          .run(id, user.userId, JSON.stringify(initialState(id)));
+        return {ok:true, matchId:id};
+      });
     },
     getMatch({sessionToken, matchId} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      if (!UUID.test(String(matchId ?? ''))) return denied('NOT_FOUND');
-      const match = getMember.get(matchId);
-      if (!match || !checkActor(match, user.userId)) return denied('NOT_FOUND');
-      const owner = db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.owner_id);
-      const guest = match.guest_id ? db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.guest_id) : null;
-      const result = {ok:true, matchId, revision:getMatchRow.get(matchId).lobby_revision,
-        players:[{side:'A',handle:owner.handle},...(guest ? [{side:'B',handle:guest.handle}] : [])],
-        status:guest?'READY':'INVITING'};
-      if (match.owner_id === user.userId) {
-        result.invitations = db.prepare('SELECT id, target_handle, status, expires_at FROM invitations WHERE match_id=? ORDER BY rowid')
-          .all(matchId).map(i => ({invitationId:i.id,targetHandle:i.target_handle,
-            status: i.status === 'PENDING' && clock() >= i.expires_at ? 'EXPIRED' : i.status,expiresAt:i.expires_at}));
-      }
-      return result;
+      // The lobby metadata is security-sensitive too: a logout, change of
+      // membership and the participant list must share one WAL snapshot.
+      return readSnapshot(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        if (!UUID.test(String(matchId ?? ''))) return denied('NOT_FOUND');
+        const match = getMember.get(matchId);
+        if (!match || !checkActor(match, user.userId)) return denied('NOT_FOUND');
+        const owner = db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.owner_id);
+        const guest = match.guest_id ? db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.guest_id) : null;
+        const result = {ok:true, matchId, revision:getMatchRow.get(matchId).lobby_revision,
+          players:[{side:'A',handle:owner.handle},...(guest ? [{side:'B',handle:guest.handle}] : [])],
+          status:guest?'READY':'INVITING'};
+        if (match.owner_id === user.userId) {
+          result.invitations = db.prepare('SELECT id, target_handle, status, expires_at FROM invitations WHERE match_id=? ORDER BY rowid')
+            .all(matchId).map(i => ({invitationId:i.id,targetHandle:i.target_handle,
+              status: i.status === 'PENDING' && clock() >= i.expires_at ? 'EXPIRED' : i.status,expiresAt:i.expires_at}));
+        }
+        return result;
+      });
     },
     issueInvitation({sessionToken,matchId,targetHandle} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      const m = getMember.get(matchId);
-      if (!m || m.owner_id !== user.userId) return denied('NOT_FOUND');
-      const h = normalizeHandle(targetHandle);
-      if (!h || h === user.handle || m.guest_id !== null) return denied('INVITATION_NOT_AVAILABLE');
-      const id = randomUUID(), token = randomToken(), expiresAt=clock()+invitationTtlMs;
-      db.prepare('INSERT INTO invitations(id,match_id,token_digest,target_handle,expires_at,status) VALUES(?,?,?,?,?,?)')
-        .run(id,matchId,digest(token),h,expiresAt,'PENDING');
-      return {ok:true, invitationId:id, token, expiresAt};
+      return atomic(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const m = getMember.get(matchId);
+        if (!m || m.owner_id !== user.userId) return denied('NOT_FOUND');
+        const h = normalizeHandle(targetHandle);
+        if (!h || h === user.handle || m.guest_id !== null) return denied('INVITATION_NOT_AVAILABLE');
+        const id = randomUUID(), token = randomToken(), expiresAt=clock()+invitationTtlMs;
+        db.prepare('INSERT INTO invitations(id,match_id,token_digest,target_handle,expires_at,status) VALUES(?,?,?,?,?,?)')
+          .run(id,matchId,digest(token),h,expiresAt,'PENDING');
+        return {ok:true, invitationId:id, token, expiresAt};
+      });
     },
     acceptInvitation({sessionToken,invitationToken} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
       return atomic(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
         const i=db.prepare('SELECT * FROM invitations WHERE token_digest=?').get(digest(invitationToken));
         if (!i || i.status !== 'PENDING' || i.target_handle !== user.handle || clock() >= i.expires_at) return denied('INVITATION_NOT_AVAILABLE');
         const m=getMember.get(i.match_id);
@@ -192,22 +202,26 @@ export function openSqliteComposition({file, clock = Date.now,
       });
     },
     rejectInvitation({sessionToken, invitationToken} = {}) {
-      const user=sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
-      const row = db.prepare('SELECT id,target_handle,expires_at,status FROM invitations WHERE token_digest=?').get(digest(invitationToken));
-      if (!row || row.status!=='PENDING' || row.target_handle!==user.handle || clock()>=row.expires_at) return denied('INVITATION_NOT_AVAILABLE');
-      db.prepare("UPDATE invitations SET status='REJECTED' WHERE id=?").run(row.id);
-      return {ok:true};
+      return atomic(() => {
+        const user=sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
+        const row = db.prepare('SELECT id,target_handle,expires_at,status FROM invitations WHERE token_digest=?').get(digest(invitationToken));
+        if (!row || row.status!=='PENDING' || row.target_handle!==user.handle || clock()>=row.expires_at) return denied('INVITATION_NOT_AVAILABLE');
+        db.prepare("UPDATE invitations SET status='REJECTED' WHERE id=?").run(row.id);
+        return {ok:true};
+      });
     },
     revokeInvitation({sessionToken,matchId,invitationId}={}) {
-      const user=sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      const m=getMember.get(matchId);
-      if (!m || m.owner_id!==user.userId) return denied('NOT_FOUND');
-      const row=db.prepare("UPDATE invitations SET status='REVOKED' WHERE id=? AND match_id=? AND status='PENDING'")
-        .run(invitationId,matchId);
-      return row.changes === 1 ? {ok:true} : denied('INVITATION_NOT_AVAILABLE');
+      return atomic(() => {
+        const user=sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const m=getMember.get(matchId);
+        if (!m || m.owner_id!==user.userId) return denied('NOT_FOUND');
+        const row=db.prepare("UPDATE invitations SET status='REVOKED' WHERE id=? AND match_id=? AND status='PENDING'")
+          .run(invitationId,matchId);
+        return row.changes === 1 ? {ok:true} : denied('INVITATION_NOT_AVAILABLE');
+      });
     }
   };
 
