@@ -586,3 +586,27 @@ resolución de sesión y puente simulados. No se reetiqueta como
 prueba de SQLite nativo. Manifiesto de **80 suites**, regresión
 completa aún pendiente. Véase
 [composición autenticada y evidencia](84-composicion-ccwb-simulacion-autenticada.md).
+
+
+## SEC-001 / R-05 — bloqueo de snapshots obsoletos y escritores (13/11/2026)
+
+Se amplió la suite autónoma `wal-snapshot-boundary.test.mjs`
+con los dos casos del futuro commit reglamentario:
+- un lector que usa un snapshot anterior a un commit ajeno no puede
+  sobrescribir la revisión ya confirmada;
+- `BEGIN IMMEDIATE` impide que otro escritor cambie una sesión
+  durante la revalidación transaccional.
+
+**8/8 PASS nativos** con Node.js 22.16.0 y SQLite 3.49.1
+(archivo ejecutado idéntico al blob Git
+`75b75c202c527d1414a40cb52d43d1ecfdf2a80f`).
+La suite ocupa una sola entrada del manifiesto de **80 suites**.
+En la primera ejecución el séptimo test falló por esperar el código
+extendido `SQLITE_BUSY_SNAPSHOT`, mientras Node reportó
+`ERR_SQLITE_ERROR` con `database is locked`. La aserción
+se corrigió y la repetición completa pasó.
+
+Estos 8 casos usan tablas temporales simplificadas: **no** son una
+ejecución de las **9 pruebas nuevas de integración CCWB/SQLite**.
+La regresión integral, HTTP/SSE y SEC-001 (#93) siguen pendientes.
+Véase [evidencia nativa](85-verificacion-nativa-sqlite-wal-aislada.md).
