@@ -683,6 +683,19 @@ test('private budget: ordered leader detaches before unit; two distinct orders w
   assert.equal(result.projectedBoard.leaders.find(x=>x.id==='leaderA').row,5);
 });
 
+test('private budget: leader detaches without moving unit, leaving unit order available',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const before=structuredClone(state);
+  const result=orderBudget(state,[leaderMove()]);
+  assert.equal(result.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+  assert.deepEqual([result.totalOrders,result.wouldUseCount,
+    result.lockedCount,result.availableCount],[2,1,0,1]);
+  assert.equal(byOrder(result,'LEADER','leaderA').status,'USED');
+  assert.equal(byOrder(result,'UNIT','unitA').status,'AVAILABLE');
+  assert.equal(result.projectedBoard.units.find(x=>x.id==='unitA').col,2);
+  assert.deepEqual(state,before);
+});
+
 test('private budget: individually ordered leader can move alone',()=>{
   const {state}=readyLeader();
   const result=orderBudget(state,[leaderMove()]);
