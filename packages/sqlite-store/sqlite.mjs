@@ -402,7 +402,17 @@ export function openSqliteComposition({file, clock = Date.now,
         const {actor,type,expectedRevision,idempotencyKey} = request;
         if (!['A','B'].includes(actor)) return {status:403,code:'FORBIDDEN'};
         const row=rowOrThrow();
-        if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        if (hasExperimentalSectionHistory(row)) {
+          // Even a denied lab command must reauthenticate a participant
+          // revoked after HTTP preflight. Do not disclose lab mode first.
+          if(authGuard) return atomic(()=>{
+            const allowed=authGuard();
+            return allowed===true
+              ? {status:409,code:'SECTION_LAB_INTERNAL_ONLY'}
+              : allowed;
+          });
+          return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        }
         if (hasCommandDeck(row)) return commandDeck.dispatch(request,authGuard);
         if (type !== 'pass_demo_turn' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
