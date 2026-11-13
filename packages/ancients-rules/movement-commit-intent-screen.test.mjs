@@ -174,19 +174,20 @@ test('descriptor snapshot ignores hostile top-level get traps and never accesses
 
 test('descriptor snapshot ignores hostile array and coordinate getters, not changing approved data',()=>{
   const input=origin(),reads=[];
-  input.path=new Proxy(input.path,{
-    get(target,key,receiver){
-      reads.push('path:'+String(key));
-      if(key==='length')return 999;
-      if(key==='map')throw Error('UNTRUSTED_MAP_MUST_NOT_RUN');
-      return Reflect.get(target,key,receiver);
-    }
-  });
-  input.path[0]=new Proxy(input.path[0],{
+  const path=input.path;
+  path[0]=new Proxy(path[0],{
     get(target,key,receiver){
       reads.push('cell:'+String(key));
       if(key==='col')return 99;
       if(key==='row')throw Error('UNTRUSTED_ROW_GET_MUST_NOT_RUN');
+      return Reflect.get(target,key,receiver);
+    }
+  });
+  input.path=new Proxy(path,{
+    get(target,key,receiver){
+      reads.push('path:'+String(key));
+      if(key==='length')return 999;
+      if(key==='map')throw Error('UNTRUSTED_MAP_MUST_NOT_RUN');
       return Reflect.get(target,key,receiver);
     }
   });
