@@ -103,3 +103,48 @@ por la falta de checkout y de resolución DNS para GitHub. Hay Node.js
 equivale a haber ejecutado las pruebas**. SEC-001 (#93) y la integración
 completa continúan pendientes antes de cualquier despliegue o fusión en
 `main`.
+
+
+## Estabilizar la petición durante la resolución de sesión (13/11/2026)
+
+Se corrige un desajuste entre el primer filtrado de forma y la consulta
+privada: el método anterior reexaminaba el objeto de petición del
+llamador **después** de resolver la sesión y antes del replay. Una
+mutación interna entre ambas operaciones podía cambiar revisión, pieza,
+recorrido o token respecto de la intención inicialmente validada.
+
+Ahora `precheckExperimentalSectionOneHexIntent`:
+1. Filtra estrictamente el request sin acceder al tablero.
+2. Captura por descriptor la credencial y construye una **petición
+   normalizada e inmutable** con los campos ya filtrados, incluidos
+   camino y coordenadas profundamente congelados.
+3. Vuelve a comprobar el contrato de la copia capturada, protegiendo
+   también el cambio de descriptor en objetos inusuales.
+4. Resuelve sesión y pertenencia dentro del snapshot WAL con el
+   token **capturado**, y entrega **esa misma copia** al puente de
+   replay y reductor, sin volver a leer el objeto original del llamador.
+
+Se añade un **noveno caso de integración SQLite/CCWB** (escrito, aún
+sin ejecutar nativamente): sustituye temporalmente el resolutor de
+sesión por una función que cambia el token a otro jugador y también
+la revisión, ID y camino del objeto original; el resultado debe
+continuar vinculado a la petición inicial, sin escribir ni autorizar.
+
+**Evidencia aislada disponible:** sobre el método extraído literalmente
+de `sqlite.mjs` (blob Git
+`6d1dcd4ca513a462744c2f586952a83d904edf7c`), el
+filtro real (blob `802664fed3c6d09ec2185bfeee24ddfa9a4337e2`) y
+la geometría real, se ejecutaron **5 comprobaciones V8 aisladas,
+5/5 correctas**: mutación entre validación y sesión, inmutabilidad
+de ruta, metadatos falsificados, getter de credencial y array
+disperso. El almacén, la sesión y el puente se **simularon**;
+**no equivale a ejecutar Node.js/SQLite real**.
+
+La suite de integración real tiene ahora **9 casos nuevos pendientes**
+en `ancients-section-history.test.mjs`. Continúan pendientes
+los 10 casos HTTP y la regresión de **80 suites**. Las seis pruebas
+nativas y autocontenidas del contrato WAL descritas en
+[documento 85](85-verificacion-nativa-sqlite-wal-aislada.md)
+se refieren únicamente a tablas mínimas, no a la aplicación.
+**Sin ruta pública ni movimiento confirmado; PR #96 permanece
+en borrador.**
