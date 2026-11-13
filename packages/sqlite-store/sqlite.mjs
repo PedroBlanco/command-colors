@@ -13,6 +13,7 @@ import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
 import {proposeMovementDraft, projectMovementDraft} from '../ancients-rules/movement-draft-contract.mjs';
 import {screenAncientsMovementCommitIntent} from '../ancients-rules/movement-commit-intent-screen.mjs';
+import {snapshotStagedSequenceRequest} from '../ancients-rules/staged-sequence-request-snapshot.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -435,6 +436,24 @@ export function openSqliteComposition({file, clock = Date.now,
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
           return sectionHistory.previewMovementSequence(identity.actor,request,trustedContext);
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY: produce a public-field-only hypothetical board
+       * from a verified Section CCWB row. Never expose via HTTP/SSE.
+       * Capture untrusted request data once BEFORE session lookup. Session,
+       * membership, match and replay are then read under ONE WAL snapshot.
+       */
+      precheckExperimentalSectionBoardProjection(request = {},trustedContext) {
+        const stable=snapshotStagedSequenceRequest(request);
+        if(stable===null)
+          return {status:400,code:'INVALID_SECTION_LAB_BOARD_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(stable.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewBoardProjection(identity.actor,stable,trustedContext);
         });
       },
       /** INTERNAL LAB ONLY: evidence of a hypothetical sequence. Session,
