@@ -151,3 +151,82 @@ test('returned shape cannot be promoted by modifying nested fields',()=>{
   assert.throws(()=>{result.intent.pieceId='foe'},TypeError);
   assert.throws(()=>{result.intent.path[0].row=7},TypeError);
 });
+
+
+test('descriptor snapshot ignores hostile top-level get traps and never accesses credentials twice',()=>{
+  const raw=origin(),reads=[];
+  const proxy=new Proxy(raw,{
+    get(target,key,receiver){
+      reads.push(key);
+      if(key==='kind')return 'ATTACK';
+      if(key==='expectedRevision')return -123;
+      if(key==='pieceId')return 'ENEMY_SECRET';
+      if(key==='sessionToken')throw Error('GET_TOKEN_MUST_NOT_RUN');
+      return Reflect.get(target,key,receiver);
+    }
+  });
+  const result=screen(proxy);
+  assert.equal(result.status,'INTENT_SHAPE_VALID');
+  assert.deepEqual(result.intent,screen(raw).intent);
+  assert.deepEqual(reads,[]);
+  assert.equal(JSON.stringify(result).includes(raw.sessionToken),false);
+});
+
+test('descriptor snapshot ignores hostile array and coordinate getters, not changing approved data',()=>{
+  const input=origin(),reads=[];
+  input.path=new Proxy(input.path,{
+    get(target,key,receiver){
+      reads.push('path:'+String(key));
+      if(key==='length')return 999;
+      if(key==='map')throw Error('UNTRUSTED_MAP_MUST_NOT_RUN');
+      return Reflect.get(target,key,receiver);
+    }
+  });
+  input.path[0]=new Proxy(input.path[0],{
+    get(target,key,receiver){
+      reads.push('cell:'+String(key));
+      if(key==='col')return 99;
+      if(key==='row')throw Error('UNTRUSTED_ROW_GET_MUST_NOT_RUN');
+      return Reflect.get(target,key,receiver);
+    }
+  });
+  const response=screen(input);
+  assert.equal(response.status,'INTENT_SHAPE_VALID');
+  assert.deepEqual(response.intent.path,[{col:2,row:4},{col:3,row:4}]);
+  assert.deepEqual(reads,[]);
+});
+
+test('descriptor snapshot does not change after the original request is mutated',()=>{
+  const input=origin();
+  const result=screen(input);
+  assert.equal(result.status,'INTENT_SHAPE_VALID');
+  input.expectedRevision=200;
+  input.pieceId='attacker';
+  input.path[0].col=11;
+  input.path.push({col:12,row:7});
+  assert.deepEqual(result.intent,screen(origin()).intent);
+  assert.equal(Object.isFrozen(result.intent.path[1]),true);
+});
+
+test('proxy changing descriptor after first snapshot cannot smuggle a new move',()=>{
+  const input=origin(),reads=[];
+  const proxy=new Proxy(input,{
+    getOwnPropertyDescriptor(target,key){
+      reads.push(key);
+      const desc=Reflect.getOwnPropertyDescriptor(target,key);
+      if(key==='path') {
+        // Mutate source AFTER copying the descriptor value; even this path
+        // can only be accepted if its final captured cells are valid.
+        target.pieceId='mutated_after_snapshot';
+      }
+      return desc;
+    },
+    get(){throw Error('SOURCE_GET_MUST_NEVER_RUN');}
+  });
+  const result=screen(proxy);
+  assert.equal(result.status,'INTENT_SHAPE_VALID');
+  assert.equal(result.intent.pieceId,'front');
+  assert.deepEqual(result.intent.path,[{col:2,row:4},{col:3,row:4}]);
+  assert.equal(reads.includes('pieceId'),true);
+  assert.equal(input.pieceId,'mutated_after_snapshot');
+});
