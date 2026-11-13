@@ -14,6 +14,33 @@ const privateScope = createPrivateViewScope();
 let movementBoard = null;
 let updates = null, updateMatchId = null, inspectionSequence = 0;
 let lobbyStatus = null, panelKey = null;
+let lobbyWatch = null, lobbyWatchMatchId = null, lobbyWatchBusy = false;
+
+// SSE is primary; a bounded authorized recheck only while INVITING
+// avoids a stuck lobby if the READY transition notice is missed.
+function syncLobbyWatch(mode, matchId) {
+  const waiting = mode === 'invite' && Boolean(signedInHandle && matchId);
+  if (!waiting || lobbyWatchMatchId !== matchId) {
+    if (lobbyWatch !== null) clearInterval(lobbyWatch);
+    lobbyWatch = null;
+    lobbyWatchMatchId = null;
+  }
+  if (!waiting || lobbyWatch !== null) return;
+  const watching = matchId;
+  lobbyWatchMatchId = watching;
+  lobbyWatch = setInterval(async () => {
+    if (lobbyWatchBusy || document.hidden || !signedInHandle ||
+        privateScope.capture().matchId !== watching ||
+        lobbyStatus === 'READY') return;
+    lobbyWatchBusy = true;
+    try {
+      await inspect(); // independently revalidates session and match
+    } catch {
+      // A transient GET error cannot leak state or stop later recovery.
+    } finally { lobbyWatchBusy = false; }
+  }, 2500);
+  lobbyWatch.unref?.(); // Node test harness; no effect on browsers
+}
 let selectedOrderUnits = new Set(), orderSelectionContext = null;
 
 // Fold irrelevant application phases, but do not override a player's manual
@@ -26,6 +53,7 @@ function updatePanels() {
       typeof cached?.phase === 'string' ? 'game' : 'ready';
   el('login-form').hidden = Boolean(signedInHandle);
   el('logout').disabled = !signedInHandle;
+  syncLobbyWatch(mode,matchId);
   const key = [signedInHandle ?? '', matchId ?? '', mode].join(':');
   if (key === panelKey) return;
   panelKey = key;
@@ -203,6 +231,10 @@ document.addEventListener('visibilitychange', async () => {
   // A second visibilitychange may hide the tab while the session GET awaits.
   // Never unpause based on a stale visible event.
   revisionRefresh.setPaused(false);
+  // A focused waiting lobby must refresh even if the SSE revision was missed.
+  if (lobbyStatus === 'INVITING' && !document.hidden) {
+    try { await inspect(); } catch { /* the periodic guard will retry */ }
+  }
 });
 window.addEventListener('beforeunload', closeUpdates);
 

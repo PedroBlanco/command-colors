@@ -292,3 +292,46 @@ test('SEC-001: committed cross-connection logout prevents all invitation and mat
     'NOT_FOUND');
   assert.equal(db.isTransaction,false);
 }));
+
+
+test('new synthetic matches deploy A and B along opposite long edges, regardless of owner handle',()=>local(async open=>{
+  const s=open(),alice=await account(s,'alice'),bob=await account(s,'bob');
+  for(const [owner,guest,handle] of [
+    [alice,bob,'bob'],[bob,alice,'alice']
+  ]){
+    const matchId=invite(s,owner,guest,handle);
+    const a=s.getStore(matchId).view('A');
+    const b=s.getStore(matchId).view('B');
+    assert.equal(a.board.length,2);
+    assert.deepEqual(a.board,b.board);
+    assert.ok(a.board.find(unit=>unit.side==='A').row >
+              a.board.find(unit=>unit.side==='B').row);
+    assert.deepEqual(a.board,[
+      {id:'synthetic-a',side:'A',col:3,row:6},
+      {id:'synthetic-b',side:'B',col:9,row:2}
+    ]);
+    assert.equal(s.invitations.getMatch({sessionToken:owner,matchId}).players[0].side,'A');
+    assert.equal(s.invitations.getMatch({sessionToken:guest,matchId}).players[1].side,'B');
+  }
+}));
+
+
+test('previously saved landscape lab match is preserved without silent board migration',()=>local(async open=>{
+  const s=open(),alice=await account(s,'alice'),bob=await account(s,'bob');
+  const matchId=invite(s,alice,bob);
+  const db=s.unsafeTestDatabase();
+  const existing=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const state=JSON.parse(existing.private_state);
+  const olderBoard=[
+    {id:'synthetic-a',side:'A',col:3,row:4},
+    {id:'synthetic-b',side:'B',col:9,row:4}
+  ];
+  state.board=olderBoard;
+  db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(state),matchId);
+  s.close();
+  const reopened=open();
+  assert.deepEqual(reopened.getStore(matchId).view('A').board,olderBoard);
+  assert.deepEqual(reopened.getStore(matchId).view('B').board,olderBoard);
+  assert.equal(reopened.invitations.getMatch({sessionToken:alice,matchId}).status,'READY');
+}));

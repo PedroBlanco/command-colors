@@ -4,9 +4,14 @@ import {readFileSync} from 'node:fs';
 
 const MATCH='123e4567-e89b-42d3-a456-426614174000';
 let serial=0;
-async function withBrowser(run) {
-  const originals={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,EventSource:globalThis.EventSource};
+async function withBrowser(run,{owner='alice'}={}) {
+  const originals={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,
+    EventSource:globalThis.EventSource,setInterval:globalThis.setInterval,
+    clearInterval:globalThis.clearInterval};
   const elements=new Map(),handlers=new Map(),requests=[],feeds=[];
+  const intervals=new Map();let timerId=0;
+  const setInterval=(cb,ms)=>{const id=++timerId;intervals.set(id,{cb,ms});return id;};
+  const clearInterval=id=>intervals.delete(id);
   function element(id) {
     if(!elements.has(id))elements.set(id,{value:'',textContent:'',hidden:false,disabled:false,open:false,children:[],handlers:new Map(),
       get options(){return this.children},
@@ -35,9 +40,9 @@ async function withBrowser(run) {
     let response={code:'NOT_FOUND'},status=404;
     if(path==='/api/session' && options.method==='POST'){state.login=true;response={ok:true};status=200;}
     else if(path==='/api/session' && options.method==='DELETE'){state.login=false;response={ok:true};status=200;}
-    else if(path==='/api/session' && state.login){response={authenticated:true,handle:'alice'};status=200;}
+    else if(path==='/api/session' && state.login){response={authenticated:true,handle:owner};status=200;}
     else if(path==='/api/matches' && options.method==='POST'){response={matchId:MATCH};status=201;}
-    else if(path===`/api/matches/${MATCH}` && state.login){response={matchId:MATCH,status:state.lobby,players:state.lobby==='READY'?[{side:'A',handle:'alice'},{side:'B',handle:'bob'}]:[{side:'A',handle:'alice'}],
+    else if(path===`/api/matches/${MATCH}` && state.login){response={matchId:MATCH,status:state.lobby,players:state.lobby==='READY'?[{side:'A',handle:owner},{side:'B',handle:owner==='alice'?'bob':'alice'}]:[{side:'A',handle:owner}],
       ...(state.lobby==='READY'?{state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:state.board,
         ...(state.deckPhase?{phase:state.deckPhase,actingSide:'A',
           pendingDecision:null,movedUnitIds:[],drawPileCount:10,
@@ -45,12 +50,21 @@ async function withBrowser(run) {
     else if(path===`/api/matches/${MATCH}/commands` && state.login){state.revision++;response={code:'APPLIED'};status=200;}
     return {ok:status<400,status,json:async()=>response};
   };
-  Object.assign(globalThis,{document,window,fetch,EventSource:FakeEventSource});
-  element('handle').value='alice';element('password').value='test-only';
+  Object.assign(globalThis,{document,window,fetch,EventSource:FakeEventSource,
+    setInterval,clearInterval});
+  element('handle').value=owner;element('password').value='test-only';
   try {
     await import(`./browser-ui.mjs?mock=${++serial}`);
-    return await run({element,document,window,feeds,requests,state});
-  } finally {Object.assign(globalThis,originals)}
+    return await run({element,document,window,feeds,requests,state,
+      timerCount:()=>intervals.size,
+      pulseLobby:async()=>{
+        const running=[...intervals.values()];
+        for(const timer of running)await timer.cb();
+      }});
+  } finally {
+    intervals.clear();
+    Object.assign(globalThis,originals);
+  }
 }
 
 async function nextTurn() {await new Promise(resolve=>setImmediate(resolve));}
@@ -251,4 +265,67 @@ test('browser markup: every phase has native details and all unit fields are sel
   assert.doesNotMatch(html,/<input id="deck-units"/);
   assert.equal((html.match(/<details\b/g)||[]).length,6);
   assert.equal((html.match(/<\/details>/g)||[]).length,6);
+  assert.equal((html.match(/class="panel-stack"/g)||[]).length,2,
+    'two independent vertical columns collapse without shared grid row height');
+  assert.match(html,/\.panel-stack\{display:flex;flex-direction:column/);
+  assert.match(html,/main\{display:grid;grid-template-columns:minmax\(260px,340px\) minmax\(0,1fr\)/);
+  assert.match(html,/aspect-ratio:510 \/ 430/);
+  assert.match(html,/viewBox="0 0 510 430"/);
 });
+
+
+test('bob owner: missed SSE join still refreshes ready lobby through authorized recovery',()=>withBrowser(async ctx=>{
+  await ctx.element('login-form').dispatch('submit');
+  await ctx.element('create').dispatch('click');
+  assert.equal(ctx.element('lobby').textContent.includes('INVITING'),true);
+  assert.equal(ctx.timerCount(),1);
+  const feed=ctx.feeds.at(-1);
+  ctx.state.lobby='READY'; // Alice accepted, but SSE notice is deliberately dropped
+  assert.equal(ctx.element('state').textContent.includes('A_CARD'),false);
+  const readsBefore=ctx.requests.filter(x=>x.path===`/api/matches/${MATCH}`).length;
+  await ctx.pulseLobby();
+  assert.ok(ctx.requests.filter(x=>x.path===`/api/matches/${MATCH}`).length>readsBefore);
+  assert.equal(ctx.element('state').textContent.includes('A_CARD'),true);
+  assert.equal(ctx.element('lobby').textContent.includes('READY'),true);
+  assert.equal(ctx.timerCount(),0,'recovery stops when match becomes ready');
+  assert.equal(feed.closed,false,'successful fallback must preserve SSE subscription');
+  assert.equal(ctx.element('state').textContent.includes('PRIVATE_B'),false);
+  await ctx.element('logout').dispatch('click');
+  assert.equal(ctx.timerCount(),0);
+},{owner:'bob'}));
+
+test('waiting lobby recovery is hidden-tab safe and terminates on logout',()=>withBrowser(async ctx=>{
+  await ctx.element('login-form').dispatch('submit');
+  await ctx.element('create').dispatch('click');
+  assert.equal(ctx.timerCount(),1);
+  const before=ctx.requests.length;
+  ctx.document.hidden=true;
+  await ctx.pulseLobby();
+  assert.equal(ctx.requests.length,before,'hidden tab cannot request private match state');
+  ctx.document.hidden=false;
+  ctx.state.lobby='READY';
+  await ctx.document.dispatch('visibilitychange');
+  assert.equal(ctx.element('lobby').textContent.includes('READY'),true);
+  assert.equal(ctx.timerCount(),0);
+  await ctx.element('logout').dispatch('click');
+  assert.equal(ctx.timerCount(),0);
+},{owner:'bob'}));
+
+
+test('changing the selected lobby cancels the old recovery timer before a new match',()=>withBrowser(async ctx=>{
+  await ctx.element('login-form').dispatch('submit');
+  await ctx.element('create').dispatch('click');
+  assert.equal(ctx.timerCount(),1);
+  const previousFeed=ctx.feeds.at(-1);
+  ctx.element('match-id').value='not-a-match';
+  await ctx.element('match-id').dispatch('input');
+  assert.equal(previousFeed.closed,true);
+  assert.equal(ctx.timerCount(),0,'old match poll must be canceled');
+  const before=ctx.requests.length;
+  await ctx.pulseLobby();
+  assert.equal(ctx.requests.length,before,'old timer cannot revive a stale match');
+  await ctx.element('create').dispatch('click');
+  assert.equal(ctx.timerCount(),1,'fresh selected lobby receives a new recovery timer');
+  await ctx.element('logout').dispatch('click');
+  assert.equal(ctx.timerCount(),0);
+},{owner:'bob'}));

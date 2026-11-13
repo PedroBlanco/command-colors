@@ -5,8 +5,13 @@ const MATCH='123e4567-e89b-42d3-a456-426614174000';
 const MATCH_B='123e4567-e89b-42d3-a456-426614174001';
 let serial=0;
 async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
- const original={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,EventSource:globalThis.EventSource};
+ const original={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,EventSource:globalThis.EventSource,
+   setInterval:globalThis.setInterval,clearInterval:globalThis.clearInterval};
  const elements=new Map(), handlers=new Map(), requests=[], sources=[];
+ // Periodic lobby refresh must not leak into the next suite's fake browser.
+ const intervals=new Map();let timerId=0;
+ const setInterval=(fn,delay)=>{const id=++timerId;intervals.set(id,{fn,delay});return id;};
+ const clearInterval=id=>intervals.delete(id);
  function element(id) {
    if(!elements.has(id))elements.set(id,{
      value:'',textContent:'',disabled:false,hidden:false,children:[],listeners:new Map(),
@@ -22,7 +27,7 @@ async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
  const window={addEventListener(type,fn){handlers.set(type,fn)}};
  const state={login:false,handle:'alice',denyLobby:false,sessionUnavailable:false,lobby:'INVITING',initialized:false,phase:'AWAIT_CARD',revision:0,
    handA:['own_1','own_2'],handB:['other_1','other_2','other_3'],discard:[],inPlay:null,turn:'A',
-   board:[{id:'unit_a',side:'A',col:3,row:4},{id:'unit_b',side:'B',col:9,row:4}],movedUnitIds:[]};
+   board:[{id:'unit_a',side:'A',col:3,row:6},{id:'unit_b',side:'B',col:9,row:2}],movedUnitIds:[]};
  class FakeEventSource {
    constructor(url){this.url=url;this.closed=false;this.listeners=new Map();sources.push(this)}
    addEventListener(type,fn){this.listeners.set(type,fn)}
@@ -83,12 +88,24 @@ async function withBrowser(run, {onMoveCommand=null,onInvite=null}={}) {
    }
    return {ok:status<400,status,json:async()=>response};
  };
- Object.assign(globalThis,{document,window,fetch,EventSource:FakeEventSource});
+ Object.assign(globalThis,{document,window,fetch,EventSource:FakeEventSource,setInterval,clearInterval});
  element('handle').value='alice';element('password').value='test-password';
  try {
    await import(`./browser-ui.mjs?deckmock=${++serial}`);
    return await run({element,state,requests,sources,document});
- } finally {Object.assign(globalThis,original)}
+ } finally {intervals.clear();Object.assign(globalThis,original)}
+}
+
+// The new UI accumulates explicit orders via a dropdown of OWN units.
+async function addOrderedUnit(c,unitId) {
+ const field=c.element('deck-units');
+ assert.equal(field.children.some(option=>option.value===unitId),true,
+   'own unit must be in authenticated board projection');
+ field.value=unitId;
+ await field.dispatch('change');
+ assert.equal(c.element('deck-unit-add').disabled,false);
+ await c.element('deck-unit-add').dispatch('click');
+ assert.match(c.element('deck-unit-selected').textContent,new RegExp(unitId));
 }
 
 async function loginReady(c){
@@ -121,11 +138,15 @@ test('browser commands send expected revision and fields, never actor',()=>withB
  assert.equal(sent.body.expectedRevision,0);
  assert.equal(Object.hasOwn(sent.body,'actor'),false);
  assert.match(sent.body.idempotencyKey,/^[a-z0-9]{32}$/i);
+ assert.equal(c.element('deck-orders').disabled,true,'no unit selected yet');
+ assert.deepEqual(c.element('deck-units').children.map(option=>option.value).filter(Boolean),['unit_a'],
+   'the dropdown never offers enemy units');
+ await addOrderedUnit(c,'unit_a');
  assert.equal(c.element('deck-orders').disabled,false);
- c.element('deck-units').value='unit_a, unit_b';
  await c.element('deck-orders').dispatch('click');
  sent=c.requests.find(x=>x.body?.type==='assign_synthetic_orders');
- assert.deepEqual(sent.body.unitIds,['unit_a','unit_b']);
+ assert.deepEqual(sent.body.unitIds,['unit_a']);
+ assert.equal(sent.body.unitIds.includes('unit_b'),false);
  assert.equal(sent.body.expectedRevision,1);
  assert.equal(c.element('deck-undo').disabled,false);
  await c.element('deck-movement').dispatch('click');
@@ -148,10 +169,17 @@ test('a forged card or invalid orders are rejected before HTTP mutation',()=>wit
  c.element('deck-card').value='own_1';
  await c.element('deck-play').dispatch('click');
  const count=c.requests.length;
- c.element('deck-units').value='same,same';
- await c.element('deck-orders').dispatch('click');
- assert.equal(c.requests.length,count);
- assert.equal(c.element('message').textContent,'ORDENES_INVALIDAS');
+ for(const forgedId of ['same','unit_b']) {
+   c.element('deck-units').value=forgedId;
+   await c.element('deck-units').dispatch('change');
+   assert.equal(c.element('deck-unit-add').disabled,true,
+     'nonexistent or enemy units must not be selectable');
+   // Even an artificial event on the disabled add button must fail closed.
+   await c.element('deck-unit-add').dispatch('click');
+   assert.equal(c.requests.length,count);
+   assert.equal(c.element('message').textContent,'UNIDAD_NO_DISPONIBLE');
+   assert.equal(c.element('deck-orders').disabled,true);
+ }
 }));
 
 test('SSE refresh and logout never revive cards from a previous session',()=>withBrowser(async c=>{
@@ -202,19 +230,20 @@ test('switching match input clears old cards and invitation secrets before the n
 test('manual movement button sends sanitized own-unit path after order assignment',()=>withBrowser(async c=>{
  await loginReady(c);await c.element('deck-initialize').dispatch('click');
  await c.element('deck-play').dispatch('click');
- c.element('deck-units').value='unit_a';
+ await addOrderedUnit(c,'unit_a');
  await c.element('deck-orders').dispatch('click');
  assert.equal(c.element('deck-move').disabled,false);
  c.element('deck-move-unit').value='unit_a';
- c.element('deck-move-path').value=' 4,4 ';
+ c.element('deck-move-path').value=' 4,6 ';
  await c.element('deck-move').dispatch('click');
  const sent=c.requests.find(x=>x.body?.type==='move_synthetic_unit');
  assert.ok(sent);
- assert.deepEqual(sent.body.path,[{col:4,row:4}]);
+ assert.deepEqual(sent.body.path,[{col:4,row:6}]);
  assert.equal(sent.body.unitId,'unit_a');
  assert.equal(sent.body.expectedRevision,2);
  assert.equal(Object.hasOwn(sent.body,'actor'),false);
  assert.equal(c.state.board[0].col,4);
+ assert.equal(c.state.board[0].row,6);
  assert.equal(c.element('deck-undo').disabled,true);
  assert.equal(c.element('deck-movement').disabled,false);
  const before=c.requests.length;
@@ -233,10 +262,10 @@ test('late movement success after switching match never refreshes or overwrites 
    await loginReady(c);
    await c.element('deck-initialize').dispatch('click');
    await c.element('deck-play').dispatch('click');
-   c.element('deck-units').value='unit_a';
+   await addOrderedUnit(c,'unit_a');
    await c.element('deck-orders').dispatch('click');
    c.element('deck-move-unit').value='unit_a';
-   c.element('deck-move-path').value='4,4';
+   c.element('deck-move-path').value='4,6';
    const pending=c.element('deck-move').dispatch('click');
    await entered;
    c.element('match-id').value='123e4567-e89b-42d3-a456-426614174001';
@@ -260,10 +289,10 @@ test('late movement success after logout never restores the former private board
    await loginReady(c);
    await c.element('deck-initialize').dispatch('click');
    await c.element('deck-play').dispatch('click');
-   c.element('deck-units').value='unit_a';
+   await addOrderedUnit(c,'unit_a');
    await c.element('deck-orders').dispatch('click');
    c.element('deck-move-unit').value='unit_a';
-   c.element('deck-move-path').value='4,4';
+   c.element('deck-move-path').value='4,6';
    const pending=c.element('deck-move').dispatch('click');
    await entered;
    await c.element('logout').dispatch('click');

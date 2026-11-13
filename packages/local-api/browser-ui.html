@@ -4,9 +4,12 @@
 <title>Command & Colors — laboratorio local</title>
 <style>
 :root{color-scheme:light;font:16px system-ui,sans-serif;background:#ecf1f0;color:#263840}
-body{max-width:1050px;margin:0 auto;padding:16px}
+body{max-width:1260px;margin:0 auto;padding:16px}
 header{border-bottom:2px solid #53756e;margin-bottom:12px} h1{font-size:1.45rem} h2{font-size:1.12rem;margin-top:0}
-main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:12px}
+main{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);align-items:start;gap:12px}
+/* Independent vertical stacks: collapsing one panel never reserves the height
+   of a tall neighboring grid card. The board keeps the wider right column. */
+.panel-stack{display:flex;flex-direction:column;gap:12px;min-width:0}
 section{background:#fff;border:1px solid #cbd8d3;border-radius:10px;padding:16px;min-width:0}
 details>summary{font-size:1.12rem;font-weight:700;cursor:pointer;padding:4px 0}
 details>summary:focus-visible{outline:3px solid #bd8b29;border-radius:4px}
@@ -22,7 +25,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 
 /* Tablero táctico del laboratorio autenticado, sin recursos oficiales. */
 #movement-viewport{width:100%;overflow:hidden;border:1px solid #a4b5b0;border-radius:8px;background:#e7e8de;overflow-x:auto;touch-action:auto}
-#movement-board{display:block;width:100%;min-width:430px;height:auto;aspect-ratio:430 / 510}
+#movement-board{display:block;width:100%;min-width:510px;height:auto;aspect-ratio:510 / 430}
 .hex-shape{stroke:#859b91;stroke-width:1.3;fill:#e9ede6}
 .hex-target:nth-child(even) .hex-shape{fill:#e0e6df}
 .hex-target.hex-origin .hex-shape{fill:#f5cc74;stroke:#986f23;stroke-width:3}
@@ -34,18 +37,22 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .unit-label{fill:white;font-weight:700;font-size:13px}
 .route-number{fill:#27421c;font-weight:700;font-size:13px}
 #movement-status{min-height:2em}
-@media(max-width:470px){#movement-section{grid-column:1/-1;padding:8px}}
+@media(max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:470px){#movement-section{padding:8px}}
 </style></head>
 <body>
 <header><h1>Command & Colors Web — laboratorio</h1><p>Sesiones de navegador y partidas sintéticas. No hay reglas oficiales ni juego completo.</p></header>
 <p class="notice"><strong>Solo en este ordenador.</strong> Las cuentas son ficticias; no introduzcas contraseñas ni datos personales reales. La prueba HTTP local no equivale a una instalación segura en Internet.</p>
 <p id="message" role="status" aria-live="polite"></p>
 <main>
+<div class="panel-stack" id="account-stack">
 <section><h2>Acceso</h2><p id="current">Sin sesión</p><button id="logout" disabled>Cerrar sesión</button>
 <details id="login-details" open><summary>Identificarse</summary><form id="login-form"><label>Usuario<input id="handle" required autocomplete="username" placeholder="alice"></label><label>Contraseña de prueba<input id="password" type="password" required autocomplete="current-password"></label><button>Entrar</button></form></details></section>
 <section><details id="match-details"><summary>Partida privada</summary><button id="create">Crear partida</button><label>Identificador de partida<input id="match-id" spellcheck="false"></label><button id="refresh">Consultar partida</button><pre id="lobby">Sin partida cargada</pre></details></section>
 <section><details id="invite-details"><summary>Invitaciones</summary><label>Usuario al que invitar<input id="invitee" placeholder="bob"></label><button id="invite">Emitir invitación</button><p><strong>Token de invitación (copia y comparte solo con el destinatario):</strong></p><pre id="invite-token">—</pre><label>Token recibido<input id="received" spellcheck="false"></label><button id="accept">Aceptar</button><button id="reject">Rechazar</button></details></section>
 <section><details id="state-details"><summary>Estado privado</summary><p id="connection" role="status" aria-live="polite">Avisos en tiempo real desconectados</p><button id="turn">Finalizar turno ficticio</button><button id="events">Consultar eventos públicos</button><pre id="state">Sin partida activa</pre></details></section>
+</div>
+<div class="panel-stack" id="game-stack">
 <section aria-labelledby="deck-title"><details id="deck-details"><summary id="deck-title">Mazo de mando sintético</summary>
 <p>Solo identificadores ficticios. No incluye cartas ni reglas oficiales de Ancients.</p>
 <button id="deck-initialize" disabled>Inicializar mazo de prueba (jugador A)</button>
@@ -77,13 +84,14 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <p>Selecciona una unidad propia y toca los hexágonos vecinos para trazar el movimiento.
 Puedes usar también Tabulador y Entrar. La ruta solo se envía cuando la confirmas.</p>
 <div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
-  role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 430 510"></svg></div>
+  role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
 <p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>
 <button type="button" id="board-undo" disabled>Deshacer último paso</button>
 <button type="button" id="board-cancel" disabled>Cancelar ruta</button>
 <button type="button" id="board-confirm" disabled>Confirmar movimiento</button>
 <p class="notice">Sin reglas oficiales: el servidor valida unidades ordenadas, recorrido y límites de la partida.</p>
 </details></section>
+</div>
 </main>
 <script type="module" src="/browser-ui.mjs"></script>
 </body></html>
