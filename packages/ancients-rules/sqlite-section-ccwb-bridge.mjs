@@ -12,6 +12,7 @@ import {signSectionJournalCommand, checkSectionJournalSignature,
 import {previewPrivateOneHexAncientsIntent} from './private-one-hex-intent-preview.mjs';
 import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
 import {previewStagedAncientsOrderBudget} from './staged-order-budget.mjs';
+import {previewVerifiedSectionFootCore} from './verified-foot-core-preview.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence,
@@ -239,6 +240,26 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       boardChanged:false,canCommit:false
     });
   }
+  /**
+   * Internal read-only one-step foot CORE proposal. This is a different
+   * implementation from the staged candidate preflight: full CCWB replay
+   * is verified again before assembling its restricted authoritative-source
+   * inputs. The LAB history has no movements, so only a FIRST step is shown.
+   * The caller must hold a WAL snapshot containing live authentication.
+   */
+  function previewVerifiedFootCore(actor,request,trustedScenario){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const preview=previewVerifiedSectionFootCore({
+      verifiedState:snapshot,actor,expectedRevision:request.expectedRevision,
+      actions:request.actions,trustedScenario
+    });
+    return Object.freeze({
+      status:200,code:'SECTION_LAB_VERIFIED_FOOT_CORE_PREVIEW',
+      preview,movementAuthorized:false,officialMovementAuthorized:false,
+      attackAuthorized:false,boardChanged:false,canCommit:false
+    });
+  }
   /** INTERNAL LAB ONLY. Replay verifies the private journal under the
    *  caller's WAL snapshot before building immutable audit evidence.
    *  Never persist or broadcast this trace as an executed movement. */
@@ -276,5 +297,6 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
   }
   return Object.freeze({initialize,view,dispatch,previewMovement,
     previewLeaderMovement,previewMovementSequence,previewBoardProjection,
-    previewOrderBudget,previewMovementEvidence,previewOneHexIntent});
+    previewOrderBudget,previewVerifiedFootCore,
+    previewMovementEvidence,previewOneHexIntent});
 }
