@@ -118,3 +118,32 @@ test('WAL: read transaction does not block another connection obtaining BEGIN IM
   assert.equal(scalar(reader,"SELECT revision FROM matches WHERE id='match-1'").revision,1);
   assert.equal(reader.isTransaction,false);
 }));
+
+
+test('WAL: a stale read snapshot cannot be upgraded into a writer after another commit',()=>withWal(({reader,writer})=>{
+  reader.exec('BEGIN');
+  try {
+    assert.equal(scalar(reader,"SELECT revision FROM matches WHERE id='match-1'").revision,0);
+    writer.exec("UPDATE matches SET revision=1 WHERE id='match-1'");
+    assert.throws(()=>reader.exec("UPDATE matches SET revision=2 WHERE id='match-1'"),
+      error=>/locked|busy/i.test(error?.message??'')&&
+        ['ERR_SQLITE_ERROR','SQLITE_BUSY_SNAPSHOT','SQLITE_BUSY'].includes(error?.code));
+  } finally {reader.exec('ROLLBACK');}
+  assert.equal(scalar(reader,"SELECT revision FROM matches WHERE id='match-1'").revision,1);
+  assert.equal(reader.isTransaction,false);
+}));
+
+test('WAL: BEGIN IMMEDIATE prevents a second writer changing session before revalidation',()=>withWal(({reader,writer})=>{
+  writer.exec('PRAGMA busy_timeout=1;');
+  reader.exec('BEGIN IMMEDIATE');
+  try {
+    assert.equal(scalar(reader,"SELECT live FROM sessions WHERE token='token-a'").live,1);
+    assert.throws(()=>writer.exec("UPDATE sessions SET live=0 WHERE token='token-a'"),
+      error=>error?.code==='SQLITE_BUSY'||/locked|busy/i.test(error?.message??''));
+    reader.exec("UPDATE matches SET revision=1 WHERE id='match-1'");
+  } finally {reader.exec('COMMIT');}
+  writer.exec("UPDATE sessions SET live=0 WHERE token='token-a'");
+  assert.equal(scalar(reader,"SELECT live FROM sessions WHERE token='token-a'").live,0);
+  assert.equal(scalar(reader,"SELECT revision FROM matches WHERE id='match-1'").revision,1);
+  assert.equal(reader.isTransaction,false);
+}));
