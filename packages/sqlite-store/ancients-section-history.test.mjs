@@ -1203,3 +1203,45 @@ test('CCWB one-hex simulation: mutation after shape check cannot retarget sessio
     assert.equal(db.isTransaction,false);
   } finally {app.identity.resolveSession=resolve;}
 }));
+
+
+test('SEC-001: revocation after session preflight cannot reveal private lab mode through commands',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const writer=connect();
+  const before={
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  };
+  // Force the exact race: return an initially valid actor to the
+  // preflight, but revoke that same session on another WAL connection
+  // before store.dispatch can enter its authorizing write transaction.
+  const resolve=app.identity.resolveSession;
+  let first=true;
+  try {
+    app.identity.resolveSession=token=>{
+      const identity=resolve(token);
+      if(first&&token===tokens.A&&identity){
+        first=false;
+        assert.equal(writer.identity.logOut(token).ok,true);
+      }
+      return identity;
+    };
+    const response=await store.dispatchForSession({
+      sessionToken:tokens.A,type:'pass_demo_turn',
+      expectedRevision:2,idempotencyKey:'revoked_lab_command_001'
+    });
+    assert.deepEqual(response,{status:401,code:'UNAUTHENTICATED'});
+    assert.equal(first,false);
+    // An unauthenticated caller must never learn whether the
+    // internal laboratory was initialized (409 vs 401).
+    assert.equal(JSON.stringify(response).includes('SECTION_LAB'),false);
+    assert.deepEqual({
+      match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+      events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+      commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+    },before);
+    assert.equal(db.isTransaction,false);
+  } finally {app.identity.resolveSession=resolve;}
+}));
