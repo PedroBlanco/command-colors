@@ -1517,3 +1517,57 @@ test('CCWB staged board projection: descriptor snapshot resists mutation during 
   assert.equal(calls,0);
   assert.equal(app.unsafeTestDatabase().isTransaction,false);
 }));
+
+test('CCWB sequence previews: immutable snapshot is shared by sequence and evidence reads',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const input=()=>sequenceRequest(tokens.A,[sequenceLeader(),sequenceUnit()]);
+  for(const [method,expectedCode,expectedInner] of [
+    ['precheckExperimentalSectionMovementSequence',
+      'SECTION_LAB_SEQUENCE_PREVIEW','CANDIDATE_SEQUENCE'],
+    ['precheckExperimentalSectionMovementEvidence',
+      'SECTION_LAB_CANDIDATE_EVIDENCE','CANDIDATE_EVIDENCE']
+  ]){
+    const source=input(),getCalls=[];
+    const proxy=new Proxy(source,{
+      get(){getCalls.push('forbidden');throw Error('ROOT_GET_MUST_NOT_RUN');},
+      getOwnPropertyDescriptor(target,key){
+        const desc=Reflect.getOwnPropertyDescriptor(target,key);
+        if(key==='actions'){
+          // Simulate a hostile producer mutating a previously captured field.
+          target.expectedRevision=999;
+        }
+        return desc;
+      }
+    });
+    const r=store[method](proxy,movementContext());
+    assert.equal(r.status,200);
+    assert.equal(r.code,expectedCode);
+    const nested=method==='precheckExperimentalSectionMovementSequence'?
+      r.preview:r.evidence;
+    assert.equal(nested.status,expectedInner);
+    assert.deepEqual(getCalls,[]);
+    assert.equal(source.expectedRevision,999);
+    assert.equal(JSON.stringify(r).includes(tokens.A),false);
+  }
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+test('CCWB sequence previews: accessor request is rejected before acquiring WAL snapshot',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  for(const [method,code] of [
+    ['precheckExperimentalSectionMovementSequence','INVALID_SECTION_LAB_SEQUENCE_REQUEST'],
+    ['precheckExperimentalSectionMovementEvidence','INVALID_SECTION_LAB_EVIDENCE_REQUEST']
+  ]){
+    let hits=0;
+    const request=sequenceRequest(tokens.A,[sequenceLeader()]);
+    Object.defineProperty(request.actions[0].path[0],'col',{
+      enumerable:true,get(){hits++;throw Error('UNTRUSTED_GET');}
+    });
+    assert.deepEqual(store[method](request,movementContext()),{status:400,code});
+    assert.equal(hits,0);
+  }
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
