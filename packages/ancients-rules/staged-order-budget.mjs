@@ -18,7 +18,7 @@ const flags=Object.freeze({
 });
 const deny=reason=>Object.freeze({
   status:'BLOCKED',kind:STAGED_ORDER_BUDGET_KIND,reason,
-  projectedBoard:null,moves:null,orders:null,spentCount:0,
+  projectedBoard:null,moves:null,orders:null,wouldUseCount:0,
   lockedCount:0,availableCount:0,totalOrders:0,...flags
 });
 const key=(kind,id)=>kind+':'+id;
@@ -94,7 +94,7 @@ export function previewStagedAncientsOrderBudget({
     baseRevision:expectedRevision,
     projectedBoard:projected.projectedBoard,
     moves:projected.moves,orders,
-    spentCount:used.size,lockedCount,availableCount,totalOrders:orders.length,
+    wouldUseCount:used.size,lockedCount,availableCount,totalOrders:orders.length,
     ...flags
   });
 }
