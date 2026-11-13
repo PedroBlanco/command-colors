@@ -1402,3 +1402,118 @@ test('SEC-001: command deck writer rechecks session inside BEGIN IMMEDIATE',()=>
     {status:401,code:'UNAUTHENTICATED'});
   assert.equal(db.isTransaction,false);
 }));
+
+/** Internal board projection is separate from HTTP and committed movements. */
+const boardSequence=(sessionToken,actions=[sequenceLeader(),sequenceUnit()],extra={})=>({
+  sessionToken,expectedRevision:2,actions,...extra
+});
+test('CCWB staged board projection: live session, verified replay and WAL are read-only',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const before={
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  };
+  const request=boardSequence(tokens.A);
+  const r=store.precheckExperimentalSectionBoardProjection(request,movementContext());
+  assert.equal(r.status,200);
+  assert.equal(r.code,'SECTION_LAB_BOARD_PROJECTION');
+  assert.equal(r.projection.status,'PRIVATE_BOARD_CANDIDATE');
+  assert.equal(r.projection.moveCount,2);
+  assert.deepEqual(r.projection.projectedBoard.units.find(x=>x.id==='unitA'),
+    {id:'unitA',side:'A',col:3,row:4});
+  assert.deepEqual(r.projection.projectedBoard.leaders.find(x=>x.id==='leaderA'),
+    {id:'leaderA',side:'A',col:2,row:5});
+  for(const flag of ['canCommit','movementAuthorized','attackAuthorized','boardChanged'])
+    assert.equal(r[flag],false);
+  assert.equal(r.projection.officialMovementAuthorized,false);
+  assert.equal(r.projection.stateChanged,false);
+  const json=JSON.stringify(r);
+  assert.equal(json.includes(tokens.A),false);
+  for(const field of ['yourHand','drawPile','handAtPlay','cardInstances'])
+    assert.equal(json.includes(field),false);
+  assert.equal(Object.isFrozen(r.projection.projectedBoard.units[0]),true);
+  assert.deepEqual(connect().getStore(matchId)
+    .precheckExperimentalSectionBoardProjection(request,movementContext()),r);
+  assert.deepEqual({
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  },before);
+  assert.equal(db.isTransaction,false);
+}));
+test('CCWB staged board projection: revocation and membership denial prevent even a preview',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  assert.deepEqual(store.precheckExperimentalSectionBoardProjection(
+    boardSequence('untrusted'.repeat(8)),movementContext()),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(store.precheckExperimentalSectionBoardProjection(
+    boardSequence(tokens.outsider),movementContext()),
+    {status:404,code:'NOT_FOUND'});
+  const other=store.precheckExperimentalSectionBoardProjection(
+    boardSequence(tokens.B),movementContext());
+  assert.equal(other.status,200);
+  assert.equal(other.projection.status,'BLOCKED');
+  assert.equal(other.projection.projectedBoard,null);
+  assert.equal(other.projection.canCommit,false);
+  const connection=connect();
+  connection.identity.logOut(tokens.A);
+  assert.deepEqual(store.precheckExperimentalSectionBoardProjection(
+    boardSequence(tokens.A),movementContext()),
+    {status:401,code:'UNAUTHENTICATED'});
+  connection.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?').run(matchId);
+  assert.deepEqual(store.precheckExperimentalSectionBoardProjection(
+    boardSequence(tokens.B),movementContext()),
+    {status:404,code:'NOT_FOUND'});
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+test('CCWB staged board projection: invalid request and failed action never leak partial board',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  for(const patch of [{actor:'A'},{board:{}},{expectedRevision:'2'},
+    {actions:[]},{actions:[{...sequenceUnit(),owner:'B'}]},
+    {actions:[{kind:'UNIT',id:'unitA',path:[{col:13,row:4}]}]}]){
+    assert.deepEqual(store.precheckExperimentalSectionBoardProjection(
+      boardSequence(tokens.A,[sequenceLeader()],patch),movementContext()),
+      {status:400,code:'INVALID_SECTION_LAB_BOARD_REQUEST'});
+  }
+  const reversed=store.precheckExperimentalSectionBoardProjection(
+    boardSequence(tokens.A,[sequenceUnit(),sequenceLeader()]),movementContext());
+  assert.equal(reversed.status,200);
+  assert.equal(reversed.projection.status,'BLOCKED');
+  assert.equal(reversed.projection.reason,'LEADER_ALREADY_MOVED');
+  assert.equal(reversed.projection.projectedBoard,null);
+  assert.equal(reversed.projection.moves,null);
+  assert.equal(reversed.projection.moveCount,0);
+  assert.equal(reversed.boardChanged,false);
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+test('CCWB staged board projection: descriptor snapshot resists mutation during session resolution',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const original=boardSequence(tokens.A);
+  const reads=[];
+  const input=new Proxy(original,{get(target,key){
+    reads.push(String(key));
+    if(key==='actions'||key==='sessionToken')throw Error('GET_MUST_NOT_RUN');
+    return Reflect.get(target,key);
+  }});
+  const r=store.precheckExperimentalSectionBoardProjection(input,movementContext());
+  assert.equal(r.status,200);
+  assert.equal(r.projection.status,'PRIVATE_BOARD_CANDIDATE');
+  assert.deepEqual(reads,[]);
+  const cell=boardSequence(tokens.A);
+  let calls=0;
+  Object.defineProperty(cell.actions[0].path[0],'col',{enumerable:true,
+    get(){calls++;throw Error('NOT_READ');}});
+  assert.deepEqual(store.precheckExperimentalSectionBoardProjection(cell,movementContext()),
+    {status:400,code:'INVALID_SECTION_LAB_BOARD_REQUEST'});
+  assert.equal(calls,0);
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
