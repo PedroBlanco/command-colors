@@ -297,3 +297,65 @@ test('SEC-001: event-read revocation takes precedence over a conflicting lab sen
     assert.equal(eventReads,1);
   }
 });
+
+
+test('SEC-001: initialization never serializes a private view attached to a denied result',async()=>{
+  for(const [code,status] of [
+    ['UNAUTHENTICATED',401],['NOT_FOUND',404],['SECTION_LAB_INTERNAL_ONLY',409]
+  ]) {
+    const services=fixture();
+    let calls=0;
+    services.getStore=async()=>({
+      initializeCommandDeckForSession:({sessionToken})=>{
+        calls++;
+        assert.equal(sessionToken,A);
+        return {status:200,code,view:{
+          matchId:MATCH,yourHand:['FORBIDDEN_SETUP_HAND'],opponentCardCount:5
+        }};
+      },
+      initializeCommandDeck:()=>{throw Error('UNSAFE_ACTOR_INIT')}
+    });
+    await withApi(async({request})=>{
+      await createReady(request);
+      const response=await request('POST',`/api/matches/${MATCH}/deck/initialize`,A,{});
+      assert.equal(response.status,status);
+      assert.deepEqual(response.body,{code});
+      assert.equal(JSON.stringify(response.body).includes('FORBIDDEN_SETUP_HAND'),false);
+    },services);
+    assert.equal(calls,1);
+  }
+});
+
+test('SEC-001: a denied command never returns a retained private same-match view',async()=>{
+  for(const [code,status] of [
+    ['UNAUTHENTICATED',401],['NOT_FOUND',404],['SECTION_LAB_INTERNAL_ONLY',409]
+  ]) {
+    const services=fixture();
+    let calls=0;
+    services.getStore=async()=>({
+      viewForSession:({sessionToken})=>{
+        assert.equal(sessionToken,A);
+        return {matchId:MATCH,revision:0,status:'ACTIVE',you:'A'};
+      },
+      view:()=>{throw Error('UNSAFE_ACTOR_VIEW')},
+      dispatchForSession:({sessionToken})=>{
+        calls++;
+        assert.equal(sessionToken,A);
+        return {status:200,code,view:{
+          matchId:MATCH,yourHand:['FORBIDDEN_COMMAND_HAND'],revision:1
+        }};
+      },
+      dispatch:()=>{throw Error('UNSAFE_ACTOR_DISPATCH')}
+    });
+    await withApi(async({request})=>{
+      await createReady(request);
+      const response=await request('POST',`/api/matches/${MATCH}/commands`,A,{
+        type:'pass_demo_turn',expectedRevision:0,idempotencyKey:'deny_without_view_01'
+      });
+      assert.equal(response.status,status);
+      assert.deepEqual(response.body,{code});
+      assert.equal(JSON.stringify(response.body).includes('FORBIDDEN_COMMAND_HAND'),false);
+    },services);
+    assert.equal(calls,1);
+  }
+});
