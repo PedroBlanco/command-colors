@@ -9,13 +9,14 @@ import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFie
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const RADIUS = 24, OX = 35, OY = 34;
-// Presentation only: rotate the existing odd-q board so each viewer sees
-// their own army at the bottom. Never rotate command coordinates or state.
-const DISPLAY_WIDTH = 430, DISPLAY_HEIGHT = 510;
+// The SYNTHETIC scenario now starts on opposite long edges of a
+// LANDSCAPE 13 × 9 board. Rotate only the B viewer 180 degrees; do not
+// transform stored odd-q coordinates or the server's authoritative moves.
+const DISPLAY_WIDTH = 510, DISPLAY_HEIGHT = 430;
 function displayPoint(point, viewer) {
   return viewer === 'B'
-    ? {x:DISPLAY_WIDTH-point.y,y:point.x}
-    : {x:point.y,y:DISPLAY_HEIGHT-point.x};
+    ? {x:DISPLAY_WIDTH-point.x,y:DISPLAY_HEIGHT-point.y}
+    : point;
 }
 const boardCells = allCells();
 const key = ({col,row}) => `${col},${row}`;
@@ -97,11 +98,11 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A') {
       // Keyboard directions follow the rotated *display*, not the stored
       // odd-q coordinates. Commands always keep their canonical col/row.
       const deltas=viewer==='B' ? {
-        ArrowLeft:[0,1],ArrowRight:[0,-1],
-        ArrowUp:[-1,0],ArrowDown:[1,0]
+        ArrowLeft:[1,0],ArrowRight:[-1,0],
+        ArrowUp:[0,1],ArrowDown:[0,-1]
       } : {
-        ArrowLeft:[0,-1],ArrowRight:[0,1],
-        ArrowUp:[1,0],ArrowDown:[-1,0]
+        ArrowLeft:[-1,0],ArrowRight:[1,0],
+        ArrowUp:[0,-1],ArrowDown:[0,1]
       };
       const delta=deltas[event.key];
       if (!delta) return;
