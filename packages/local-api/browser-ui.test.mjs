@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 
 const MATCH='123e4567-e89b-42d3-a456-426614174000';
 let serial=0;
@@ -235,3 +236,19 @@ test('unit selectors offer current own units, enemy targets and submit selected 
   assert.deepEqual(payload.unitIds,['synthetic-a','synthetic-a2']);
   assert.equal(payload.unitIds.includes('synthetic-b'),false);
 }));
+
+
+test('browser markup: every phase has native details and all unit fields are selectors',()=>{
+  const html=readFileSync(new URL('./browser-ui.html',import.meta.url),'utf8');
+  for(const id of [
+    'login-details','match-details','invite-details','state-details',
+    'deck-details','movement-details'
+  ]) assert.match(html,new RegExp(`<details id="${id}"`));
+  for(const id of ['deck-units','deck-move-unit','deck-target'])
+    assert.match(html,new RegExp(`<select id="${id}"`));
+  assert.match(html,/<button id="deck-unit-add"/);
+  assert.match(html,/<button id="deck-unit-clear"/);
+  assert.doesNotMatch(html,/<input id="deck-units"/);
+  assert.equal((html.match(/<details\\b/g)||[]).length,6);
+  assert.equal((html.match(/<\\/details>/g)||[]).length,6);
+});
