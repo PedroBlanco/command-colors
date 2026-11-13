@@ -634,3 +634,28 @@ de estas diez pruebas de integración**. Queda pendiente validar
 SEC-001 y el árbol completo; no hay movimiento confirmado ni
 fusión a `main`. Véase
 [documentación de frontera de sesión](86-sec001-autorizacion-sesion-wal-http.md).
+
+
+## SEC-001 — prioridad de autenticación en comando rechazado por laboratorio (13/11/2026)
+
+Se ha corregido en ambas ramas de seguridad (#93 y #96) el
+retorno de `SECTION_LAB_INTERNAL_ONLY` **anterior** al
+`authGuard` bajo bloqueo escritor: en una petición HTTP
+autenticada, una revocación confirmada entre preflight y
+despacho debe devolver `401 UNAUTHENTICATED`, sin revelar
+que la partida es privada. Para las llamadas con guardia,
+el rechazo del laboratorio también se decide dentro de
+`atomic`/`BEGIN IMMEDIATE`; se conserva `409` para sesión
+válida o ruta interna legada.
+
+Se añadió una regresión de revocación intermedia en
+`ancients-section-history.test.mjs` de PR #96 y otra
+en `section-history-http-isolation.test.mjs` de PR #93.
+Ambas siguen **sin ejecución nativa de integración**.
+Los cuerpos reales de `store.dispatch` de las dos ramas
+superaron **4/4 comprobaciones V8 aisladas** (revocada y
+válida en cada una), con SQLite simulado; **no equivale
+a SQLite real**. La rama #96 tiene **10 casos nuevos
+de composición CCWB/SQLite pendientes** y el manifiesto
+permanece en **80 suites**. Las PR se mantienen en
+borrador, sin fusión a `main`.
