@@ -24,6 +24,28 @@ const blocked=reason=>Object.freeze({
 });
 
 /**
+ * The physical order in which object keys were serialized is immaterial.
+ * A frontier hex can belong to two sectors: their list order is likewise
+ * immaterial. Fail closed on missing, extra, duplicate or invalid labels.
+ */
+function equalSectorCells(a,b){
+  if(!record(a)||!record(b))return false;
+  const ka=Reflect.ownKeys(a),kb=Reflect.ownKeys(b);
+  if(ka.length!==kb.length)return false;
+  const sector=new Set(['LEFT','CENTER','RIGHT']);
+  return ka.every(k=>{
+    if(typeof k!=='string'||!own(b,k))return false;
+    const left=a[k],right=b[k];
+    if(!Array.isArray(left)||!Array.isArray(right)||
+       left.length<1||left.length>2||left.length!==right.length||
+       new Set(left).size!==left.length||new Set(right).size!==right.length)
+      return false;
+    return left.every(x=>sector.has(x)&&right.includes(x))&&
+      right.every(x=>sector.has(x)&&left.includes(x));
+  });
+}
+
+/**
  * All staged previews use the SAME complete server-side order ledger check.
  * A requested piece can be individually correct while a sibling entry was
  * changed or duplicated. No CANDIDATE may escape such an inconsistent ledger.
@@ -31,8 +53,7 @@ const blocked=reason=>Object.freeze({
  */
 function consistentStagedOrderLedger(state,actor) {
   const snapshot=state.orderSnapshot;
-  if(!record(snapshot)||!record(snapshot.sectorCells)||
-     JSON.stringify(snapshot.sectorCells)!==JSON.stringify(state.sectorCells)||
+  if(!record(snapshot)||!equalSectorCells(snapshot.sectorCells,state.sectorCells)||
      !Array.isArray(snapshot.pieces)||snapshot.pieces.length>117)
     return false;
   const seen=new Set();
