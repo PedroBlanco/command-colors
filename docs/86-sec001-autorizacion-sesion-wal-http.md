@@ -43,3 +43,26 @@ Se ha comprobado la **sintaxis de siete archivos exactos** recuperados de la ram
 **No se han ejecutado todavía las 10 nuevas regresiones integradas con el servidor real**, ni los nueve casos nuevos de simulación CCWB/SQLite, ni las 80 suites completas. Las pruebas nativas WAL son solamente un contrato de concurrencia sobre tablas simplificadas y **no validan estas nuevas rutas de código**.
 
 La PR #93 **no queda resuelta ni fusionada** por esta transferencia. Antes de integrar en `main` es imprescindible ejecutar y revisar seguridad HTTP/SSE, regresión completa de un SHA exacto, pruebas de dos conexiones con sesión y pertenencia y reglas oficiales de *Ancients*. La PR #96 mantiene `draft` y `main` permanece intacta.
+
+
+## Verificación adicional del contrato interno (13/11/2026)
+
+Después de integrar las capas se efectuaron **6 comprobaciones
+aisladas en V8** sobre los cuerpos **exactos** de cuatro métodos
+recuperados de `packages/sqlite-store/sqlite.mjs`, blob Git
+`7c08fe6477a7d02ce4d660b7584d1ae7f45b0bab`:
+
+1. La resolución de sesión y la vista pública ocurren dentro de
+   la misma lectura WAL simulada.
+2. La sesión revocada se rechaza antes de crear proyección.
+3. La lectura de eventos utiliza el mismo snapshot simulado.
+4. Inicialización de mazo recibe guardia para el bloqueo escritor.
+5. El despacho no acepta el bando falsificado del llamador.
+6. Sesión revocada rechaza despacho antes de llamar al motor.
+
+**Resultado: 6/6 correctas**. Se usaron deliberadamente sustitutos
+para el almacén, transacciones y sesiones. Una primera comprobación
+interpretó erróneamente funciones asíncronas como resultados síncronos
+(4/6); tras corregir el arnés para usar `await`, el resultado
+fue **6/6**. **No** es prueba nativa de SQLite ni de HTTP. El
+bloqueo funcional continúa hasta ejecutar los casos integrados reales.
