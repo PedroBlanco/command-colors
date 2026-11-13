@@ -449,8 +449,13 @@ action('deck-unit-add',async()=>{
     throw Error('UNIDAD_NO_DISPONIBLE');
   selectedOrderUnits.add(id);
   renderDeck();
+  return false; // local selection only, no server command was applied
 });
-action('deck-unit-clear',async()=>{selectedOrderUnits.clear();renderDeck();});
+action('deck-unit-clear',async()=>{
+  selectedOrderUnits.clear();
+  renderDeck();
+  return false;
+});
 action('deck-orders',()=>sendDeck('assign_synthetic_orders',{
   unitIds: [...selectedOrderUnits]
 }));
