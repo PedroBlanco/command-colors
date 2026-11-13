@@ -280,30 +280,6 @@ export function openSqliteComposition({file, clock = Date.now,
       return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
         .all(matchId).map(x => decode(x.payload));
     }
-    /** Shared strict input contract for the two read-only sequence
-     *  previews. Never accept client-supplied actor, game or terrain. */
-    function validSequenceRequest(request) {
-      return !(!plainLabRequest(request) ||
-            Object.keys(request).length!==3 ||
-            !['sessionToken','expectedRevision','actions'].every(k => Object.hasOwn(request,k)) ||
-            typeof request.sessionToken!=='string' ||
-            !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision<0 ||
-            !Array.isArray(request.actions) || request.actions.length<1 ||
-            request.actions.length>117 ||
-            !request.actions.every(action => plainLabRequest(action) &&
-              Object.keys(action).length===3 &&
-              ['kind','id','path'].every(k => Object.hasOwn(action,k)) &&
-              ['UNIT','LEADER'].includes(action.kind) &&
-              typeof action.id==='string' &&
-              /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(action.id) &&
-              action.id!=='__proto__' &&
-              Array.isArray(action.path) && action.path.length>0 &&
-              action.path.length<=32 &&
-              action.path.every(cell => plainLabRequest(cell) &&
-                Object.keys(cell).length===2 &&
-                Object.hasOwn(cell,'col') && Object.hasOwn(cell,'row') &&
-                inBounds(cell))));
-    }
     const store = {
       // Legacy internal actor-based method. HTTP/SSE always use the
       // authenticated session-bound view below.
@@ -428,14 +404,15 @@ export function openSqliteComposition({file, clock = Date.now,
        * based on the same WAL snapshot as session, membership and replay.
        * No public route, commands, mutations or gameplay authorization. */
       precheckExperimentalSectionMovementSequence(request = {},trustedContext) {
-        if (!validSequenceRequest(request))
+        const stable=snapshotStagedSequenceRequest(request);
+        if(stable===null)
           return {status:400,code:'INVALID_SECTION_LAB_SEQUENCE_REQUEST'};
         return readSnapshot(() => {
-          const identity=resolveSectionLabActor(request.sessionToken);
+          const identity=resolveSectionLabActor(stable.sessionToken);
           if(identity.error)return identity.error;
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-          return sectionHistory.previewMovementSequence(identity.actor,request,trustedContext);
+          return sectionHistory.previewMovementSequence(identity.actor,stable,trustedContext);
         });
       },
       /**
@@ -460,14 +437,15 @@ export function openSqliteComposition({file, clock = Date.now,
        *  match membership, private replay and candidate trace share one WAL
        *  snapshot. This cannot change game state or publish public events. */
       precheckExperimentalSectionMovementEvidence(request = {},trustedContext) {
-        if (!validSequenceRequest(request))
+        const stable=snapshotStagedSequenceRequest(request);
+        if(stable===null)
           return {status:400,code:'INVALID_SECTION_LAB_EVIDENCE_REQUEST'};
         return readSnapshot(() => {
-          const identity=resolveSectionLabActor(request.sessionToken);
+          const identity=resolveSectionLabActor(stable.sessionToken);
           if(identity.error)return identity.error;
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-          return sectionHistory.previewMovementEvidence(identity.actor,request,trustedContext);
+          return sectionHistory.previewMovementEvidence(identity.actor,stable,trustedContext);
         });
       },
       /**
