@@ -244,6 +244,25 @@ export function openSqliteComposition({file, clock = Date.now,
         db, resolveActor:resolveSectionLabActor, sessionToken, expectedActor:originalActor
       });
     }
+    // Both projections must share the session/membership WAL snapshot for
+    // HTTP and SSE; never build the private Ancients lab hand for those APIs.
+    function projectForActor(actor, denyExperimentalLab=false) {
+      const row=rowOrThrow();
+      if(hasExperimentalSectionHistory(row)) {
+        if(denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        return sectionHistory.view(actor);
+      }
+      return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+    }
+    function eventsForActor(actor, denyExperimentalLab=false) {
+      const row=rowOrThrow();
+      if(hasExperimentalSectionHistory(row)) {
+        if(denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        sectionHistory.view(actor); // verify replay before returning public events
+      }
+      return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
+        .all(matchId).map(x => decode(x.payload));
+    }
     /** Shared strict input contract for the two read-only sequence
      *  previews. Never accept client-supplied actor, game or terrain. */
     function validSequenceRequest(request) {
@@ -268,18 +287,31 @@ export function openSqliteComposition({file, clock = Date.now,
                 Object.hasOwn(cell,'col') && Object.hasOwn(cell,'row') &&
                 inBounds(cell))));
     }
-    return {
-      // Once the synthetic deck is initialized, the legacy fixture hands
-      // must never be returned to a player.
-      view(actor) {
-        const row = rowOrThrow();
-        if (hasExperimentalSectionHistory(row)) return sectionHistory.view(actor);
-        return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+    const store = {
+      // Legacy internal actor-based method. HTTP/SSE always use the
+      // authenticated session-bound view below.
+      view(actor,{denyExperimentalLab=false}={}) {
+        if(!['A','B'].includes(actor)) return null;
+        return readSnapshot(()=>projectForActor(actor,denyExperimentalLab));
+      },
+      viewForSession({sessionToken}={}) {
+        return readSnapshot(()=>{
+          const identity=resolveSectionLabActor(sessionToken);
+          if(identity.error)return identity.error;
+          return projectForActor(identity.actor,true);
+        });
       },
       initializeCommandDeck(actor) {
         const row=rowOrThrow();
         if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_MODE_ACTIVE'};
         return commandDeck.initialize(actor);
+      },
+      // HTTP setup: session and membership are rechecked under BEGIN IMMEDIATE.
+      initializeCommandDeckForSession({sessionToken}={}) {
+        const identity=resolveSectionLabActor(sessionToken);
+        if(identity.error)return identity.error;
+        return commandDeck.initialize(identity.actor,
+          mutationSessionGuard(sessionToken,identity.actor));
       },
       /**
        * TEST-ONLY, never an HTTP route. The trusted fixture is supplied by
@@ -523,30 +555,39 @@ export function openSqliteComposition({file, clock = Date.now,
         });
       },
       publicEvents(actor, {denyExperimentalLab = false} = {}) {
-        if (!['A','B'].includes(actor)) return null;
-        // Mode selection, replay verification and event read share a WAL
-        // snapshot, without holding an IMMEDIATE writer lock.
-        // The HTTP gateway opts out of lab data INSIDE this read transaction;
-        // a lab activated after an earlier gateway check cannot leak events.
-        return readSnapshot(() => {
-          const row = rowOrThrow();
-          if (hasExperimentalSectionHistory(row)) {
-            if (denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
-            sectionHistory.view(actor);
-          }
-          return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
-            .all(matchId).map(x => decode(x.payload));
+        if(!['A','B'].includes(actor))return null;
+        return readSnapshot(()=>eventsForActor(actor,denyExperimentalLab));
+      },
+      publicEventsForSession({sessionToken}={}) {
+        return readSnapshot(()=>{
+          const identity=resolveSectionLabActor(sessionToken);
+          if(identity.error)return identity.error;
+          return eventsForActor(identity.actor,true);
         });
       },
-      async dispatch(request = {}) {
+      async dispatchForSession(request={}) {
+        if(!plainLabRequest(request)||typeof request.sessionToken!=='string')
+          return {status:400,code:'INVALID_COMMAND'};
+        const {sessionToken,...command}=request;
+        // Actor always comes from the live session, never the HTTP body.
+        const identity=resolveSectionLabActor(sessionToken);
+        if(identity.error)return identity.error;
+        return store.dispatch({...command,actor:identity.actor},
+          mutationSessionGuard(sessionToken,identity.actor));
+      },
+      async dispatch(request = {}, authGuard = null) {
         const {actor,type,expectedRevision,idempotencyKey} = request;
         if (!['A','B'].includes(actor)) return {status:403,code:'FORBIDDEN'};
         const row=rowOrThrow();
         if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
-        if (hasCommandDeck(row)) return commandDeck.dispatch(request);
+        if (hasCommandDeck(row)) return commandDeck.dispatch(request,authGuard);
         if (type !== 'pass_demo_turn' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
         return atomic(() => {
+          if(authGuard){
+            const authorization=authGuard();
+            if(authorization!==true)return authorization;
+          }
           const row = rowOrThrow();
           // A second SQLite process may initialize the private section lab
           // after our preflight but before BEGIN IMMEDIATE. Do not append a
@@ -576,6 +617,7 @@ export function openSqliteComposition({file, clock = Date.now,
         });
       }
     };
+    return store;
   }
 
   let closed = false;
