@@ -610,3 +610,27 @@ Estos 8 casos usan tablas temporales simplificadas: **no** son una
 ejecución de las **9 pruebas nuevas de integración CCWB/SQLite**.
 La regresión integral, HTTP/SSE y SEC-001 (#93) siguen pendientes.
 Véase [evidencia nativa](85-verificacion-nativa-sqlite-wal-aislada.md).
+
+## SEC-001 — acoplamiento sesión/WAL de HTTP, SSE e invitaciones (13/11/2026)
+
+Se han trasladado a la rama experimental de PR #96 controles selectivos de
+la [PR #93](https://github.com/PedroBlanco/command-colors/pull/93),
+que **no** se cierra ni se declara resuelta:
+
+- `getMatch`, vista pública y eventos: sesión, pertenencia, modo de
+  partida y datos observados dentro del mismo snapshot SQLite/WAL.
+- Creación y revocación de partidas/invitaciones, inicialización del
+  mazo y comandos: verificación de identidad **bajo `BEGIN IMMEDIATE`**.
+- Gateway HTTP y SSE: preferencia por métodos vinculados a sesión y
+  bloqueo de exposición de `LAB_ONLY`, con fallback exclusivo para
+  anteriores almacenes sintéticos internos.
+
+Se han incorporado **10 pruebas** de #93: 4 SQLite, 4 HTTP y 2 SSE,
+en suites ya existentes (14, 11 y 8 casos respectivamente).
+**80 suites** en el manifiesto sin añadir duplicados. Sintaxis
+comprobada de 7 archivos; las ocho pruebas nativas WAL autónomas
+siguen pasando, pero **no se ha ejecutado ninguna regresión nativa
+de estas diez pruebas de integración**. Queda pendiente validar
+SEC-001 y el árbol completo; no hay movimiento confirmado ni
+fusión a `main`. Véase
+[documentación de frontera de sesión](86-sec001-autorizacion-sesion-wal-http.md).
