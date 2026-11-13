@@ -214,6 +214,10 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const result=typeof store.initializeCommandDeckForSession==='function'
           ? await store.initializeCommandDeckForSession({sessionToken:token})
           : await store.initializeCommandDeck(actor);
+        // A denied mutation must never serialize a stale/private view, even
+        // if a future store adapter accidentally attaches one to its error.
+        const setupError=publicReadError(result);
+        if(setupError)return reply(res,setupError.status,{code:setupError.code});
         // Never return a private deck projection belonging to another match.
         if (result.view && result.view.matchId !== matchId)
           return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
@@ -255,6 +259,10 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const result=typeof store.dispatchForSession==='function'
           ? await store.dispatchForSession({sessionToken:token,...command})
           : await store.dispatch({actor,...command});
+        // Never leak private data when session, membership or internal-lab
+        // mode is denied during the server-authorized write.
+        const commandError=publicReadError(result);
+        if(commandError)return reply(res,commandError.status,{code:commandError.code});
         if (result.view && result.view.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
       }
