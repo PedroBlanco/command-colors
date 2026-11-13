@@ -1659,3 +1659,166 @@ test('CCWB sequence previews: accessor request is rejected before acquiring WAL 
   }
   assert.equal(app.unsafeTestDatabase().isTransaction,false);
 }));
+
+test('CCWB order budget: verified WAL replay plans orders without SQLite writes',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const tables=()=>({
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  });
+  const before=tables();
+  const query=boardSequence(tokens.A);
+  const result=store.precheckExperimentalSectionOrderBudget(query,movementContext());
+  assert.equal(result.status,200);
+  assert.equal(result.code,'SECTION_LAB_ORDER_BUDGET_PREVIEW');
+  assert.equal(result.budget.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+  assert.deepEqual([result.budget.totalOrders,result.budget.wouldUseCount,
+    result.budget.lockedCount,result.budget.availableCount],[2,2,0,0]);
+  assert.equal(result.budget.orders.find(x=>x.id==='leaderA').status,'USED');
+  assert.equal(result.budget.orders.find(x=>x.id==='unitA').status,'USED');
+  assert.equal(result.budget.projectedBoard.units.find(x=>x.id==='unitA').col,3);
+  for(const key of ['movementAuthorized','attackAuthorized','boardChanged','canCommit'])
+    assert.equal(result[key],false);
+  assert.equal(result.budget.officialMovementAuthorized,false);
+  assert.equal(result.budget.stateChanged,false);
+  const json=JSON.stringify(result);
+  for(const secret of [tokens.A,'yourHand','drawPile','handAtPlay',
+    'cardInstanceId','idempotencyKey'])
+    assert.equal(json.includes(secret),false);
+  assert.deepEqual(connect().getStore(matchId)
+    .precheckExperimentalSectionOrderBudget(query,movementContext()),result);
+  assert.deepEqual(tables(),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB order budget: unit carries ordered leader, locking its extra order',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const result=store.precheckExperimentalSectionOrderBudget(
+    boardSequence(tokens.A,[sequenceUnit()]),movementContext());
+  assert.equal(result.status,200);
+  assert.equal(result.budget.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+  assert.deepEqual([result.budget.wouldUseCount,result.budget.lockedCount,
+    result.budget.availableCount],[1,1,0]);
+  assert.equal(result.budget.orders.find(x=>x.kind==='UNIT').status,'USED');
+  assert.equal(result.budget.orders.find(x=>x.kind==='LEADER').status,'LOCKED');
+  assert.equal(result.budget.moves[0].leaderCarried,'leaderA');
+  assert.equal(result.budget.canCommit,false);
+  assert.equal(Object.isFrozen(result.budget.orders[0]),true);
+}));
+
+test('CCWB order budget: session revocation, missing membership and rival cannot see budget',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  assert.deepEqual(store.precheckExperimentalSectionOrderBudget(
+    boardSequence('revoked-secret'.repeat(5)),movementContext()),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(store.precheckExperimentalSectionOrderBudget(
+    boardSequence(tokens.outsider),movementContext()),
+    {status:404,code:'NOT_FOUND'});
+  const rival=store.precheckExperimentalSectionOrderBudget(
+    boardSequence(tokens.B),movementContext());
+  assert.equal(rival.status,200);
+  assert.equal(rival.budget.status,'BLOCKED');
+  assert.equal(rival.budget.orders,null);
+  assert.equal(rival.budget.projectedBoard,null);
+  const second=connect();
+  second.identity.logOut(tokens.A);
+  assert.deepEqual(store.precheckExperimentalSectionOrderBudget(
+    boardSequence(tokens.A),movementContext()),
+    {status:401,code:'UNAUTHENTICATED'});
+  second.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?').run(matchId);
+  assert.deepEqual(store.precheckExperimentalSectionOrderBudget(
+    boardSequence(tokens.B),movementContext()),
+    {status:404,code:'NOT_FOUND'});
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB order budget: invalid inputs and illegal second move expose no partial plan',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  for(const patch of [{actor:'B'},{board:{}},{expectedRevision:'2'},
+    {actions:[]},{actions:[{...sequenceUnit(),owner:'B'}]},
+    {actions:[{kind:'UNIT',id:'unitA',path:[{col:13,row:4}]}]}]){
+    assert.deepEqual(store.precheckExperimentalSectionOrderBudget(
+      boardSequence(tokens.A,[sequenceLeader()],patch),movementContext()),
+      {status:400,code:'INVALID_SECTION_LAB_ORDER_BUDGET_REQUEST'});
+  }
+  const reversed=store.precheckExperimentalSectionOrderBudget(
+    boardSequence(tokens.A,[sequenceUnit(),sequenceLeader()]),movementContext());
+  assert.equal(reversed.status,200);
+  assert.equal(reversed.budget.status,'BLOCKED');
+  assert.equal(reversed.budget.reason,'LEADER_ALREADY_MOVED');
+  assert.equal(reversed.budget.orders,null);
+  assert.equal(reversed.budget.projectedBoard,null);
+  const stale=store.precheckExperimentalSectionOrderBudget(
+    boardSequence(tokens.A,[sequenceLeader()],{expectedRevision:1}),movementContext());
+  assert.equal(stale.budget.status,'BLOCKED');
+  assert.equal(stale.budget.orders,null);
+  assert.equal(stale.budget.reason,'STALE_REVISION');
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB order budget: untrusted Proxy never changes captured request after session lookup',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),original=app.identity.resolveSession;
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const source=boardSequence(tokens.A),gets=[];
+  const proxy=new Proxy(source,{
+    get(){gets.push('GET');throw Error('GET_NOT_ALLOWED');}
+  });
+  let resolved=0;
+  try {
+    app.identity.resolveSession=token=>{
+      if(token===tokens.A){
+        resolved++;
+        source.sessionToken='not-the-session';
+        source.expectedRevision=999;
+        source.actions[0].id='forged';
+        source.actions[0].path[0].col=10;
+      }
+      return original(token);
+    };
+    const result=store.precheckExperimentalSectionOrderBudget(proxy,movementContext());
+    assert.equal(result.status,200);
+    assert.equal(result.budget.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+    assert.equal(result.budget.wouldUseCount,2);
+    assert.equal(resolved,1);
+  } finally {
+    app.identity.resolveSession=original;
+  }
+  assert.deepEqual(gets,[]);
+  const getter=boardSequence(tokens.A);
+  let hits=0;
+  Object.defineProperty(getter.actions[0].path[0],'col',{
+    enumerable:true,get(){hits++;throw Error('UNTRUSTED_GETTER');}
+  });
+  assert.deepEqual(store.precheckExperimentalSectionOrderBudget(getter,movementContext()),
+    {status:400,code:'INVALID_SECTION_LAB_ORDER_BUDGET_REQUEST'});
+  assert.equal(hits,0);
+}));
+
+test('CCWB order budget: WAL read survives concurrent writer without exposing draft',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const writer=connect().unsafeTestDatabase();
+  writer.exec('BEGIN IMMEDIATE');
+  try {
+    const result=store.precheckExperimentalSectionOrderBudget(
+      boardSequence(tokens.A,[sequenceUnit()]),movementContext());
+    assert.equal(result.status,200);
+    assert.equal(result.budget.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+    assert.equal(result.budget.wouldUseCount,1);
+    assert.equal(result.budget.lockedCount,1);
+  } finally {
+    writer.exec('ROLLBACK');
+  }
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
