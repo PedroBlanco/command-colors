@@ -218,8 +218,16 @@ test('unit selectors offer current own units, enemy targets and submit selected 
   assert.deepEqual(values('deck-target'),['synthetic-b']);
   assert.equal(ctx.element('deck-move-unit').value,'','no implicit own unit selected');
   const select=ctx.element('deck-units');
-  select.children[0].selected=true;
-  select.children[1].selected=true;
+  assert.equal(ctx.element('deck-orders').disabled,true);
+  select.value='synthetic-a';
+  await select.dispatch('change');
+  assert.equal(ctx.element('deck-unit-add').disabled,false);
+  await ctx.element('deck-unit-add').dispatch('click');
+  select.value='synthetic-a2';
+  await select.dispatch('change');
+  await ctx.element('deck-unit-add').dispatch('click');
+  assert.equal(ctx.element('deck-orders').disabled,false);
+  assert.match(ctx.element('deck-unit-selected').textContent,/synthetic-a2/);
   await ctx.element('deck-orders').dispatch('click');
   const request=ctx.requests.find(entry=>entry.path===`/api/matches/${MATCH}/commands`);
   const payload=JSON.parse(request.body);
