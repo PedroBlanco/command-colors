@@ -119,7 +119,6 @@ test('WAL: read transaction does not block another connection obtaining BEGIN IM
   assert.equal(reader.isTransaction,false);
 }));
 
-
 test('WAL: a stale read snapshot cannot be upgraded into a writer after another commit',()=>withWal(({reader,writer})=>{
   reader.exec('BEGIN');
   try {
