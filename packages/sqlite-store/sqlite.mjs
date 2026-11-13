@@ -36,7 +36,9 @@ function normalizeHandle(value) {
 function initialState(matchId) {
   return {
     schemaVersion: 1, matchId, status: 'ACTIVE', turn: 'A',
-    board: [{id: 'synthetic-a', side: 'A', col: 3, row: 4}, {id: 'synthetic-b', side: 'B', col: 9, row: 4}],
+    // Landscape 13 × 9 lab: both sides occupy opposite LONG edges.
+    // Only new matches receive this layout; existing saved boards stay intact.
+    board: [{id: 'synthetic-a', side: 'A', col: 3, row: 6}, {id: 'synthetic-b', side: 'B', col: 9, row: 2}],
     hands: {A: ['PRIVATE_A_1', 'PRIVATE_A_2'], B: ['PRIVATE_B_1','PRIVATE_B_2','PRIVATE_B_3']},
     deck: ['HIDDEN_FUTURE_CARD']
   };
