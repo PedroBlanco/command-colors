@@ -92,3 +92,50 @@ test('SSE closes if revision becomes invalid rather than sending corrupted state
   await until(()=>f.res.ended);
   assert.doesNotMatch(f.res.text,/wrong|SECRET/);
 });
+
+test('SEC-001 SSE: prefer session-bound WAL view over stale actor-based view',async t=>{
+  const res=new TestResponse(),calls=[];
+  const stop=startRevisionStream({
+    res,token:TOKEN,matchId:ID,intervalMs:20,
+    identity:{resolveSession:()=>({handle:'alice'})},
+    invitations:{getMatch:()=>({ok:true,status:'READY',revision:2,
+      players:[{handle:'alice',side:'A'}]})},
+    getStore:async()=>({
+      view:()=>{throw new Error('ACTOR_READ_MUST_NOT_RUN');},
+      viewForSession:({sessionToken})=>{
+        calls.push(sessionToken);
+        return {matchId:ID,revision:3,status:'ACTIVE'};
+      }
+    })
+  });
+  t.after(()=>{stop();if(!res.ended)res.end();});
+  await until(()=>res.text.includes('event: revision'));
+  assert.deepEqual(calls,[TOKEN]);
+  assert.match(res.text,/"lobbyRevision":2,"gameRevision":3/);
+  assert.doesNotMatch(res.text,/SECRET|yourHand/);
+});
+
+test('SEC-001 SSE: logout during async store lookup closes without revision emission',async t=>{
+  const res=new TestResponse(),calls=[];
+  let alive=true;
+  const stop=startRevisionStream({
+    res,token:TOKEN,matchId:ID,intervalMs:20,
+    identity:{resolveSession:()=>alive?{handle:'alice'}:null},
+    invitations:{getMatch:()=>({ok:true,status:'READY',revision:1,
+      players:[{handle:'alice',side:'A'}]})},
+    getStore:async()=>{
+      alive=false;
+      return {
+        view:()=>{throw new Error('ACTOR_READ_MUST_NOT_RUN');},
+        viewForSession:({sessionToken})=>{
+          calls.push(sessionToken);
+          return {status:401,code:'UNAUTHENTICATED'};
+        }
+      };
+    }
+  });
+  t.after(()=>{stop();if(!res.ended)res.end();});
+  await until(()=>res.ended);
+  assert.deepEqual(calls,[TOKEN]);
+  assert.doesNotMatch(res.text,/event: revision|gameRevision|SECRET/);
+});
