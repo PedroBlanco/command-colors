@@ -14,19 +14,20 @@ const privateScope = createPrivateViewScope();
 let movementBoard = null;
 let updates = null, updateMatchId = null, inspectionSequence = 0;
 let lobbyStatus = null, panelKey = null;
-let lobbyWatch = null, lobbyWatchBusy = false;
+let lobbyWatch = null, lobbyWatchMatchId = null, lobbyWatchBusy = false;
 
 // SSE is primary; a bounded authorized recheck only while INVITING
 // avoids a stuck lobby if the READY transition notice is missed.
 function syncLobbyWatch(mode, matchId) {
   const waiting = mode === 'invite' && Boolean(signedInHandle && matchId);
-  if (!waiting) {
+  if (!waiting || lobbyWatchMatchId !== matchId) {
     if (lobbyWatch !== null) clearInterval(lobbyWatch);
     lobbyWatch = null;
-    return;
+    lobbyWatchMatchId = null;
   }
-  if (lobbyWatch !== null) return;
+  if (!waiting || lobbyWatch !== null) return;
   const watching = matchId;
+  lobbyWatchMatchId = watching;
   lobbyWatch = setInterval(async () => {
     if (lobbyWatchBusy || document.hidden || !signedInHandle ||
         privateScope.capture().matchId !== watching ||
