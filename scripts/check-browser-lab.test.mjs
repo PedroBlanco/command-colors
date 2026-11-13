@@ -29,7 +29,7 @@ test('diagnóstico rechaza puerto ocupado y puerto inseguro', async()=>{
 });
 
 import {readFile, writeFile, mkdir, symlink} from 'node:fs/promises';
-import {parseArgs, selectTests, runTestBatch, validateLogFileTarget} from './run-test-suite.mjs';
+import {parseArgs, selectTests, runTestBatch, validateLogFileTarget, auditLocalTestManifest, requireCompleteTestManifest} from './run-test-suite.mjs';
 
 const good = 'example/good.test.mjs', bad = 'example/bad.test.mjs';
 async function runnerLab(fn) {
@@ -108,3 +108,75 @@ test('log de regresión rechaza ruta exterior y padre simbólico fuera del proye
     await rm(outside, {recursive: true, force: true});
   }
 }));
+
+test('manifest audit detects forgotten and stale test suites without writing to disk',()=>runnerLab(async dir=>{
+  const folder=join(dir,'packages','sample');
+  await mkdir(folder,{recursive:true});
+  const first='packages/sample/included.test.mjs';
+  const second='packages/sample/forgotten.test.mjs';
+  await writeFile(join(folder,'included.test.mjs'),"// synthetic test file\n");
+  await mkdir(join(folder,'node_modules'),{recursive:true});
+  await writeFile(join(folder,'node_modules','dependency.test.mjs'),"// dependency test ignored\n");
+  const pass=auditLocalTestManifest(dir,[first]);
+  assert.deepEqual(pass,{ok:true,discovered:1,declared:1,missing:[],unregistered:[]});
+  assert.equal(requireCompleteTestManifest(dir,[first]).ok,true);
+  await writeFile(join(folder,'forgotten.test.mjs'),"// synthetic unregistered file\n");
+  const forgotten=auditLocalTestManifest(dir,[first]);
+  assert.deepEqual(forgotten.unregistered,[second]);
+  assert.equal(forgotten.ok,false);
+  assert.throws(()=>requireCompleteTestManifest(dir,[first]),/TEST_MANIFEST_DRIFT/);
+  await rm(join(folder,'included.test.mjs'));
+  const stale=auditLocalTestManifest(dir,[first]);
+  assert.deepEqual(stale.missing,[first]);
+  assert.deepEqual(stale.unregistered,[second]);
+  assert.throws(()=>requireCompleteTestManifest(dir,[first]),/TEST_MANIFEST_DRIFT/);
+}));
+
+test('manifest audit ignores external files behind directory symlinks',async t=>runnerLab(async dir=>{
+  const packages=join(dir,'packages');
+  await mkdir(packages,{recursive:true});
+  const outside=await mkdtemp(join(tmpdir(),'ccw-audit-outside-'));
+  try {
+    await writeFile(join(outside,'private.test.mjs'),"// never include\n");
+    try {
+      await symlink(outside,join(packages,'linked'),process.platform==='win32'?'junction':'dir');
+    } catch(error) {
+      if(['EPERM','EACCES','ENOTSUP'].includes(error.code)) {
+        t.skip('Sin permiso de enlace simbólico en este sistema');
+        return;
+      }
+      throw error;
+    }
+    assert.deepEqual(auditLocalTestManifest(dir,[]),
+      {ok:true,discovered:0,declared:0,missing:[],unregistered:[]});
+    assert.throws(()=>auditLocalTestManifest(dir,['packages/../private.test.mjs']),
+      /INVALID_TEST_MANIFEST/);
+  } finally {
+    await rm(outside,{recursive:true,force:true});
+  }
+}));
+
+
+test('Windows SEC-001 launcher selects twelve canonical suites before full regression',async()=>{
+ const script=await readFile(new URL('./validate-ccwb-http.ps1',import.meta.url),'utf8');
+ const suites=[...script.matchAll(/^\s*'([^']+[.]test[.]mjs)'[,]?\s*$/gm)]
+   .map(match=>match[1]);
+ assert.equal(suites.length,12,'priority preflight must cover 12 security suites');
+ assert.equal(new Set(suites).size,suites.length,'no duplicate priority suites');
+ for(const suite of suites)
+   assert.equal(LOCAL_TEST_FILES.includes(suite),true,'unregistered priority: '+suite);
+ for(const required of [
+   'packages/local-api/section-history-http-isolation.test.mjs',
+   'packages/local-api/revision-stream-lab-isolation.test.mjs',
+   'packages/local-api/command-deck-sse.test.mjs',
+   'packages/sqlite-store/sqlite.test.mjs',
+   'packages/sqlite-store/ancients-section-history.test.mjs',
+   'packages/sqlite-store/wal-cross-process-revocation.test.mjs',
+   'packages/sqlite-store/wal-transaction-contract.test.mjs',
+   'packages/sqlite-store/section-mutation-session-guard.test.mjs'
+ ]) assert.ok(suites.includes(required),'critical security suite omitted: '+required);
+ assert.ok(script.indexOf('"--only=') < script.indexOf('"--log=$fullLog"'),
+   'preflight must precede full regression');
+ assert.match(script,/if \(\$targetCode -ne 0\) \{/,
+   'preflight errors must stop full regression');
+});
