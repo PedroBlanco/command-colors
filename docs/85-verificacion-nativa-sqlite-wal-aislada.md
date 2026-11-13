@@ -39,3 +39,43 @@ No demuestra la autorización de movimientos, reglas oficiales, garantías de pr
 Ejecutar las suites reales de CCWB/SQLite, HTTP/SSE y regresión de 80 suites en un árbol completo idéntico al SHA de la PR, sin WSL/Docker/Actions; revisar SEC-001 y únicamente después considerar fusiones a `main`. La falta de conectividad DNS a GitHub desde este contenedor impide actualmente obtener ese árbol completo para sus pruebas nativas.
 
 No se requiere validación local del usuario todavía.
+
+
+## Ampliación nativa a 8 casos (13/11/2026)
+
+La suite se ha ampliado con **dos pruebas adicionales** aplicables
+al futuro commit reglamentario de *Ancients*:
+
+7. **Rechazo de promoción de una lectura obsoleta a escritura**:
+   un lector fija una revisión antigua, otra conexión confirma una
+   revisión nueva y el primero no puede sobrescribirla al intentar
+   escribir desde el mismo snapshot. Al revertir su transacción, la
+   revisión confirmada por el otro escritor se conserva.
+8. **Exclusividad de `BEGIN IMMEDIATE` durante la revalidación**:
+   la conexión que obtiene primero el bloqueo escritor puede comprobar
+   la sesión y realizar el cambio de revisión sin que otro escritor
+   revoque la sesión entre medias. La revocación del segundo escritor
+   solo se ejecuta al liberarse el bloqueo.
+
+En Node 22.16.0, el primer intento de la prueba 7 falló por una
+**expectativa incorrecta del código de excepción**: la API
+`node:sqlite` expone `ERR_SQLITE_ERROR` y el mensaje
+`database is locked`, no necesariamente el código extendido
+`SQLITE_BUSY_SNAPSHOT`. Se adaptó la aserción para aceptar el error
+real de bloqueo y se volvió a ejecutar.
+
+**Resultado final nativo:** **8 PASS, 0 FAIL, 0 SKIP, exit 0** con
+Node 22.16.0 y SQLite 3.49.1. Se confirmó mediante
+`git hash-object` que el archivo ejecutado coincide exactamente
+con el publicado en GitHub:
+`75b75c202c527d1414a40cb52d43d1ecfdf2a80f`.
+SHA-256 del TAP de la última repetición:
+`898eab28183c1fafe7a8198d8e40f2ed22809b1373aef5c2a42e8b6c63043ad8`.
+La suite sigue siendo **una** entrada en el manifiesto, que permanece
+en **80 suites**, aunque contiene ahora ocho casos.
+
+**Límite invariable:** solo demuestra propiedades nativas de SQLite/WAL
+sobre tablas reducidas, no el código de producción CCWB ni la
+seguridad de las manos y eventos. Permanecen pendientes **9 casos
+nuevos de integración CCWB/SQLite**, 10 casos HTTP y la regresión
+completa; PR #96 sigue en borrador y `main` no cambia.
