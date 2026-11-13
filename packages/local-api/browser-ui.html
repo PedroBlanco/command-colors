@@ -52,8 +52,11 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <div id="deck-panel" hidden>
 <p id="deck-status" role="status">Mazo no inicializado</p>
 <label>Carta de tu mano<select id="deck-card"></select></label><button id="deck-play" disabled>Jugar carta</button>
-<label>Unidades propias que reciben orden (Ctrl o Cmd para seleccionar varias)
-<select id="deck-units" multiple size="4" aria-label="Unidades propias que reciben orden"></select></label>
+<label>Unidad propia que recibe orden
+<select id="deck-units"><option value="">Selecciona una unidad</option></select></label>
+<button id="deck-unit-add" type="button" disabled>Añadir unidad a las órdenes</button>
+<button id="deck-unit-clear" type="button" disabled>Vaciar selección</button>
+<p id="deck-unit-selected" role="status" aria-live="polite">Ninguna unidad seleccionada</p>
 <button id="deck-orders" disabled>Asignar órdenes</button><button id="deck-undo" disabled>Deshacer órdenes</button>
 <fieldset><legend>Movimiento ficticio (no reglamento oficial)</legend>
 <label>Unidad propia a mover<select id="deck-move-unit"><option value="">Selecciona una unidad</option></select></label>
