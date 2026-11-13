@@ -1711,6 +1711,22 @@ test('CCWB order budget: unit carries ordered leader, locking its extra order',
   assert.equal(Object.isFrozen(result.budget.orders[0]),true);
 }));
 
+test('CCWB order budget: leader detaches, unit remains AVAILABLE but never authorized',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const r=store.precheckExperimentalSectionOrderBudget(
+    boardSequence(tokens.A,[sequenceLeader()]),movementContext());
+  assert.equal(r.status,200);
+  assert.equal(r.budget.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+  assert.deepEqual([r.budget.totalOrders,r.budget.wouldUseCount,
+    r.budget.lockedCount,r.budget.availableCount],[2,1,0,1]);
+  assert.equal(r.budget.orders.find(x=>x.id==='leaderA').status,'USED');
+  assert.equal(r.budget.orders.find(x=>x.id==='unitA').status,'AVAILABLE');
+  assert.equal(r.budget.movementAuthorized,false);
+  assert.equal(r.boardChanged,false);
+}));
+
 test('CCWB order budget: session revocation, missing membership and rival cannot see budget',
   ()=>fixture(async({app,connect,matchId,tokens})=>{
   const store=app.getStore(matchId);
