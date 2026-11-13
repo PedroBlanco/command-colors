@@ -384,6 +384,56 @@ test('all previews reject duplicate, extra-field and mismatched sector ledgers',
   }
 });
 
+test('sector map key insertion order cannot invalidate an equivalent staged ledger',()=>{
+  const {state}=readyLeader({includeUnit:true}),before=structuredClone(state);
+  state.orderSnapshot.sectorCells=Object.fromEntries(
+    Object.entries(state.orderSnapshot.sectorCells).reverse());
+  assert.notEqual(JSON.stringify(state.orderSnapshot.sectorCells),
+    JSON.stringify(state.sectorCells));
+  for(const result of [
+    check(state),checkLeader(state),checkSequence(state,[leaderMove()])
+  ]){
+    assert.ok(['CANDIDATE','CANDIDATE_SEQUENCE'].includes(result.status),
+      result.reason);
+    assert.equal(result.movementAuthorized,false);
+    assert.equal(result.stateChanged,false);
+  }
+  assert.deepEqual(state.board,before.board);
+});
+
+test('frontier sectors compare by membership, but reject altered values',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  // Two-sector frontier mapping is a legitimate server-side scenario value.
+  state.sectorCells['2,4']=['LEFT','CENTER'];
+  state.orderSnapshot.sectorCells['2,4']=['CENTER','LEFT'];
+  assert.equal(check(state).status,'CANDIDATE');
+  assert.equal(checkLeader(state).status,'CANDIDATE');
+  assert.equal(checkSequence(state,[leaderMove()]).status,'CANDIDATE_SEQUENCE');
+  state.orderSnapshot.sectorCells['2,4']=['LEFT','RIGHT'];
+  assert.equal(checkSequence(state,[leaderMove()]).reason,'ORDER_LEDGER_MISMATCH');
+});
+
+test('staged sector ledger rejects missing or extra keys and duplicate labels',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  for(const tamper of [
+    s=>delete s.orderSnapshot.sectorCells['10,4'],
+    s=>{s.orderSnapshot.sectorCells['9,8']=['LEFT'];},
+    s=>{s.orderSnapshot.sectorCells['2,4']=['LEFT','LEFT'];},
+    s=>{s.orderSnapshot.sectorCells['2,4']=['UNSUPPORTED'];}
+  ]){
+    const corrupted=structuredClone(state);
+    tamper(corrupted);
+    for(const result of [
+      check(corrupted),checkLeader(corrupted),
+      checkSequence(corrupted,[leaderMove()])
+    ]){
+      assert.equal(result.status,'BLOCKED');
+      assert.equal(result.reason,'ORDER_LEDGER_MISMATCH');
+      assert.equal(result.movementAuthorized,false);
+    }
+  }
+});
+
 const projectBoard=(state,actions,overrides={})=>projectStagedAncientsBoard({
   state,actor:'A',expectedRevision:state.revision,actions,
   serverContext:context(),...overrides
