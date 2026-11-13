@@ -564,3 +564,25 @@ composición real SQLite, la suite HTTP y la regresión de 80 suites
 continúan pendientes. No se ha cerrado SEC-001 (#93), no hay movimiento
 reglamentariamente autorizado y no se fusiona `main`. Véase
 [documento 85, evidencia y límites](85-verificacion-nativa-sqlite-wal-aislada.md).
+
+
+## R-05 — intención normalizada inmutable antes de autenticar (13/11/2026)
+
+La consulta privada `precheckExperimentalSectionOneHexIntent`
+ya no pasa al puente CCWB el objeto mutable que aportó el llamador.
+Tras `screenAncientsMovementCommitIntent` captura el token por
+descriptor, construye una intención normalizada congelada y revalida
+el contrato. La comprobación de identidad y el replay bajo **una sola
+lectura WAL** usan la misma credencial y petición capturadas, sin
+reinterpretar campos alterados tras el filtro inicial.
+
+**Pruebas:** se escribe un **noveno caso nuevo** de integración real
+SQLite/CCWB que muta deliberadamente el objeto durante
+`resolveSession`: la simulación debe conservar sesión, unidad,
+ruta y revisión originales. **No está ejecutado nativamente**.
+Se verificó de forma independiente el método exacto de GitHub
+más el filtro y geometría reales en V8 aislado, **5/5**, con almacén,
+resolución de sesión y puente simulados. No se reetiqueta como
+prueba de SQLite nativo. Manifiesto de **80 suites**, regresión
+completa aún pendiente. Véase
+[composición autenticada y evidencia](84-composicion-ccwb-simulacion-autenticada.md).
