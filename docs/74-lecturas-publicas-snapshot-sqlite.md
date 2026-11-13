@@ -119,3 +119,25 @@ y comandos. **13 casos preparados en esa suite**. Se ha comprobado
 la sintaxis del módulo y de la suite, pero **no se han ejecutado
 nativamente estos nuevos casos** ni la regresión completa.
 La PR #93 sigue en borrador y no debe fusionarse todavía.
+
+
+## Denegar vistas de otro match al inicializar el mazo (13/11/2026)
+
+La revisión detectó otra diferencia con la ruta de comandos:
+`POST /api/matches/{matchId}/deck/initialize` podía serializar
+`result.view` sin comprobar su `matchId`. Aunque el almacén
+normal debería devolver la vista de la partida solicitada,
+un adaptador incorrecto podría exponer una mano privada ajena.
+
+**Corrección:** el gateway responde `503 SERVICE_UNAVAILABLE`
+sin `state` cuando la vista de inicialización de mazo
+pertenece a otro `matchId`. Se añade la prueba negativa
+`API: deck initialization never exposes another match private hand`
+a `gateway.test.mjs`, ahora con **9 casos** en esta rama.
+
+El mismo cambio en PR #96 sí está **ejecutado nativamente**
+con Node 22.16.0 y HTTP de loopback: **11/11** gateway;
+registro detallado en [documento 87 de PR #96](https://github.com/PedroBlanco/command-colors/blob/feat/lab-anc-movement-candidate-audit-trail/docs/87-validacion-nativa-autoridad-sse-http.md).
+**Los 9 casos específicos de esta rama #93 no se han
+ejecutado de nuevo de forma independiente**. Falta la
+validación CCWB/SQLite completa; mantener draft.
