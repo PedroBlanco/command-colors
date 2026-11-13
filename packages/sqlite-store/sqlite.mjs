@@ -434,6 +434,24 @@ export function openSqliteComposition({file, clock = Date.now,
           return sectionHistory.previewBoardProjection(identity.actor,stable,trustedContext);
         });
       },
+      /**
+       * INTERNAL LAB ONLY: proposed use/lock of ordered pieces from private
+       * replay, never a game order spend. Capture the request exactly once.
+       * Session, membership, revision and CCWB state share one WAL snapshot.
+       * NOT routed through HTTP/SSE and cannot modify a match.
+       */
+      precheckExperimentalSectionOrderBudget(request = {},trustedContext) {
+        const stable=snapshotStagedSequenceRequest(request);
+        if(stable===null)
+          return {status:400,code:'INVALID_SECTION_LAB_ORDER_BUDGET_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(stable.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewOrderBudget(identity.actor,stable,trustedContext);
+        });
+      },
       /** INTERNAL LAB ONLY: evidence of a hypothetical sequence. Session,
        *  match membership, private replay and candidate trace share one WAL
        *  snapshot. This cannot change game state or publish public events. */
