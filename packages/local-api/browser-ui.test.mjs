@@ -265,6 +265,12 @@ test('browser markup: every phase has native details and all unit fields are sel
   assert.doesNotMatch(html,/<input id="deck-units"/);
   assert.equal((html.match(/<details\b/g)||[]).length,6);
   assert.equal((html.match(/<\/details>/g)||[]).length,6);
+  assert.equal((html.match(/class="panel-stack"/g)||[]).length,2,
+    'two independent vertical columns collapse without shared grid row height');
+  assert.match(html,/\.panel-stack\{display:flex;flex-direction:column/);
+  assert.match(html,/main\{display:grid;grid-template-columns:minmax\(260px,340px\) minmax\(0,1fr\)/);
+  assert.match(html,/aspect-ratio:510 \/ 430/);
+  assert.match(html,/viewBox="0 0 510 430"/);
 });
 
 
