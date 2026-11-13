@@ -249,6 +249,6 @@ test('browser markup: every phase has native details and all unit fields are sel
   assert.match(html,/<button id="deck-unit-add"/);
   assert.match(html,/<button id="deck-unit-clear"/);
   assert.doesNotMatch(html,/<input id="deck-units"/);
-  assert.equal((html.match(/<details\\b/g)||[]).length,6);
-  assert.equal((html.match(/<\\/details>/g)||[]).length,6);
+  assert.equal((html.match(/<details\b/g)||[]).length,6);
+  assert.equal((html.match(/<\/details>/g)||[]).length,6);
 });
