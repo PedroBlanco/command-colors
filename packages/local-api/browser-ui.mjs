@@ -13,6 +13,60 @@ let signedInHandle = null;
 const privateScope = createPrivateViewScope();
 let movementBoard = null;
 let updates = null, updateMatchId = null, inspectionSequence = 0;
+let lobbyStatus = null, panelKey = null;
+
+// Fold irrelevant application phases, but do not override a player's manual
+// expand/collapse choice on every SSE update. Never expose private data merely
+// because a panel has been opened: authorized GET and projection still rule.
+function updatePanels() {
+  const matchId = privateScope.capture().matchId;
+  const mode = !signedInHandle ? 'login' : !matchId ? 'browse' :
+    lobbyStatus !== 'READY' ? 'invite' :
+      typeof cached?.phase === 'string' ? 'game' : 'ready';
+  el('login-form').hidden = Boolean(signedInHandle);
+  el('logout').disabled = !signedInHandle;
+  const key = [signedInHandle ?? '', matchId ?? '', mode].join(':');
+  if (key === panelKey) return;
+  panelKey = key;
+  const open = {
+    'login-details': mode === 'login',
+    'match-details': mode === 'browse' || mode === 'invite',
+    'invite-details': mode === 'browse' || mode === 'invite',
+    'state-details': mode === 'ready' || mode === 'game',
+    'deck-details': mode === 'ready' || mode === 'game',
+    'movement-details': mode === 'game'
+  };
+  for (const [id,expanded] of Object.entries(open)) el(id).open = expanded;
+}
+
+// A dropdown is only a convenience: the server independently validates all
+// unit IDs and all orders. Never present hidden hands or opponent units as
+// selectable own units.
+function updateUnitOptions(id, side, multiple = false) {
+  const select = el(id);
+  const previous = new Set(Array.from(select.selectedOptions ?? [],option=>option.value));
+  const previousValue = select.value;
+  select.replaceChildren();
+  if (!multiple) {
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Selecciona una unidad';
+    select.appendChild(placeholder);
+  }
+  const units = Array.isArray(cached?.board) ? cached.board : [];
+  for (const unit of units) {
+    if (!unit || unit.side !== side || typeof unit.id !== 'string' ||
+        !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(unit.id) ||
+        !Number.isSafeInteger(unit.col) || !Number.isSafeInteger(unit.row)) continue;
+    const option = document.createElement('option');
+    option.value = unit.id;
+    option.textContent = `${unit.id} (col. ${unit.col+1}, fila ${unit.row+1})`;
+    option.selected = multiple ? previous.has(unit.id) : previousValue === unit.id;
+    select.appendChild(option);
+  }
+  if (!multiple && !Array.from(select.options ?? select.children ?? [])
+    .some(option=>option.value === previousValue && option.selected)) select.value = '';
+}
 const revisionRefresh = createRevisionRefresh({
   inspect: () => inspect(),
   onError: error => message(error.message)
@@ -37,6 +91,9 @@ function renderDeck() {
     }
     if (cached.yourHand.includes(selected)) select.value = selected;
   }
+  updateUnitOptions('deck-units',cached?.you,true);
+  updateUnitOptions('deck-move-unit',cached?.you);
+  updateUnitOptions('deck-target',cached?.you === 'A' ? 'B' : 'A');
   for (const [id,type] of [
     ['deck-play','play_synthetic_card'],['deck-orders','assign_synthetic_orders'],
     ['deck-undo','undo_synthetic_orders'],['deck-move','move_synthetic_unit'],['deck-movement','finish_synthetic_movement'],
@@ -48,9 +105,11 @@ function renderDeck() {
     ? `Mazo de prueba · fase ${cached.phase} · turno ${cached.turn} · debe actuar ${cached.actingSide}`
     : 'El mazo de prueba aún no está inicializado';
   movementBoard?.setView(cached);
+  updatePanels();
 }
 
 function clearMatchPresentation() {
+  lobbyStatus = null;
   cached = null;
   stateText(null);
   el('lobby').textContent = 'Sin partida cargada';
@@ -64,6 +123,7 @@ function clearPrivateView() {
   inspectionSequence++; // invalidate GETs started under an earlier session
   clearMatchPresentation();
   el('match-id').value = '';
+  updatePanels();
 }
 function selectActiveMatch(id) {
   // Programmatic navigation (create/accept) must clear private tokens too,
@@ -74,6 +134,7 @@ function selectActiveMatch(id) {
     clearMatchPresentation();
   }
   privateScope.selectMatch(id);
+  updatePanels();
 }
 function closeUpdates() {
   if (updates) updates.close();
@@ -148,11 +209,13 @@ async function session() {
       closeUpdates();clearPrivateView();
       signedInHandle=data.handle;
       el('current').textContent=`Conectado: ${data.handle}`;
+      updatePanels();
       message('Ha cambiado la identidad de la sesión. Vuelve a abrir la partida.');
       return false;
     }
     signedInHandle=data.handle;
     el('current').textContent=`Conectado: ${data.handle}`;
+    updatePanels();
     return true;
   } catch (error) {
     if (!privateScope.isCurrent(ticket)) return false;
@@ -202,6 +265,7 @@ async function inspect() {
   }
   subscribeTo(id);
   el('lobby').textContent=JSON.stringify({status:lobby.status,players:lobby.players},null,2);
+  lobbyStatus = lobby.status;
   cached=lobby.state??null;
   renderDeck();
   stateText(cached ? (deckSummary(cached) ?? {tuBando:cached.you,turno:cached.turn,revision:cached.revision,
@@ -350,15 +414,15 @@ action('deck-initialize',async()=>{
 });
 action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));
 action('deck-orders',()=>sendDeck('assign_synthetic_orders',{
-  unitIds: el('deck-units').value.split(/[\s,]+/).filter(Boolean)
+  unitIds: Array.from(el('deck-units').selectedOptions,option=>option.value)
 }));
 action('deck-undo',()=>sendDeck('undo_synthetic_orders'));
 action('deck-move',()=>sendDeck('move_synthetic_unit',{
-  unitId: el('deck-move-unit').value.trim(),
+  unitId: el('deck-move-unit').value,
   path: parseSyntheticMovementPath(el('deck-move-path').value)
 }));
 action('deck-movement',()=>sendDeck('finish_synthetic_movement'));
-action('deck-ask-defense',()=>sendDeck('ask_synthetic_defense',{targetUnit:el('deck-target').value.trim()}));
+action('deck-ask-defense',()=>sendDeck('ask_synthetic_defense',{targetUnit:el('deck-target').value}));
 action('deck-stand',()=>sendDeck('answer_synthetic_defense',{choice:'STAND'}));
 action('deck-evade',()=>sendDeck('answer_synthetic_defense',{choice:'EVADE'}));
 action('deck-combat',()=>sendDeck('finish_synthetic_combat'));
