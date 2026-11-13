@@ -155,3 +155,28 @@ test('manifest audit ignores external files behind directory symlinks',async t=>
     await rm(outside,{recursive:true,force:true});
   }
 }));
+
+
+test('Windows SEC-001 launcher selects twelve canonical suites before full regression',async()=>{
+ const script=await readFile(new URL('./validate-ccwb-http.ps1',import.meta.url),'utf8');
+ const suites=[...script.matchAll(/^\s*'([^']+[.]test[.]mjs)'[,]?\s*$/gm)]
+   .map(match=>match[1]);
+ assert.equal(suites.length,12,'priority preflight must cover 12 security suites');
+ assert.equal(new Set(suites).size,suites.length,'no duplicate priority suites');
+ for(const suite of suites)
+   assert.equal(LOCAL_TEST_FILES.includes(suite),true,'unregistered priority: '+suite);
+ for(const required of [
+   'packages/local-api/section-history-http-isolation.test.mjs',
+   'packages/local-api/revision-stream-lab-isolation.test.mjs',
+   'packages/local-api/command-deck-sse.test.mjs',
+   'packages/sqlite-store/sqlite.test.mjs',
+   'packages/sqlite-store/ancients-section-history.test.mjs',
+   'packages/sqlite-store/wal-cross-process-revocation.test.mjs',
+   'packages/sqlite-store/wal-transaction-contract.test.mjs',
+   'packages/sqlite-store/section-mutation-session-guard.test.mjs'
+ ]) assert.ok(suites.includes(required),'critical security suite omitted: '+required);
+ assert.ok(script.indexOf('"--only=') < script.indexOf('"--log=$fullLog"'),
+   'preflight must precede full regression');
+ assert.match(script,/if \(\$targetCode -ne 0\) \{/,
+   'preflight errors must stop full regression');
+});
