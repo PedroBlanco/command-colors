@@ -66,3 +66,42 @@ interpretó erróneamente funciones asíncronas como resultados síncronos
 (4/6); tras corregir el arnés para usar `await`, el resultado
 fue **6/6**. **No** es prueba nativa de SQLite ni de HTTP. El
 bloqueo funcional continúa hasta ejecutar los casos integrados reales.
+
+
+## Prioridad de autenticación ante partida privada (13/11/2026)
+
+La revisión posterior encontró un caso de revelación de estado:
+`store.dispatch` devolvía `409 SECTION_LAB_INTERNAL_ONLY`
+cuando detectaba una partida de laboratorio **antes** de invocar
+`authGuard` en la ruta de escritura. Si la sesión se revocaba
+entre la comprobación inicial y ese retorno, un HTTP `/commands`
+podía distinguir la presencia del laboratorio en lugar de obtener
+`401 UNAUTHENTICATED`. No se ejecutaba ni persistía movimiento,
+pero la precedencia de autenticación debía preservarse.
+
+**Corrección:** cuando existe un guardia autenticado, incluso el
+rechazo de comandos a partidas `LAB_ONLY` se resuelve bajo
+`atomic`/`BEGIN IMMEDIATE`, llamando al guardia **antes** de
+devolver `409`. Una revocación confirmada devuelve `401`,
+sin exponer la existencia del diario privado. La ruta interna
+legada sin guardia conserva su `409`.
+
+**Regresión incorporada** a
+`packages/sqlite-store/ancients-section-history.test.mjs`: la
+primera resolución devuelve un actor válido, pero una segunda
+conexión WAL revoca su sesión antes del bloqueo escritor. Se
+exige respuesta exclusivamente `401` y ausencia de cambios
+en `matches`, `game_events` y `game_commands`. Esta prueba
+está **preparada pero todavía no ejecutada nativamente**.
+
+**Comprobación aislada:** 3/3 casos correctos ejecutando el
+método exacto `store.dispatch` de GitHub (blob
+`6f22379dd6a5e9a2369ee315099819441598d245`)
+con bases/transacciones simuladas. Se verificó también que
+el guardia ocurre dentro de la transacción simulada y que
+no se invoca ninguna escritura. **No es una prueba real de
+SQLite o HTTP**.
+
+Las pruebas de integración CCWB/SQLite nuevas de PR #96
+pasan de **9 a 10 casos pendientes de ejecución**; el
+manifiesto de regresión conserva **80 suites**.
