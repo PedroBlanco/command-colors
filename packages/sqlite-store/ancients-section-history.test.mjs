@@ -899,6 +899,94 @@ test('CCWB draft: a denied or stale journal command preserves the private draft 
 }));
 
 
+test('CCWB draft write snapshot survives request mutation during writer authentication',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const request=saveDraftRequest(tokens.A),originalActions=structuredClone(request.actions);
+  const before=db.prepare('SELECT game_revision,lobby_revision FROM matches WHERE id=?')
+    .get(matchId);
+  const originalResolver=app.identity.resolveSession;
+  let calls=0;
+  try {
+    app.identity.resolveSession=token=>{
+      calls++;
+      assert.equal(db.isTransaction,true);
+      assert.equal(token,tokens.A);
+      // The source object is corrupted after the descriptors were captured.
+      // No later authorization, validation or persistence may read it again.
+      request.sessionToken='revoked-token';
+      request.expectedRevision=1;
+      request.expectedDraftRevision=99;
+      request.idempotencyKey='corrupted_key_999';
+      request.actions[0].id='ghost';
+      request.actions[0].path[0].col=12;
+      return originalResolver(token);
+    };
+    const saved=store.saveExperimentalSectionMovementDraft(request,movementContext());
+    assert.equal(saved.code,'SECTION_LAB_DRAFT_SAVED');
+    assert.equal(saved.draftRevision,1);
+    assert.equal(calls,1);
+  } finally {
+    app.identity.resolveSession=originalResolver;
+  }
+  const persisted=JSON.parse(db.prepare('SELECT private_state FROM matches WHERE id=?')
+    .get(matchId).private_state).ancientsSectionMovementDraft;
+  assert.equal(persisted.idempotencyKey,'draft_movement_a01');
+  assert.equal(persisted.gameRevision,2);
+  assert.equal(persisted.draftRevision,1);
+  assert.deepEqual(persisted.actions,originalActions);
+  assert.deepEqual(db.prepare('SELECT game_revision,lobby_revision FROM matches WHERE id=?')
+    .get(matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB draft write rejects accessor fields and malformed arrays before any SQLite write',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  let hits=0;
+  const idempotencyAccessor=saveDraftRequest(tokens.A);
+  Object.defineProperty(idempotencyAccessor,'idempotencyKey',{
+    enumerable:true,get(){hits++;throw Error('SHOULD_NOT_CALL_GETTER');}
+  });
+  const cellAccessor=saveDraftRequest(tokens.A);
+  Object.defineProperty(cellAccessor.actions[0].path[0],'row',{
+    enumerable:true,get(){hits++;throw Error('SHOULD_NOT_CALL_GETTER');}
+  });
+  const sparse=saveDraftRequest(tokens.A);
+  sparse.actions[0].path=new Array(1);
+  for(const request of [idempotencyAccessor,cellAccessor,sparse]){
+    assert.deepEqual(store.saveExperimentalSectionMovementDraft(request,movementContext()),
+      {status:400,code:'INVALID_SECTION_LAB_DRAFT_REQUEST'});
+  }
+  assert.equal(hits,0);
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB draft writer ignores Proxy getters and persists captured actions only',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const raw=saveDraftRequest(tokens.A),gets=[];
+  raw.actions[0].path[0]=new Proxy(raw.actions[0].path[0],{
+    get(){gets.push('cell');throw Error('CELL_GET_FORBIDDEN');}
+  });
+  const request=new Proxy(raw,{
+    get(){gets.push('root');throw Error('ROOT_GET_FORBIDDEN');}
+  });
+  const saved=store.saveExperimentalSectionMovementDraft(request,movementContext());
+  assert.equal(saved.code,'SECTION_LAB_DRAFT_SAVED');
+  assert.deepEqual(gets,[]);
+  const visible=store.viewExperimentalSectionMovementDraft({sessionToken:tokens.A});
+  assert.equal(visible.status,200);
+  assert.deepEqual(visible.draft.actions,[sequenceLeader(),sequenceUnit()]);
+  assert.equal(visible.draft.canCommit,undefined);
+  assert.equal(visible.draft.movementAuthorized,false);
+}));
+
 const evidenceRequest=(sessionToken,changes={})=>({
   sessionToken,expectedRevision:2,actions:[sequenceLeader(),sequenceUnit()],
   ...changes
