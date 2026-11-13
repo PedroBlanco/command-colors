@@ -212,3 +212,88 @@ test('HTTP: malformed internal events fail closed instead of serializing a priva
   assert.deepEqual(response.body,{code:'SERVICE_UNAVAILABLE'});
   assert.equal(response.raw.includes('DO_NOT_LEAK'),false);
 }));
+
+test('SEC-001 HTTP: logout between lobby check and store lookup denies every public read',async()=>{
+  for(const [method,pathEnd] of [['GET',''],['GET','/events'],['POST','/commands']]){
+    await fixture(async({app,tokens,matchId,start})=>{
+      let revocations=0;
+      const {origin}=await start({storeFactory:id=>{
+        revocations++;
+        app.identity.logOut(tokens.alice);
+        return app.getStore(id);
+      }});
+      const response=await api(origin,`/api/matches/${matchId}${pathEnd}`,tokens.alice,{
+        method,...(method==='POST'?{body:{
+          type:'pass_demo_turn',expectedRevision:0,idempotencyKey:'revoked_before_read_001'
+        }}:{})
+      });
+      assert.equal(revocations,1);
+      assert.equal(response.status,401);
+      assert.deepEqual(response.body,{code:'UNAUTHENTICATED'});
+      assert.doesNotMatch(response.raw,/yourHand|PRIVATE_A|card_a_left|gameRevision/);
+      assert.equal(app.getStore(matchId).view('A').revision,0);
+    });
+  }
+});
+
+test('SEC-001 HTTP: events revalidate session after earlier authorized match view',()=>fixture(async({app,tokens,matchId,start})=>{
+  const real=app.getStore(matchId),calls=[];
+  const {origin}=await start({storeFactory:()=>({
+    viewForSession:request=>{
+      calls.push('view');
+      const response=real.viewForSession(request);
+      app.identity.logOut(request.sessionToken);
+      return response;
+    },
+    publicEventsForSession:request=>{
+      calls.push('events');
+      return real.publicEventsForSession(request);
+    },
+    view:()=>{throw new Error('UNSAFE_ACTOR_VIEW_CALLED');},
+    publicEvents:()=>{throw new Error('UNSAFE_ACTOR_EVENTS_CALLED');}
+  })});
+  const response=await api(origin,`/api/matches/${matchId}/events`,tokens.alice);
+  assert.equal(response.status,401);
+  assert.deepEqual(response.body,{code:'UNAUTHENTICATED'});
+  assert.deepEqual(calls,['view','events']);
+  assert.doesNotMatch(response.raw,/yourHand|gameRevision|PRIVATE_A/);
+}));
+
+
+test('SEC-001 HTTP: command rejected after logout between read snapshot and writer lock',()=>fixture(async({app,tokens,matchId,start})=>{
+  const real=app.getStore(matchId);
+  const {origin}=await start({storeFactory:()=>({
+    viewForSession:request=>{
+      const state=real.viewForSession(request);
+      app.identity.logOut(request.sessionToken);
+      return state;
+    },
+    dispatchForSession:request=>real.dispatchForSession(request),
+    view:()=>{throw new Error('UNSAFE_ACTOR_VIEW_CALLED');},
+    dispatch:()=>{throw new Error('UNSAFE_ACTOR_COMMAND_CALLED');}
+  })});
+  const result=await api(origin,`/api/matches/${matchId}/commands`,tokens.alice,{
+    method:'POST',body:{type:'pass_demo_turn',expectedRevision:0,
+      idempotencyKey:'session_revoked_mid_request_001'}
+  });
+  assert.equal(result.status,401);
+  assert.deepEqual(result.body,{code:'UNAUTHENTICATED'});
+  assert.equal(real.view('A').revision,0);
+  assert.equal(app.unsafeTestDatabase().prepare(
+    'SELECT count(*) n FROM game_commands WHERE match_id=?').get(matchId).n,0);
+}));
+
+test('SEC-001 HTTP: deck initialization never trusts the stale preflight session',()=>fixture(async({app,tokens,matchId,start})=>{
+  const {origin}=await start({storeFactory:id=>{
+    app.identity.logOut(tokens.alice);
+    return app.getStore(id);
+  }});
+  const result=await api(origin,`/api/matches/${matchId}/deck/initialize`,tokens.alice,{
+    method:'POST',body:{}
+  });
+  assert.equal(result.status,401);
+  assert.deepEqual(result.body,{code:'UNAUTHENTICATED'});
+  assert.equal(app.getStore(matchId).view('A').revision,0);
+  assert.equal(app.unsafeTestDatabase().prepare(
+    'SELECT count(*) n FROM game_commands WHERE match_id=?').get(matchId).n,0);
+}));

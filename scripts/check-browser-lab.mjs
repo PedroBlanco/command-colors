@@ -69,11 +69,16 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/leader-unit-sequence-preflight.test.mjs',
   'packages/ancients-rules/movement-draft-contract.test.mjs',
   'packages/ancients-rules/movement-draft-sqlite-contract.test.mjs',
+  'packages/ancients-rules/movement-candidate-journal.test.mjs',
+  'packages/ancients-rules/movement-commit-intent-screen.test.mjs',
+  'packages/ancients-rules/clear-lab-movement-reducer.test.mjs',
+  'packages/ancients-rules/private-one-hex-intent-preview.test.mjs',
   'packages/ancients-rules/lab-command-signature.test.mjs',
   'packages/ancients-rules/lab-idempotency-binding.test.mjs',
   'packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs',
   'packages/sqlite-store/wal-transaction-contract.test.mjs',
   'packages/sqlite-store/wal-cross-process-revocation.test.mjs',
+  'packages/sqlite-store/wal-snapshot-boundary.test.mjs',
   'packages/sqlite-store/section-mutation-session-guard.test.mjs',
   'packages/sqlite-store/ancients-section-history.test.mjs'
 ]);

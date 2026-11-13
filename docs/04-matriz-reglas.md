@@ -407,3 +407,277 @@ El puente e integración ampliada pasan análisis sintáctico, pero
 **13 casos nuevos de integración CCWB+SQLite siguen sin ejecutar**.
 PR #95: **60 nuevos casos preparados, 75 suites**. No completar CCW-014,
 no publicar métodos internos ni fusionar en `main`.
+
+
+## R-04/R-05 — traza verificable de movimiento candidato (LAB-ANC, 12/11/2026)
+
+La preparación del futuro registro de movimientos confirmados incorpora
+`movement-candidate-journal.mjs`, que deriva una traza de propuesta
+**únicamente** tras `CANDIDATE_SEQUENCE`, con resumen de contexto
+de tablero, órdenes y terreno, entradas correlativas SHA-256 y replay
+determinista. **No convierte la propuesta en jugada ni la escribe en
+SQLite, eventos o interfaz.** Toda respuesta conserva
+`movementAuthorized:false` y `stateChanged:false`.
+
+**Pruebas:** +10 casos en
+`movement-candidate-journal.test.mjs`; V8 aislado **10/10** con
+resumen criptográfico simulado (NO prueba nativa de SHA-256). El
+manifiesto de la rama apilada alcanza **76 suites**; ni esta nueva
+suite ni la regresión conjunta han sido ejecutadas nativamente.
+La composición CCWB y SEC-001 (#93) siguen pendientes. Véase
+[traza de movimientos candidatos](78-traza-auditoria-movimientos-candidatos.md).
+
+
+## R-04/R-05 — evidencia con sesión y órdenes comprobadas (LAB-ANC, 12/11/2026)
+
+La traza `movement-candidate-journal.mjs` se conecta al diario privado
+por `precheckStagedAncientsMovementEvidence`,
+`createSqliteAncientsSectionBridge.previewMovementEvidence` y
+`getStore(matchId).precheckExperimentalSectionMovementEvidence`.
+La identidad y pertenencia a la partida se verifican con la revisión,
+órdenes, estado y reglas **dentro del snapshot WAL**. Los datos del
+escenario los aporta exclusivamente el servidor. Se rechaza el exceso
+de acciones respecto a órdenes y se usa ordenación ordinal fija para
+que los resúmenes no dependan del locale del servidor.
+
+**Pruebas nuevas:** +4 casos staged, +4 casos SQLite preparados,
++1 caso de determinismo SHA-256. Resultado V8 aislado 24/24 staged y
+11/11 auditoría, digest simulado; resultado Node nativo **4/4** con
+SHA-256 real del módulo exacto, pero precheck sustituido y **sin**
+composición SQLite. No se han ejecutado las cuatro pruebas nuevas
+SQLite ni la regresión de las 76 suites. No se autorizan ni aplican
+movimientos. Véase
+[consulta CCWB autenticada](79-evidencia-movimientos-ccwb-autenticada.md).
+
+
+## R-05 — reductor sintético privado de un hexágono (consolidación de PR #98 en #99)
+
+`clear-lab-movement-reducer.mjs` crea una copia profundamente inmutable del
+**tablero simulado** para una o varias unidades de infantería ordenadas,
+con movimientos de un solo hexágono en terreno totalmente abierto y sin líderes.
+Usa el preflight staged para revisión, bando, órdenes, colisiones y geometría.
+No consume órdenes ni se conecta al almacén: la política explícita
+`SYNTHETIC_OPEN_HEX_V1` **no es permiso reglamentario**. Siempre
+`canCommit:false`, `movementAuthorized:false` y `stateChanged:false`.
+
+Se copian sin alteración el módulo y los **11 tests** de la PR #98 a la rama
+unificada con el filtro de intención de PR #99 (**13 tests nativos comprobados**).
+El manifiesto combinado tiene **78 suites**. El reductor cuenta por ahora con
+**11/11 evaluaciones V8 aisladas** de su rama original, pero **no** ha pasado
+las 11 pruebas con Node nativo dentro del nuevo árbol. Las 78 suites,
+composición CCWB/SQLite y seguridad de PR #93 siguen pendientes.
+Véase [reductor sintético](82-reductor-movimientos-lab-un-hexagono.md) y
+[contrato de intención](81-contrato-entrada-movimiento-confirmado.md).
+
+
+## R-05 — composición privada de intención y reducción sintética (LAB-ANC, 12/11/2026)
+
+La función `previewPrivateOneHexAncientsIntent` combina el filtro de
+forma de solicitud no fiable (`screenAncientsMovementCommitIntent`) con
+el reductor puro de un hexágono (`reduceOneHexClearLab`), **sin** exponer
+HTTP, abrir SQLite, alterar un tablero ni confirmar una jugada. Es un
+punto privado de simulación que exige al futuro llamador aportar actor,
+estado replay-verificado, terreno y política de **origen servidor**.
+Este módulo **no autentica** el token ni la pertenencia: debe hacerlo
+la composición CCWB bajo el mismo snapshot WAL antes de usarlo.
+
+El estado favorable `PRIVATE_LAB_SIMULATION` lleva un tablero
+hipotético, `canCommit:false`, `movementAuthorized:false` y
+`stateChanged:false`. No incluye token, clave de idempotencia ni mano.
+Se han escrito **11 nuevos casos de prueba** (no ejecutados nativamente).
+El manifiesto experimental reúne **79 suites**; sigue pendiente
+validarlas, SEC-001 (#93) y el reductor oficial. Véase
+[contrato de simulación privada](83-preview-privada-intencion-un-hexagono.md).
+
+
+## R-05 — simulación privada autenticada en SQLite/WAL (LAB-ANC, 12/11/2026)
+
+El método interno `precheckExperimentalSectionOneHexIntent` en el
+almacén CCWB conecta el contrato de entrada, el diario privado
+replay-verificado y el reductor sintético de un hexágono. La sesión
+activa y la pertenencia determinan el actor en **una única instantánea
+SQLite/WAL**; el navegador no puede aportar bando, terreno, tablero,
+carta ni resultado autorizado. El puente solo devuelve una simulación
+inmutable, nunca consume órdenes ni escribe eventos y **no** tiene
+ruta HTTP/SSE. Mantiene `movementAuthorized:false`,
+`boardChanged:false` y `canCommit:false`.
+
+**Evidencia:** 11/11 casos de la composición pura evaluados en V8
+aislado con modo estricto y sustituciones declaradas, **no Node nativo**;
+**7 nuevos casos CCWB/SQLite reales escritos y pendientes de
+ejecución** en `ancients-section-history.test.mjs`; regresión de
+**79 suites** aún pendiente. El resultado no autoriza movimientos
+reglamentarios. Véase
+[composición autenticada](84-composicion-ccwb-simulacion-autenticada.md).
+
+## R-05 — evitar filtración de metadatos en tablero simulado (LAB-ANC, 12/11/2026)
+
+El resultado `simulatedBoard` ya no copia íntegramente
+`state.board`: el reductor usa una lista blanca de atributos
+`{units:[{id,side,col,row}],leaders:[]}` para excluir metadatos
+internos que pudieran estar presentes en el historial privado.
+Se incorporan regresiones en reductor, helper privado y SQLite
+(real, pendiente de ejecución) con campos secretos inyectados.
+Se corrigió también la prueba que pasaba `undefined` a un
+helper cuyo valor por defecto reconstruía un contexto válido:
+la ausencia de contexto se comprueba directamente en el almacén.
+
+**Pruebas:** 12 del reductor + 12 de composición pura = **24/24**
+evaluaciones correctas en V8 aislado con dependencias nativas no
+ejercitadas simuladas; **8 nuevos casos de integración SQLite
+escritos pero no ejecutados**. 79 suites registradas. La evidencia
+no autoriza movimientos oficiales ni fusionar `main`.
+Detalles en [documentos 82](82-reductor-movimientos-lab-un-hexagono.md),
+[83](83-preview-privada-intencion-un-hexagono.md) y
+[84](84-composicion-ccwb-simulacion-autenticada.md).
+
+
+## SEC-001 / R-05 — prohibir acceso HTTP al laboratorio de simulación (13/11/2026)
+
+Se han registrado **dos nuevas pruebas de interfaz HTTP** en la suite
+existente `packages/local-api/gateway.test.mjs`. Comprueban que las
+rutas inventadas hacia la simulación interna de un hexágono devuelvan
+**404** sin abrir el almacén, y que la vista, los eventos y el endpoint
+de comandos de una partida `LAB_ONLY` respondan **409** sin llamar a
+los métodos privados ni al despacho general. La suite reúne **10 casos**
+(con sintaxis V8 comprobada), pero **no se ha ejecutado nativamente**
+en el SHA vigente. El manifiesto no cambia: **79 suites**.
+
+No se introduce ningún endpoint ni movimiento reglamentario confirmado.
+Véase [contrato de integración y frontera HTTP](84-composicion-ccwb-simulacion-autenticada.md).
+
+
+## SEC-001 — contrato WAL validado nativamente en aislamiento (13/11/2026)
+
+Se añade `packages/sqlite-store/wal-snapshot-boundary.test.mjs` al manifiesto,
+que pasa a **80 suites**. Se ejecutaron con **Node.js 22.16.0 y SQLite real**
+seis pruebas autocontenidas sobre una base temporal y dos conexiones:
+revocación no confirmada/confirmada, sesión y pertenencia en el mismo
+snapshot, coherencia revisión-eventos, rollback de escrituras parciales
+y lector WAL concurrente con `BEGIN IMMEDIATE`.
+
+**Resultado: 6/6 PASS, 0 FAIL**, salida 0. El blob Git del archivo
+ejecutado coincide con el publicado:
+`1ceee42133c5333752f7440d7f709bb04e49db53`.
+Estas pruebas **no ejecutan los módulos CCWB**: los 8 casos de
+composición real SQLite, la suite HTTP y la regresión de 80 suites
+continúan pendientes. No se ha cerrado SEC-001 (#93), no hay movimiento
+reglamentariamente autorizado y no se fusiona `main`. Véase
+[documento 85, evidencia y límites](85-verificacion-nativa-sqlite-wal-aislada.md).
+
+
+## R-05 — intención normalizada inmutable antes de autenticar (13/11/2026)
+
+La consulta privada `precheckExperimentalSectionOneHexIntent`
+ya no pasa al puente CCWB el objeto mutable que aportó el llamador.
+Tras `screenAncientsMovementCommitIntent` captura el token por
+descriptor, construye una intención normalizada congelada y revalida
+el contrato. La comprobación de identidad y el replay bajo **una sola
+lectura WAL** usan la misma credencial y petición capturadas, sin
+reinterpretar campos alterados tras el filtro inicial.
+
+**Pruebas:** se escribe un **noveno caso nuevo** de integración real
+SQLite/CCWB que muta deliberadamente el objeto durante
+`resolveSession`: la simulación debe conservar sesión, unidad,
+ruta y revisión originales. **No está ejecutado nativamente**.
+Se verificó de forma independiente el método exacto de GitHub
+más el filtro y geometría reales en V8 aislado, **5/5**, con almacén,
+resolución de sesión y puente simulados. No se reetiqueta como
+prueba de SQLite nativo. Manifiesto de **80 suites**, regresión
+completa aún pendiente. Véase
+[composición autenticada y evidencia](84-composicion-ccwb-simulacion-autenticada.md).
+
+
+## SEC-001 / R-05 — bloqueo de snapshots obsoletos y escritores (13/11/2026)
+
+Se amplió la suite autónoma `wal-snapshot-boundary.test.mjs`
+con los dos casos del futuro commit reglamentario:
+- un lector que usa un snapshot anterior a un commit ajeno no puede
+  sobrescribir la revisión ya confirmada;
+- `BEGIN IMMEDIATE` impide que otro escritor cambie una sesión
+  durante la revalidación transaccional.
+
+**8/8 PASS nativos** con Node.js 22.16.0 y SQLite 3.49.1
+(archivo ejecutado idéntico al blob Git
+`75b75c202c527d1414a40cb52d43d1ecfdf2a80f`).
+La suite ocupa una sola entrada del manifiesto de **80 suites**.
+En la primera ejecución el séptimo test falló por esperar el código
+extendido `SQLITE_BUSY_SNAPSHOT`, mientras Node reportó
+`ERR_SQLITE_ERROR` con `database is locked`. La aserción
+se corrigió y la repetición completa pasó.
+
+Estos 8 casos usan tablas temporales simplificadas: **no** son una
+ejecución de las **9 pruebas nuevas de integración CCWB/SQLite**.
+La regresión integral, HTTP/SSE y SEC-001 (#93) siguen pendientes.
+Véase [evidencia nativa](85-verificacion-nativa-sqlite-wal-aislada.md).
+
+## SEC-001 — acoplamiento sesión/WAL de HTTP, SSE e invitaciones (13/11/2026)
+
+Se han trasladado a la rama experimental de PR #96 controles selectivos de
+la [PR #93](https://github.com/PedroBlanco/command-colors/pull/93),
+que **no** se cierra ni se declara resuelta:
+
+- `getMatch`, vista pública y eventos: sesión, pertenencia, modo de
+  partida y datos observados dentro del mismo snapshot SQLite/WAL.
+- Creación y revocación de partidas/invitaciones, inicialización del
+  mazo y comandos: verificación de identidad **bajo `BEGIN IMMEDIATE`**.
+- Gateway HTTP y SSE: preferencia por métodos vinculados a sesión y
+  bloqueo de exposición de `LAB_ONLY`, con fallback exclusivo para
+  anteriores almacenes sintéticos internos.
+
+Se han incorporado **10 pruebas** de #93: 4 SQLite, 4 HTTP y 2 SSE,
+en suites ya existentes (14, 11 y 8 casos respectivamente).
+**80 suites** en el manifiesto sin añadir duplicados. Sintaxis
+comprobada de 7 archivos; las ocho pruebas nativas WAL autónomas
+siguen pasando, pero **no se ha ejecutado ninguna regresión nativa
+de estas diez pruebas de integración**. Queda pendiente validar
+SEC-001 y el árbol completo; no hay movimiento confirmado ni
+fusión a `main`. Véase
+[documentación de frontera de sesión](86-sec001-autorizacion-sesion-wal-http.md).
+
+
+## SEC-001 — prioridad de autenticación en comando rechazado por laboratorio (13/11/2026)
+
+Se ha corregido en ambas ramas de seguridad (#93 y #96) el
+retorno de `SECTION_LAB_INTERNAL_ONLY` **anterior** al
+`authGuard` bajo bloqueo escritor: en una petición HTTP
+autenticada, una revocación confirmada entre preflight y
+despacho debe devolver `401 UNAUTHENTICATED`, sin revelar
+que la partida es privada. Para las llamadas con guardia,
+el rechazo del laboratorio también se decide dentro de
+`atomic`/`BEGIN IMMEDIATE`; se conserva `409` para sesión
+válida o ruta interna legada.
+
+Se añadió una regresión de revocación intermedia en
+`ancients-section-history.test.mjs` de PR #96 y otra
+en `section-history-http-isolation.test.mjs` de PR #93.
+Ambas siguen **sin ejecución nativa de integración**.
+Los cuerpos reales de `store.dispatch` de las dos ramas
+superaron **4/4 comprobaciones V8 aisladas** (revocada y
+válida en cada una), con SQLite simulado; **no equivale
+a SQLite real**. La rama #96 tiene **10 casos nuevos
+de composición CCWB/SQLite pendientes** y el manifiesto
+permanece en **80 suites**. Las PR se mantienen en
+borrador, sin fusión a `main`.
+
+
+## SEC-001 — verificación nativa de frontera HTTP y mazo (13/11/2026)
+
+Se reconstruyeron desde los blobs Git **exactos** de PR #96 el guardia
+transaccional, SSE y gateway, con sus tres suites y dependencia del
+navegador. Se ejecutaron bajo Node 22.16.0: **27 PASS / 0 FAIL /
+0 SKIP** (8 guardia SQLite/WAL real, 8 SSE y 11 HTTP real con
+almacén/identidad simulados). Evidencia y hashes en
+[documento 87](87-validacion-nativa-autoridad-sse-http.md).
+
+La revisión detectó y corrigió que `deck/initialize` no verificaba
+`result.view.matchId`: ahora rechaza con 503 una vista de otra
+partida antes de serializarla. Prueba nativa nueva: una mano privada
+de otro match no sale en HTTP. La misma corrección y su regresión
+se publicaron en PR #93; esa variante no tiene ejecución nativa
+propia todavía.
+
+**Límites:** no es una ejecución integral CCWB/SQLite, ni se han
+ejecutado las **80 suites** del manifiesto. SEC-001 continúa
+abierta y las dos PR permanecen en borrador. Ninguna regla de
+movimiento autoriza todavía un commit.

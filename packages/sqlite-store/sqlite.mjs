@@ -12,6 +12,7 @@ import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqli
 import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
 import {proposeMovementDraft, projectMovementDraft} from '../ancients-rules/movement-draft-contract.mjs';
+import {screenAncientsMovementCommitIntent} from '../ancients-rules/movement-commit-intent-screen.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -137,48 +138,58 @@ export function openSqliteComposition({file, clock = Date.now,
 
   const invitations = {
     createMatch({sessionToken} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      const id = randomUUID();
-      db.prepare('INSERT INTO matches(id, owner_id, private_state) VALUES (?,?,?)')
-        .run(id, user.userId, JSON.stringify(initialState(id)));
-      return {ok:true, matchId:id};
+      // Authorization must be observed after BEGIN IMMEDIATE: a concurrent
+      // logout must not leave an orphan match created by a revoked session.
+      return atomic(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const id = randomUUID();
+        db.prepare('INSERT INTO matches(id, owner_id, private_state) VALUES (?,?,?)')
+          .run(id, user.userId, JSON.stringify(initialState(id)));
+        return {ok:true, matchId:id};
+      });
     },
     getMatch({sessionToken, matchId} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      if (!UUID.test(String(matchId ?? ''))) return denied('NOT_FOUND');
-      const match = getMember.get(matchId);
-      if (!match || !checkActor(match, user.userId)) return denied('NOT_FOUND');
-      const owner = db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.owner_id);
-      const guest = match.guest_id ? db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.guest_id) : null;
-      const result = {ok:true, matchId, revision:getMatchRow.get(matchId).lobby_revision,
-        players:[{side:'A',handle:owner.handle},...(guest ? [{side:'B',handle:guest.handle}] : [])],
-        status:guest?'READY':'INVITING'};
-      if (match.owner_id === user.userId) {
-        result.invitations = db.prepare('SELECT id, target_handle, status, expires_at FROM invitations WHERE match_id=? ORDER BY rowid')
-          .all(matchId).map(i => ({invitationId:i.id,targetHandle:i.target_handle,
-            status: i.status === 'PENDING' && clock() >= i.expires_at ? 'EXPIRED' : i.status,expiresAt:i.expires_at}));
-      }
-      return result;
+      // The lobby metadata is security-sensitive too: a logout, change of
+      // membership and the participant list must share one WAL snapshot.
+      return readSnapshot(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        if (!UUID.test(String(matchId ?? ''))) return denied('NOT_FOUND');
+        const match = getMember.get(matchId);
+        if (!match || !checkActor(match, user.userId)) return denied('NOT_FOUND');
+        const owner = db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.owner_id);
+        const guest = match.guest_id ? db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.guest_id) : null;
+        const result = {ok:true, matchId, revision:getMatchRow.get(matchId).lobby_revision,
+          players:[{side:'A',handle:owner.handle},...(guest ? [{side:'B',handle:guest.handle}] : [])],
+          status:guest?'READY':'INVITING'};
+        if (match.owner_id === user.userId) {
+          result.invitations = db.prepare('SELECT id, target_handle, status, expires_at FROM invitations WHERE match_id=? ORDER BY rowid')
+            .all(matchId).map(i => ({invitationId:i.id,targetHandle:i.target_handle,
+              status: i.status === 'PENDING' && clock() >= i.expires_at ? 'EXPIRED' : i.status,expiresAt:i.expires_at}));
+        }
+        return result;
+      });
     },
     issueInvitation({sessionToken,matchId,targetHandle} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      const m = getMember.get(matchId);
-      if (!m || m.owner_id !== user.userId) return denied('NOT_FOUND');
-      const h = normalizeHandle(targetHandle);
-      if (!h || h === user.handle || m.guest_id !== null) return denied('INVITATION_NOT_AVAILABLE');
-      const id = randomUUID(), token = randomToken(), expiresAt=clock()+invitationTtlMs;
-      db.prepare('INSERT INTO invitations(id,match_id,token_digest,target_handle,expires_at,status) VALUES(?,?,?,?,?,?)')
-        .run(id,matchId,digest(token),h,expiresAt,'PENDING');
-      return {ok:true, invitationId:id, token, expiresAt};
+      return atomic(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const m = getMember.get(matchId);
+        if (!m || m.owner_id !== user.userId) return denied('NOT_FOUND');
+        const h = normalizeHandle(targetHandle);
+        if (!h || h === user.handle || m.guest_id !== null) return denied('INVITATION_NOT_AVAILABLE');
+        const id = randomUUID(), token = randomToken(), expiresAt=clock()+invitationTtlMs;
+        db.prepare('INSERT INTO invitations(id,match_id,token_digest,target_handle,expires_at,status) VALUES(?,?,?,?,?,?)')
+          .run(id,matchId,digest(token),h,expiresAt,'PENDING');
+        return {ok:true, invitationId:id, token, expiresAt};
+      });
     },
     acceptInvitation({sessionToken,invitationToken} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
       return atomic(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
         const i=db.prepare('SELECT * FROM invitations WHERE token_digest=?').get(digest(invitationToken));
         if (!i || i.status !== 'PENDING' || i.target_handle !== user.handle || clock() >= i.expires_at) return denied('INVITATION_NOT_AVAILABLE');
         const m=getMember.get(i.match_id);
@@ -191,22 +202,26 @@ export function openSqliteComposition({file, clock = Date.now,
       });
     },
     rejectInvitation({sessionToken, invitationToken} = {}) {
-      const user=sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
-      const row = db.prepare('SELECT id,target_handle,expires_at,status FROM invitations WHERE token_digest=?').get(digest(invitationToken));
-      if (!row || row.status!=='PENDING' || row.target_handle!==user.handle || clock()>=row.expires_at) return denied('INVITATION_NOT_AVAILABLE');
-      db.prepare("UPDATE invitations SET status='REJECTED' WHERE id=?").run(row.id);
-      return {ok:true};
+      return atomic(() => {
+        const user=sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
+        const row = db.prepare('SELECT id,target_handle,expires_at,status FROM invitations WHERE token_digest=?').get(digest(invitationToken));
+        if (!row || row.status!=='PENDING' || row.target_handle!==user.handle || clock()>=row.expires_at) return denied('INVITATION_NOT_AVAILABLE');
+        db.prepare("UPDATE invitations SET status='REJECTED' WHERE id=?").run(row.id);
+        return {ok:true};
+      });
     },
     revokeInvitation({sessionToken,matchId,invitationId}={}) {
-      const user=sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      const m=getMember.get(matchId);
-      if (!m || m.owner_id!==user.userId) return denied('NOT_FOUND');
-      const row=db.prepare("UPDATE invitations SET status='REVOKED' WHERE id=? AND match_id=? AND status='PENDING'")
-        .run(invitationId,matchId);
-      return row.changes === 1 ? {ok:true} : denied('INVITATION_NOT_AVAILABLE');
+      return atomic(() => {
+        const user=sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const m=getMember.get(matchId);
+        if (!m || m.owner_id!==user.userId) return denied('NOT_FOUND');
+        const row=db.prepare("UPDATE invitations SET status='REVOKED' WHERE id=? AND match_id=? AND status='PENDING'")
+          .run(invitationId,matchId);
+        return row.changes === 1 ? {ok:true} : denied('INVITATION_NOT_AVAILABLE');
+      });
     }
   };
 
@@ -243,18 +258,74 @@ export function openSqliteComposition({file, clock = Date.now,
         db, resolveActor:resolveSectionLabActor, sessionToken, expectedActor:originalActor
       });
     }
-    return {
-      // Once the synthetic deck is initialized, the legacy fixture hands
-      // must never be returned to a player.
-      view(actor) {
-        const row = rowOrThrow();
-        if (hasExperimentalSectionHistory(row)) return sectionHistory.view(actor);
-        return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+    // Both projections must share the session/membership WAL snapshot for
+    // HTTP and SSE; never build the private Ancients lab hand for those APIs.
+    function projectForActor(actor, denyExperimentalLab=false) {
+      const row=rowOrThrow();
+      if(hasExperimentalSectionHistory(row)) {
+        if(denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        return sectionHistory.view(actor);
+      }
+      return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+    }
+    function eventsForActor(actor, denyExperimentalLab=false) {
+      const row=rowOrThrow();
+      if(hasExperimentalSectionHistory(row)) {
+        if(denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        sectionHistory.view(actor); // verify replay before returning public events
+      }
+      return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
+        .all(matchId).map(x => decode(x.payload));
+    }
+    /** Shared strict input contract for the two read-only sequence
+     *  previews. Never accept client-supplied actor, game or terrain. */
+    function validSequenceRequest(request) {
+      return !(!plainLabRequest(request) ||
+            Object.keys(request).length!==3 ||
+            !['sessionToken','expectedRevision','actions'].every(k => Object.hasOwn(request,k)) ||
+            typeof request.sessionToken!=='string' ||
+            !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision<0 ||
+            !Array.isArray(request.actions) || request.actions.length<1 ||
+            request.actions.length>117 ||
+            !request.actions.every(action => plainLabRequest(action) &&
+              Object.keys(action).length===3 &&
+              ['kind','id','path'].every(k => Object.hasOwn(action,k)) &&
+              ['UNIT','LEADER'].includes(action.kind) &&
+              typeof action.id==='string' &&
+              /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(action.id) &&
+              action.id!=='__proto__' &&
+              Array.isArray(action.path) && action.path.length>0 &&
+              action.path.length<=32 &&
+              action.path.every(cell => plainLabRequest(cell) &&
+                Object.keys(cell).length===2 &&
+                Object.hasOwn(cell,'col') && Object.hasOwn(cell,'row') &&
+                inBounds(cell))));
+    }
+    const store = {
+      // Legacy internal actor-based method. HTTP/SSE always use the
+      // authenticated session-bound view below.
+      view(actor,{denyExperimentalLab=false}={}) {
+        if(!['A','B'].includes(actor)) return null;
+        return readSnapshot(()=>projectForActor(actor,denyExperimentalLab));
+      },
+      viewForSession({sessionToken}={}) {
+        return readSnapshot(()=>{
+          const identity=resolveSectionLabActor(sessionToken);
+          if(identity.error)return identity.error;
+          return projectForActor(identity.actor,true);
+        });
       },
       initializeCommandDeck(actor) {
         const row=rowOrThrow();
         if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_MODE_ACTIVE'};
         return commandDeck.initialize(actor);
+      },
+      // HTTP setup: session and membership are rechecked under BEGIN IMMEDIATE.
+      initializeCommandDeckForSession({sessionToken}={}) {
+        const identity=resolveSectionLabActor(sessionToken);
+        if(identity.error)return identity.error;
+        return commandDeck.initialize(identity.actor,
+          mutationSessionGuard(sessionToken,identity.actor));
       },
       /**
        * TEST-ONLY, never an HTTP route. The trusted fixture is supplied by
@@ -354,26 +425,7 @@ export function openSqliteComposition({file, clock = Date.now,
        * based on the same WAL snapshot as session, membership and replay.
        * No public route, commands, mutations or gameplay authorization. */
       precheckExperimentalSectionMovementSequence(request = {},trustedContext) {
-        if (!plainLabRequest(request) ||
-            Object.keys(request).length!==3 ||
-            !['sessionToken','expectedRevision','actions'].every(k => Object.hasOwn(request,k)) ||
-            typeof request.sessionToken!=='string' ||
-            !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision<0 ||
-            !Array.isArray(request.actions) || request.actions.length<1 ||
-            request.actions.length>117 ||
-            !request.actions.every(action => plainLabRequest(action) &&
-              Object.keys(action).length===3 &&
-              ['kind','id','path'].every(k => Object.hasOwn(action,k)) &&
-              ['UNIT','LEADER'].includes(action.kind) &&
-              typeof action.id==='string' &&
-              /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(action.id) &&
-              action.id!=='__proto__' &&
-              Array.isArray(action.path) && action.path.length>0 &&
-              action.path.length<=32 &&
-              action.path.every(cell => plainLabRequest(cell) &&
-                Object.keys(cell).length===2 &&
-                Object.hasOwn(cell,'col') && Object.hasOwn(cell,'row') &&
-                inBounds(cell))))
+        if (!validSequenceRequest(request))
           return {status:400,code:'INVALID_SECTION_LAB_SEQUENCE_REQUEST'};
         return readSnapshot(() => {
           const identity=resolveSectionLabActor(request.sessionToken);
@@ -381,6 +433,53 @@ export function openSqliteComposition({file, clock = Date.now,
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
           return sectionHistory.previewMovementSequence(identity.actor,request,trustedContext);
+        });
+      },
+      /** INTERNAL LAB ONLY: evidence of a hypothetical sequence. Session,
+       *  match membership, private replay and candidate trace share one WAL
+       *  snapshot. This cannot change game state or publish public events. */
+      precheckExperimentalSectionMovementEvidence(request = {},trustedContext) {
+        if (!validSequenceRequest(request))
+          return {status:400,code:'INVALID_SECTION_LAB_EVIDENCE_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(request.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewMovementEvidence(identity.actor,request,trustedContext);
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY: a shape-screened, non-committable one-hex
+       * simulation. The authenticated actor, section replay and game state
+       * are read under ONE SQLite WAL snapshot, not supplied by the client.
+       * The trusted context/policy must be created by server-side test code.
+       * NEVER expose this method through the HTTP or SSE gateway.
+       */
+      precheckExperimentalSectionOneHexIntent(request = {},trustedContext,policy) {
+        const checked=screenAncientsMovementCommitIntent(request);
+        if(checked.status!=='INTENT_SHAPE_VALID')
+          return {status:400,code:'INVALID_SECTION_LAB_ONE_HEX_REQUEST'};
+        // Do not re-read caller-owned fields after resolving identity. A
+        // mutation during the session lookup must not change the piece, path
+        // or revision that was screened before opening the WAL snapshot.
+        // The screen deliberately omits credentials from its returned intent.
+        let sessionToken;
+        try { sessionToken=Object.getOwnPropertyDescriptor(request,'sessionToken').value; }
+        catch { return {status:400,code:'INVALID_SECTION_LAB_ONE_HEX_REQUEST'}; }
+        const normalizedRequest=Object.freeze({
+          sessionToken,...checked.intent
+        });
+        // Verify that the captured credential still satisfies the same
+        // strict input contract (a hostile proxy may vary its descriptors).
+        if(screenAncientsMovementCommitIntent(normalizedRequest).status!=='INTENT_SHAPE_VALID')
+          return {status:400,code:'INVALID_SECTION_LAB_ONE_HEX_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewOneHexIntent(identity.actor,normalizedRequest,trustedContext,policy);
         });
       },
       /**
@@ -470,30 +569,50 @@ export function openSqliteComposition({file, clock = Date.now,
         });
       },
       publicEvents(actor, {denyExperimentalLab = false} = {}) {
-        if (!['A','B'].includes(actor)) return null;
-        // Mode selection, replay verification and event read share a WAL
-        // snapshot, without holding an IMMEDIATE writer lock.
-        // The HTTP gateway opts out of lab data INSIDE this read transaction;
-        // a lab activated after an earlier gateway check cannot leak events.
-        return readSnapshot(() => {
-          const row = rowOrThrow();
-          if (hasExperimentalSectionHistory(row)) {
-            if (denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
-            sectionHistory.view(actor);
-          }
-          return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
-            .all(matchId).map(x => decode(x.payload));
+        if(!['A','B'].includes(actor))return null;
+        return readSnapshot(()=>eventsForActor(actor,denyExperimentalLab));
+      },
+      publicEventsForSession({sessionToken}={}) {
+        return readSnapshot(()=>{
+          const identity=resolveSectionLabActor(sessionToken);
+          if(identity.error)return identity.error;
+          return eventsForActor(identity.actor,true);
         });
       },
-      async dispatch(request = {}) {
+      async dispatchForSession(request={}) {
+        if(!plainLabRequest(request)||typeof request.sessionToken!=='string')
+          return {status:400,code:'INVALID_COMMAND'};
+        const {sessionToken,...command}=request;
+        // Actor always comes from the live session, never the HTTP body.
+        const identity=resolveSectionLabActor(sessionToken);
+        if(identity.error)return identity.error;
+        return store.dispatch({...command,actor:identity.actor},
+          mutationSessionGuard(sessionToken,identity.actor));
+      },
+      async dispatch(request = {}, authGuard = null) {
         const {actor,type,expectedRevision,idempotencyKey} = request;
         if (!['A','B'].includes(actor)) return {status:403,code:'FORBIDDEN'};
         const row=rowOrThrow();
-        if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
-        if (hasCommandDeck(row)) return commandDeck.dispatch(request);
+        if (hasExperimentalSectionHistory(row)) {
+          // Even a DENIED lab command must not disclose that the private
+          // laboratory exists to a session revoked after HTTP preflight.
+          // Keep authentication precedence under the SQLite writer lock.
+          if(authGuard) return atomic(()=>{
+            const allowed=authGuard();
+            return allowed===true
+              ? {status:409,code:'SECTION_LAB_INTERNAL_ONLY'}
+              : allowed;
+          });
+          return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        }
+        if (hasCommandDeck(row)) return commandDeck.dispatch(request,authGuard);
         if (type !== 'pass_demo_turn' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
         return atomic(() => {
+          if(authGuard){
+            const authorization=authGuard();
+            if(authorization!==true)return authorization;
+          }
           const row = rowOrThrow();
           // A second SQLite process may initialize the private section lab
           // after our preflight but before BEGIN IMMEDIATE. Do not append a
@@ -523,6 +642,7 @@ export function openSqliteComposition({file, clock = Date.now,
         });
       }
     };
+    return store;
   }
 
   let closed = false;

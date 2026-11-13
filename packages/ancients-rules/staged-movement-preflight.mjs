@@ -10,6 +10,7 @@ import {assertSectionHistoryLab} from './section-history-journal.mjs';
 import {precheckAncientsMovementPath} from './movement-path-precheck.mjs';
 import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {precheckAncientsMovementSequence} from './leader-unit-sequence-preflight.mjs';
+import {buildAncientsCandidateJournal} from './movement-candidate-journal.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 
 const SIDES=new Set(['A','B']);
@@ -146,6 +147,11 @@ export function precheckStagedAncientsMovementSequence({
       current.col===piece.col&&current.row===piece.row);
   });
   if(!complete)return blocked('ORDER_LEDGER_MISMATCH');
+  // An otherwise validly shaped hypothetical route cannot consume more
+  // moves than the authenticated order ledger contains. Fail closed rather
+  // than let the lower-level sequence reject with a configuration error.
+  if(Array.isArray(actions)&&actions.length>snapshot.pieces.length)
+    return blocked('PIECE_NOT_ORDERED');
   // Context is supplied by the server, never copied from a browser request.
   const roster=trustedRoster(state,serverContext);
   const orderedUnitIds=snapshot.pieces.filter(p=>p.kind==='UNIT').map(p=>p.id);
@@ -153,5 +159,34 @@ export function precheckStagedAncientsMovementSequence({
   return precheckAncientsMovementSequence({
     ...roster,actor,orderedUnitIds,orderedLeaderIds,
     actions:structuredClone(actions)
+  });
+}
+
+
+/**
+ * LAB-ANC: evidence for a hypothetical sequence, bound to the replay-verified
+ * section orders and to a trusted server context. This never executes moves.
+ * matchId comes from the authenticated CCWB row, never from client data.
+ */
+export function precheckStagedAncientsMovementEvidence({
+  matchId,state,actor,expectedRevision,actions,serverContext
+}={}) {
+  const screened=precheckStagedAncientsMovementSequence({
+    state,actor,expectedRevision,actions,serverContext
+  });
+  if(screened.status!=='CANDIDATE_SEQUENCE')
+    return Object.freeze({
+      status:'BLOCKED',reason:screened.reason,step:screened.step??null,
+      journal:null,movementAuthorized:false,attackAuthorized:false,
+      stateChanged:false,needsFullLegalityCheck:true
+    });
+  const roster=trustedRoster(state,serverContext);
+  const orderedUnitIds=state.orderSnapshot.pieces
+    .filter(piece=>piece.kind==='UNIT').map(piece=>piece.id);
+  const orderedLeaderIds=state.orderSnapshot.pieces
+    .filter(piece=>piece.kind==='LEADER').map(piece=>piece.id);
+  return buildAncientsCandidateJournal({
+    matchId,actor,baseRevision:state.revision,...roster,
+    orderedUnitIds,orderedLeaderIds,actions:structuredClone(actions)
   });
 }

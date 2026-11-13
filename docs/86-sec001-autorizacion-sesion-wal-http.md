@@ -1,0 +1,107 @@
+# SEC-001 — autorización HTTP/SSE vinculada a sesión y snapshot WAL
+
+**Fecha:** 13/11/2026  
+**Rama:** `feat/lab-anc-movement-candidate-audit-trail` — PR #96 (borrador).  
+**Procedencia:** se ha trasladado selectivamente el diseño y las comprobaciones de la PR #93, **sin fusionarla ni cerrarla**. La PR #93 sigue pendiente de revisión y de ejecución nativa integral.
+
+## Problema resuelto en el código experimental
+
+Comprobar la identidad del participante antes de consultar una vista pública o antes de pedir un bloqueo escritor **no equivale a autorización válida en la transacción posterior**. Otra conexión SQLite puede revocar una sesión o modificar la pertenencia a una partida entre ambas operaciones. Además, una partida sintética puede convertirse en laboratorio de cartas privadas después de la primera consulta del gateway.
+
+La solución introduce dos fronteras distintas: lectura pública dentro de una única instantánea WAL y escritura autenticada tras adquirir `BEGIN IMMEDIATE`. No convierte ninguna simulación en movimiento autorizado.
+
+## Contratos implantados
+
+| Capa | Control |
+|---|---|
+| `packages/sqlite-store/sqlite.mjs` — `invitations.getMatch` | La sesión, pertenencia, lista de participantes y revisión de lobby se leen dentro del **mismo `readSnapshot`**. |
+| `sqlite.mjs` — mutaciones de invitaciones | `createMatch`, `issueInvitation`, `acceptInvitation`, `rejectInvitation` y `revokeInvitation` vuelven a validar la sesión **dentro de `atomic`** antes de modificar registros. |
+| `getStore.viewForSession({sessionToken})` | Resuelve sesión/bando y construye una **proyección pública** en un único snapshot WAL. Si la partida está en `LAB_ONLY`, devuelve `SECTION_LAB_INTERNAL_ONLY` **sin construir ni proyectar manos privadas**. |
+| `getStore.publicEventsForSession({sessionToken})` | Repite sesión, pertenencia, exclusión del laboratorio y lectura de eventos públicos dentro de **su propio** snapshot WAL. |
+| `getStore.initializeCommandDeckForSession({sessionToken})` | Deriva el actor en servidor y utiliza `mutationSessionGuard` después de `BEGIN IMMEDIATE` del mazo. |
+| `getStore.dispatchForSession(request)` | Deriva el actor del token y pasa el guardia al despacho genérico. El tablero, los eventos y el diario no se escriben hasta revalidar sesión y pertenencia en la **misma transacción escritora**. |
+| `packages/command-deck/sqlite-game.mjs` | `initialize` y `dispatch` aceptan un guardia interno opcional que se ejecuta dentro de `atomic`, antes de leer o alterar estado. |
+| `packages/local-api/gateway.mjs` | Prefiere las API vinculadas a sesión para GET partida, eventos, SSE inicial, inicialización de mazo y comandos. Conserva fallback actor-based para almacenes sintéticos antiguos. Trata denegaciones como 401/404/409, sin serializar manos o errores privados. |
+| `packages/local-api/revision-stream.mjs` | Cada tick SSE utiliza la vista vinculada a sesión si está disponible; cierra el flujo ante revocación, expulsión o laboratorio privado. |
+
+Los métodos actor-based existentes continúan disponibles **solo como contrato interno/compatibilidad de laboratorio**. Los métodos HTTP no aceptan `actor` ni resultados reglamentarios del cliente; la sesión real determina el bando.
+
+## Regresiones incorporadas de la PR #93
+
+Se han integrado **10 casos** en suites ya registradas:
+
+- **4 SQLite** en `packages/sqlite-store/sqlite.test.mjs`: vista de lobby WAL coherente, logout en segunda conexión, revalidación bajo bloqueo escritor en cinco mutaciones y denegación de escrituras posteriores a logout.
+- **4 HTTP** en `packages/local-api/section-history-http-isolation.test.mjs`: revocación entre lobby/almacén en vista-eventos-comandos, revocación tras la vista previa a eventos, revocación antes de obtener bloqueo de escritura y revocación previa a inicialización del mazo.
+- **2 SSE** en `packages/local-api/revision-stream-lab-isolation.test.mjs`: preferencia de lectura autenticada frente a actor legado y cierre ante revocación durante una operación asíncrona.
+
+Después de incorporar los casos, las respectivas suites contienen **14, 11 y 8 tests**. Siguen siendo las mismas tres entradas del manifiesto de **80 suites únicas**. No se han activado GitHub Actions ni se ha creado ningún endpoint adicional.
+
+## Evidencia y límites
+
+Se ha comprobado la **sintaxis de siete archivos exactos** recuperados de la rama GitHub: cuatro módulos operativos y tres suites de prueba (mediante evaluación sintáctica aislada con los imports despojados). También se repitió de manera independiente la suite **nativa y autocontenida** `wal-snapshot-boundary.test.mjs` con Node.js 22.16.0 y `node:sqlite`: **8/8 PASS, 0 FAIL**.
+
+**No se han ejecutado todavía las 10 nuevas regresiones integradas con el servidor real**, ni los nueve casos nuevos de simulación CCWB/SQLite, ni las 80 suites completas. Las pruebas nativas WAL son solamente un contrato de concurrencia sobre tablas simplificadas y **no validan estas nuevas rutas de código**.
+
+La PR #93 **no queda resuelta ni fusionada** por esta transferencia. Antes de integrar en `main` es imprescindible ejecutar y revisar seguridad HTTP/SSE, regresión completa de un SHA exacto, pruebas de dos conexiones con sesión y pertenencia y reglas oficiales de *Ancients*. La PR #96 mantiene `draft` y `main` permanece intacta.
+
+
+## Verificación adicional del contrato interno (13/11/2026)
+
+Después de integrar las capas se efectuaron **6 comprobaciones
+aisladas en V8** sobre los cuerpos **exactos** de cuatro métodos
+recuperados de `packages/sqlite-store/sqlite.mjs`, blob Git
+`7c08fe6477a7d02ce4d660b7584d1ae7f45b0bab`:
+
+1. La resolución de sesión y la vista pública ocurren dentro de
+   la misma lectura WAL simulada.
+2. La sesión revocada se rechaza antes de crear proyección.
+3. La lectura de eventos utiliza el mismo snapshot simulado.
+4. Inicialización de mazo recibe guardia para el bloqueo escritor.
+5. El despacho no acepta el bando falsificado del llamador.
+6. Sesión revocada rechaza despacho antes de llamar al motor.
+
+**Resultado: 6/6 correctas**. Se usaron deliberadamente sustitutos
+para el almacén, transacciones y sesiones. Una primera comprobación
+interpretó erróneamente funciones asíncronas como resultados síncronos
+(4/6); tras corregir el arnés para usar `await`, el resultado
+fue **6/6**. **No** es prueba nativa de SQLite ni de HTTP. El
+bloqueo funcional continúa hasta ejecutar los casos integrados reales.
+
+
+## Prioridad de autenticación ante partida privada (13/11/2026)
+
+La revisión posterior encontró un caso de revelación de estado:
+`store.dispatch` devolvía `409 SECTION_LAB_INTERNAL_ONLY`
+cuando detectaba una partida de laboratorio **antes** de invocar
+`authGuard` en la ruta de escritura. Si la sesión se revocaba
+entre la comprobación inicial y ese retorno, un HTTP `/commands`
+podía distinguir la presencia del laboratorio en lugar de obtener
+`401 UNAUTHENTICATED`. No se ejecutaba ni persistía movimiento,
+pero la precedencia de autenticación debía preservarse.
+
+**Corrección:** cuando existe un guardia autenticado, incluso el
+rechazo de comandos a partidas `LAB_ONLY` se resuelve bajo
+`atomic`/`BEGIN IMMEDIATE`, llamando al guardia **antes** de
+devolver `409`. Una revocación confirmada devuelve `401`,
+sin exponer la existencia del diario privado. La ruta interna
+legada sin guardia conserva su `409`.
+
+**Regresión incorporada** a
+`packages/sqlite-store/ancients-section-history.test.mjs`: la
+primera resolución devuelve un actor válido, pero una segunda
+conexión WAL revoca su sesión antes del bloqueo escritor. Se
+exige respuesta exclusivamente `401` y ausencia de cambios
+en `matches`, `game_events` y `game_commands`. Esta prueba
+está **preparada pero todavía no ejecutada nativamente**.
+
+**Comprobación aislada:** 3/3 casos correctos ejecutando el
+método exacto `store.dispatch` de GitHub (blob
+`6f22379dd6a5e9a2369ee315099819441598d245`)
+con bases/transacciones simuladas. Se verificó también que
+el guardia ocurre dentro de la transacción simulada y que
+no se invoca ninguna escritura. **No es una prueba real de
+SQLite o HTTP**.
+
+Las pruebas de integración CCWB/SQLite nuevas de PR #96
+pasan de **9 a 10 casos pendientes de ejecución**; el
+manifiesto de regresión conserva **80 suites**.

@@ -281,8 +281,8 @@ test('CCWB composition: private views and public events do not acquire a writer 
 /** Private read-only R-04/R-05 preview, using real sessions and the CCWB
  *  database journal. Never authorize a move or leak another hand. */
 const movementContext=()=>({unitTypes:{unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'},terrain:[]});
-function stageForMovement(store,token){
-  assert.equal(store.initializeExperimentalSectionHistory({sessionToken:token,trustedSetup:setup()}).status,201);
+function stageForMovement(store,token,trustedSetup=setup()){
+  assert.equal(store.initializeExperimentalSectionHistory({sessionToken:token,trustedSetup}).status,201);
   const card=store.viewExperimentalSectionHistory({sessionToken:token}).view.yourHand[0].instanceId;
   assert.equal(store.dispatchExperimentalSectionHistory({sessionToken:token,type:'PLAY_SECTION_CARD',
     expectedRevision:0,idempotencyKey:'private_preview_card_0001',cardInstanceId:card}).status,200);
@@ -896,4 +896,352 @@ test('CCWB draft: a denied or stale journal command preserves the private draft 
   assert.equal(store.viewExperimentalSectionMovementDraft({
     sessionToken:tokens.A}).draft.draftRevision,1);
   assert.equal(db.isTransaction,false);
+}));
+
+
+const evidenceRequest=(sessionToken,changes={})=>({
+  sessionToken,expectedRevision:2,actions:[sequenceLeader(),sequenceUnit()],
+  ...changes
+});
+
+test('CCWB candidate evidence: bound to session, replay and WAL, leaves all game tables unchanged',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const tableSnapshot=()=>({
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  });
+  const before=tableSnapshot();
+  const first=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A),movementContext());
+  assert.equal(first.status,200);
+  assert.equal(first.code,'SECTION_LAB_CANDIDATE_EVIDENCE');
+  assert.equal(first.evidence.status,'CANDIDATE_EVIDENCE');
+  assert.equal(first.evidence.journal.matchId,matchId);
+  assert.equal(first.evidence.journal.baseRevision,2);
+  assert.equal(first.evidence.journal.entries.length,2);
+  assert.equal(first.movementAuthorized,false);
+  assert.equal(first.boardChanged,false);
+  assert.equal(first.evidence.stateChanged,false);
+  const second=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A),movementContext());
+  assert.deepEqual(second,first);
+  assert.deepEqual(tableSnapshot(),before);
+  assert.equal(db.isTransaction,false);
+  assert.equal(JSON.stringify(first).includes('card_a_left'),false);
+  assert.equal(JSON.stringify(store.publicEvents('B')).includes('captain'),false);
+}));
+
+test('CCWB candidate evidence: foreign, outsider and revoked sessions never receive a trace',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const rival=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.B),movementContext());
+  assert.equal(rival.status,200);
+  assert.equal(rival.evidence.status,'BLOCKED');
+  assert.equal(rival.evidence.journal,null);
+  assert.equal(rival.evidence.reason,'NOT_ACTING_PLAYER');
+  assert.equal(store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.outsider),movementContext()).code,'NOT_FOUND');
+  connect().identity.logOut(tokens.A);
+  assert.equal(store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A),movementContext()).code,'UNAUTHENTICATED');
+}));
+
+test('CCWB candidate evidence: forged client fields, invalid paths or stale revision cannot create trace',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),trusted=movementContext();
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  for(const request of [
+    evidenceRequest(tokens.A,{actor:'B'}),
+    evidenceRequest(tokens.A,{matchId}),
+    evidenceRequest(tokens.A,{actions:[]}),
+    evidenceRequest(tokens.A,{actions:[{...sequenceLeader(),actor:'B'}]}),
+    evidenceRequest(tokens.A,{actions:[{...sequenceLeader(),path:[{col:2,row:5,actor:'B'}]}]}),
+    evidenceRequest(tokens.A,{expectedRevision:-1}),
+    evidenceRequest(tokens.A,{expectedRevision:1.5})
+  ])
+    assert.equal(store.precheckExperimentalSectionMovementEvidence(
+      request,trusted).code,'INVALID_SECTION_LAB_EVIDENCE_REQUEST');
+  const stale=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A,{expectedRevision:1}),trusted);
+  assert.equal(stale.evidence.status,'BLOCKED');
+  assert.equal(stale.evidence.journal,null);
+  assert.equal(stale.evidence.reason,'STALE_REVISION');
+  const reversed=store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A,{actions:[sequenceUnit(),sequenceLeader()]}),trusted);
+  assert.equal(reversed.evidence.status,'BLOCKED');
+  assert.equal(reversed.evidence.journal,null);
+  assert.throws(()=>store.precheckExperimentalSectionMovementEvidence(
+    evidenceRequest(tokens.A),{}),/INVALID_STAGED_MOVEMENT_CONTEXT/);
+}));
+
+test('CCWB candidate evidence: WAL read remains available during another writer lock',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForLeader(store,tokens.A,{orderUnit:true});
+  const writer=connect().unsafeTestDatabase();
+  writer.exec('BEGIN IMMEDIATE');
+  try{
+    const response=store.precheckExperimentalSectionMovementEvidence(
+      evidenceRequest(tokens.A),movementContext());
+    assert.equal(response.status,200);
+    assert.equal(response.evidence.status,'CANDIDATE_EVIDENCE');
+    assert.equal(response.evidence.journal.entries.length,2);
+  } finally {writer.exec('ROLLBACK');}
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+/** Private LAB-ANC simulation only: real CCWB sessions/WAL/section journal.
+ * This API never spends an order, authorizes movement or changes a board. */
+const oneHexIntent=(sessionToken,changes={})=>({
+  sessionToken,expectedRevision:2,idempotencyKey:'one_hex_internal_0001',
+  kind:'UNIT',pieceId:'unitA',path:[{col:3,row:4}],...changes
+});
+const openHexPolicy=()=>({scope:'SYNTHETIC_OPEN_HEX_V1'});
+const oneHexPreview=(store,token,changes={},ctx=movementContext(),policy=openHexPolicy())=>
+  store.precheckExperimentalSectionOneHexIntent(oneHexIntent(token,changes),ctx,policy);
+
+test('CCWB one-hex simulation: authenticated replay reads WAL and never writes game state',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before={
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  };
+  const response=oneHexPreview(store,tokens.A);
+  assert.equal(response.status,200);
+  assert.equal(response.code,'SECTION_LAB_ONE_HEX_SIMULATION');
+  assert.equal(response.simulation.status,'PRIVATE_LAB_SIMULATION');
+  assert.deepEqual(response.simulation.moves,[{
+    unitId:'unitA',from:{col:2,row:4},to:{col:3,row:4}
+  }]);
+  assert.equal(response.simulation.simulatedBoard.units[0].col,3);
+  assert.equal(response.simulation.movementAuthorized,false);
+  assert.equal(response.simulation.canCommit,false);
+  assert.equal(response.movementAuthorized,false);
+  assert.equal(response.boardChanged,false);
+  assert.equal(response.canCommit,false);
+  const contents=JSON.stringify(response);
+  assert.equal(contents.includes(tokens.A),false);
+  assert.equal(contents.includes('one_hex_internal_0001'),false);
+  const otherHand=store.viewExperimentalSectionHistory({sessionToken:tokens.B}).view.yourHand;
+  for(const card of otherHand) assert.equal(contents.includes(card.instanceId),false);
+  const reopened=connect().getStore(matchId);
+  assert.deepEqual(oneHexPreview(reopened,tokens.A),response);
+  assert.deepEqual({
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  },before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB one-hex simulation: authentication, membership and actor come from SQLite',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForMovement(store,tokens.A);
+  assert.equal(oneHexPreview(store,'f'.repeat(43)).code,'UNAUTHENTICATED');
+  assert.equal(oneHexPreview(store,tokens.outsider).code,'NOT_FOUND');
+  const rival=oneHexPreview(store,tokens.B);
+  assert.equal(rival.status,200);
+  assert.equal(rival.simulation.status,'BLOCKED');
+  assert.equal(rival.simulation.reason,'NOT_ACTING_PLAYER');
+  assert.equal(rival.simulation.simulatedBoard,null);
+  const other=connect();
+  assert.equal(other.identity.logOut(tokens.A).ok,true);
+  assert.equal(oneHexPreview(store,tokens.A).code,'UNAUTHENTICATED');
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB one-hex simulation: forbidden client metadata and stale revision fail closed',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const original=db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId);
+  for(const changed of [
+    {actor:'A'}, {matchId}, {board:{}}, {terrain:[]},
+    {policy:openHexPolicy()}, {journal:{}}, {canCommit:true},
+    {path:[]}, {path:[{col:3,row:4,side:'A'}]},
+    {expectedRevision:'2'}, {idempotencyKey:'x'}
+  ]) {
+    const response=oneHexPreview(store,tokens.A,changed);
+    assert.deepEqual(response,{status:400,code:'INVALID_SECTION_LAB_ONE_HEX_REQUEST'});
+  }
+  const stale=oneHexPreview(store,tokens.A,{expectedRevision:1});
+  assert.equal(stale.simulation.status,'BLOCKED');
+  assert.equal(stale.simulation.reason,'STALE_REVISION');
+  assert.equal(oneHexPreview(store,tokens.A,{pieceId:'unitB',path:[{col:9,row:4}]}).simulation.status,'BLOCKED');
+  assert.equal(oneHexPreview(store,tokens.A,{kind:'LEADER'}).simulation.status,'BLOCKED');
+  assert.equal(oneHexPreview(store,tokens.A,{path:[{col:3,row:4},{col:4,row:4}]}).simulation.status,'BLOCKED');
+  assert.deepEqual(db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId),original);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB one-hex simulation: server policy and terrain restrictions cannot be bypassed',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForMovement(store,tokens.A);
+  for(const [ctx,policy] of [
+    [movementContext(),null],
+    [movementContext(),{scope:'OFFICIAL_GAME'}],
+    [{...movementContext(),terrain:[{col:3,row:4,kind:'HILL'}]},openHexPolicy()],
+    [null,openHexPolicy()]
+  ]) {
+    const result=oneHexPreview(store,tokens.A,{},ctx,policy);
+    assert.equal(result.simulation.status,'BLOCKED');
+    assert.equal(result.simulation.simulatedBoard,null);
+    assert.equal(result.simulation.canCommit,false);
+  }
+  // Passing undefined to the test helper would silently trigger its
+  // default context: exercise the STORE method directly instead.
+  const withoutContext=store.precheckExperimentalSectionOneHexIntent(
+    oneHexIntent(tokens.A),undefined,openHexPolicy());
+  assert.equal(withoutContext.simulation.status,'BLOCKED');
+  assert.equal(withoutContext.simulation.canCommit,false);
+}));
+
+test('CCWB one-hex simulation: reader sees committed WAL state until writer revocation',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),reader=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const writer=connect().unsafeTestDatabase();
+  writer.exec('BEGIN IMMEDIATE');
+  try{
+    writer.prepare(`DELETE FROM sessions WHERE token_digest=(
+      SELECT token_digest FROM sessions s JOIN accounts a ON s.user_id=a.id WHERE a.handle=? )`)
+      .run('alice');
+    const beforeCommit=oneHexPreview(store,tokens.A);
+    assert.equal(beforeCommit.simulation.status,'PRIVATE_LAB_SIMULATION');
+  }finally{writer.exec('COMMIT');}
+  assert.equal(oneHexPreview(store,tokens.A).code,'UNAUTHENTICATED');
+  assert.equal(reader.isTransaction,false);
+}));
+
+test('CCWB one-hex simulation: tampered replay fails without leaving transaction open',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  db.prepare('UPDATE game_events SET payload=? WHERE match_id=? AND sequence=1')
+    .run('{}',matchId);
+  assert.throws(()=>oneHexPreview(store,tokens.A),/SECTION_CCWB_HISTORY_TAMPERED/);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB one-hex simulation: inactive laboratory cannot be used to bypass deck mode',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  assert.equal(oneHexPreview(store,tokens.A).code,'SECTION_LAB_NOT_INITIALIZED');
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB one-hex simulation: private fixture metadata cannot leak through board projection',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const privateSetup=setup();
+  privateSetup.board.privateDeckMarker='NEVER_SHOW_PRIVATE_DECK';
+  privateSetup.board.units[0].serverToken='NEVER_SHOW_OWNER_TOKEN';
+  privateSetup.board.units[1].privateEnemyInfo='NEVER_SHOW_OPPONENT_SECRET';
+  stageForMovement(store,tokens.A,privateSetup);
+  const before=db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId);
+  const response=oneHexPreview(store,tokens.A);
+  assert.equal(response.status,200);
+  assert.equal(response.simulation.status,'PRIVATE_LAB_SIMULATION');
+  const json=JSON.stringify(response);
+  for(const secret of ['NEVER_SHOW_PRIVATE_DECK',
+    'NEVER_SHOW_OWNER_TOKEN','NEVER_SHOW_OPPONENT_SECRET'])
+    assert.equal(json.includes(secret),false);
+  assert.deepEqual(Object.keys(response.simulation.simulatedBoard).sort(),['leaders','units']);
+  for(const unit of response.simulation.simulatedBoard.units)
+    assert.deepEqual(Object.keys(unit).sort(),['col','id','row','side']);
+  assert.deepEqual(db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+
+test('CCWB one-hex simulation: mutation after shape check cannot retarget session, unit or revision',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const request=oneHexIntent(tokens.A);
+  const before=db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId);
+  const resolve=app.identity.resolveSession;
+  let calls=0;
+  try {
+    app.identity.resolveSession=token=>{
+      if(token===tokens.A) {
+        calls++;
+        // Simulate a mutable internal caller changing the original object
+        // between the first shape check and the replay-verified preview.
+        request.sessionToken=tokens.B;
+        request.expectedRevision=0;
+        request.pieceId='unitB';
+        request.path=[{col:9,row:4}];
+        request.idempotencyKey='mutated_request_0001';
+      }
+      return resolve(token);
+    };
+    const response=store.precheckExperimentalSectionOneHexIntent(
+      request,movementContext(),openHexPolicy());
+    assert.equal(calls,1);
+    assert.equal(response.status,200);
+    assert.equal(response.simulation.status,'PRIVATE_LAB_SIMULATION');
+    assert.deepEqual(response.simulation.moves,[{
+      unitId:'unitA',from:{col:2,row:4},to:{col:3,row:4}
+    }]);
+    assert.equal(response.simulation.simulatedBoard.units[0].col,3);
+    assert.equal(response.simulation.canCommit,false);
+    assert.equal(response.boardChanged,false);
+    assert.equal(JSON.stringify(response).includes(tokens.A),false);
+    assert.equal(JSON.stringify(response).includes(tokens.B),false);
+    assert.deepEqual(db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId),before);
+    assert.equal(db.isTransaction,false);
+  } finally {app.identity.resolveSession=resolve;}
+}));
+
+
+test('SEC-001: revocation after session preflight cannot reveal private lab mode through commands',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const writer=connect();
+  const before={
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  };
+  // Force the exact race: return an initially valid actor to the
+  // preflight, but revoke that same session on another WAL connection
+  // before store.dispatch can enter its authorizing write transaction.
+  const resolve=app.identity.resolveSession;
+  let first=true;
+  try {
+    app.identity.resolveSession=token=>{
+      const identity=resolve(token);
+      if(first&&token===tokens.A&&identity){
+        first=false;
+        assert.equal(writer.identity.logOut(token).ok,true);
+      }
+      return identity;
+    };
+    const response=await store.dispatchForSession({
+      sessionToken:tokens.A,type:'pass_demo_turn',
+      expectedRevision:2,idempotencyKey:'revoked_lab_command_001'
+    });
+    assert.deepEqual(response,{status:401,code:'UNAUTHENTICATED'});
+    assert.equal(first,false);
+    // An unauthenticated caller must never learn whether the
+    // internal laboratory was initialized (409 vs 401).
+    assert.equal(JSON.stringify(response).includes('SECTION_LAB'),false);
+    assert.deepEqual({
+      match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+      events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+      commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+    },before);
+    assert.equal(db.isTransaction,false);
+  } finally {app.identity.resolveSession=resolve;}
 }));
