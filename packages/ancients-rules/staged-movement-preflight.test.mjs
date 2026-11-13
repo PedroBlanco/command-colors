@@ -1,5 +1,6 @@
 import test from 'node:test';
-import {snapshotStagedSequenceRequest} from './staged-sequence-request-snapshot.mjs';
+import {snapshotStagedSequenceRequest,
+  snapshotStagedMovementDraftRequest} from './staged-sequence-request-snapshot.mjs';
 import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
 import assert from 'node:assert/strict';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply}
@@ -580,4 +581,59 @@ test('sequence snapshot never invokes hostile Proxy property getters',()=>{
   const r=snapshotStagedSequenceRequest(proxied);
   assert.deepEqual(r.actions[0].path[0],{col:2,row:5});
   assert.deepEqual(gets,[]);
+});
+
+const draftInput=()=>({
+  sessionToken:'s'.repeat(48),expectedRevision:2,expectedDraftRevision:0,
+  idempotencyKey:'draft_request_001',actions:sequenceInput().actions
+});
+
+test('draft write snapshot captures revisions, idempotency and full actions immutably',()=>{
+  const incoming=draftInput(),before=structuredClone(incoming);
+  const stable=snapshotStagedMovementDraftRequest(incoming);
+  assert.deepEqual(stable,before);
+  for(const item of [stable,stable.actions,stable.actions[0],stable.actions[0].path,
+    stable.actions[0].path[0]])assert.equal(Object.isFrozen(item),true);
+  incoming.expectedRevision=12;
+  incoming.expectedDraftRevision=55;
+  incoming.idempotencyKey='changed_draft_request_002';
+  incoming.actions[0].id='fake';
+  incoming.actions[0].path[0].col=12;
+  assert.deepEqual(stable,before);
+  assert.throws(()=>{stable.expectedDraftRevision=99},TypeError);
+});
+test('draft write snapshot rejects spoofed authority, invalid keys and array tricks',()=>{
+  const forged=[
+    {...draftInput(),actor:'B'},
+    {...draftInput(),terrain:[]},
+    {...draftInput(),expectedRevision:1.1},
+    {...draftInput(),expectedDraftRevision:-1},
+    {...draftInput(),idempotencyKey:'short'},
+    {...draftInput(),idempotencyKey:'x'.repeat(81)},
+    {...draftInput(),actions:[]},
+    {...draftInput(),actions:[{...draftInput().actions[0],side:'B'}]},
+    {...draftInput(),actions:[{kind:'UNIT',id:'unitA',
+      path:[{col:3,row:4,privateCard:'secret'}]}]}
+  ];
+  for(const request of forged)
+    assert.equal(snapshotStagedMovementDraftRequest(request),null);
+  const holes=draftInput();
+  holes.actions=new Array(1);
+  assert.equal(snapshotStagedMovementDraftRequest(holes),null);
+  const inherited=Object.create(draftInput());
+  assert.equal(snapshotStagedMovementDraftRequest(inherited),null);
+});
+test('draft write snapshot reads own descriptors only, never getters',()=>{
+  const input=draftInput(),reads=[];
+  const wrapped=new Proxy(input,{
+    get(target,key){reads.push(String(key));throw Error('GET forbidden');}
+  });
+  const stable=snapshotStagedMovementDraftRequest(wrapped);
+  assert.deepEqual(stable,input);
+  assert.deepEqual(reads,[]);
+  const dangerous=draftInput();
+  Object.defineProperty(dangerous.actions[0].path[0],'col',{
+    enumerable:true,get(){throw Error('EXECUTED GETTER');}
+  });
+  assert.equal(snapshotStagedMovementDraftRequest(dangerous),null);
 });
