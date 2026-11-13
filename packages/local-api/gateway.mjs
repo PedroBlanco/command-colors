@@ -65,6 +65,20 @@ function reply(res, status, body, extraHeaders = {}) {
   res.end(JSON.stringify(body));
 }
 
+// The SQLite store can authorize the session and read the private view in the
+// same WAL snapshot. Other laboratory adapters retain their actor-based API.
+function readAuthorizedState(store, actor, sessionToken) {
+  return typeof store.viewForSession === 'function'
+    ? store.viewForSession({sessionToken})
+    : store.view(actor,{denyExperimentalLab:true});
+}
+function publicReadError(result) {
+  if (result?.code === 'SECTION_LAB_INTERNAL_ONLY' || result?.status === 'LAB_ONLY')
+    return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+  if (result?.code === 'UNAUTHENTICATED') return {status:401,code:'UNAUTHENTICATED'};
+  if (result?.code === 'NOT_FOUND') return {status:404,code:'NOT_FOUND'};
+  return null;
+}
 function domainReply(result, successStatus = 200) {
   if (result?.ok) return {status: successStatus, body: result};
   const code = result?.code;
@@ -154,11 +168,12 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
       if (req.method === 'GET' && !resource) {
         if (lobby.status !== 'READY') return reply(res, 200, {matchId, status: lobby.status, players: lobby.players});
         const store = await getStore(matchId);
-        const state = store.view(actor);
+        // Refuse the private section lab inside the store's WAL snapshot,
+        // before ever constructing its private projection.
+        const state = readAuthorizedState(store, actor, token);
+        const readError = publicReadError(state);
+        if (readError) return reply(res, readError.status, {code:readError.code});
         if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
-        // The internal Ancients section-card lab is NEVER a public HTTP state.
-        // Access through the generic match GET must not bypass lab-only guards.
-        if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
         return reply(res, 200, {matchId, status: lobby.status, players: lobby.players, state});
       }
       if (req.method === 'POST' && resource === 'invitations') {
@@ -171,8 +186,11 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         // every tick, so activation after subscription closes the stream.
         if (lobby.status === 'READY') {
           const store = await getStore(matchId);
-          if (store.view(actor)?.status === 'LAB_ONLY')
-            return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
+          const state = readAuthorizedState(store, actor, token);
+          const readError = publicReadError(state);
+          if (readError) return reply(res, readError.status, {code:readError.code});
+          if (!state || state.matchId !== matchId)
+            return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
         }
         if (revisionStreams >= MAX_REVISION_STREAMS) return reply(res, 429, {code: 'TOO_MANY_STREAMS'});
         revisionStreams++;
@@ -187,21 +205,31 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         if (Object.keys(body).length !== 0) return reply(res, 400, {code: 'INVALID_SETUP'});
         if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
         const store = await getStore(matchId);
-        if (typeof store.initializeCommandDeck !== 'function') return reply(res, 404, {code: 'NOT_FOUND'});
-        const result = await store.initializeCommandDeck(actor);
+        if (typeof store.initializeCommandDeckForSession !== 'function' &&
+            typeof store.initializeCommandDeck !== 'function')
+          return reply(res, 404, {code: 'NOT_FOUND'});
+        const result = typeof store.initializeCommandDeckForSession === 'function'
+          ? await store.initializeCommandDeckForSession({sessionToken:token})
+          : await store.initializeCommandDeck(actor);
+        // Never return a private deck projection belonging to another match.
+        if (result.view && result.view.matchId !== matchId)
+          return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
         return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
       }
       if (lobby.status !== 'READY') return reply(res, 409, {code: 'MATCH_NOT_READY'});
       if (req.method === 'GET' && resource === 'events') {
         const store = await getStore(matchId);
-        const state = store.view(actor);
-        if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
-        if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
+        const state = readAuthorizedState(store, actor, token);
+        const readError = publicReadError(state);
+        if (readError) return reply(res, readError.status, {code:readError.code});
+        if (!state || state.matchId !== matchId) return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
         // Recheck the lab mode inside the event read's own SQLite snapshot:
         // another writer can activate the lab after store.view(actor).
-        const events = store.publicEvents(actor,{denyExperimentalLab:true});
-        if (events?.code === 'SECTION_LAB_INTERNAL_ONLY')
-          return reply(res, 409, {code:'SECTION_LAB_INTERNAL_ONLY'});
+        const events = typeof store.publicEventsForSession === 'function'
+          ? store.publicEventsForSession({sessionToken:token})
+          : store.publicEvents(actor,{denyExperimentalLab:true});
+        const eventError = publicReadError(events);
+        if (eventError) return reply(res, eventError.status, {code:eventError.code});
         // Never serialize an unexpected internal event result as a public
         // array. Other errors must fail closed, not become response data.
         if (events != null && !Array.isArray(events))
@@ -211,14 +239,19 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
       if (req.method === 'POST' && resource === 'commands') {
         const body = await jsonRequest(req);
         const store = await getStore(matchId);
-        const state = store.view(actor);
-        if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
-        if (state.status === 'LAB_ONLY') return reply(res, 409, {code: 'SECTION_LAB_INTERNAL_ONLY'});
-        const result = await store.dispatch({actor, type: body.type,
-          expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey,
-          cardRef: body.cardRef, unitIds: body.unitIds,
-          unitId: body.unitId, path: body.path,
-          targetUnit: body.targetUnit, choice: body.choice});
+        const state = readAuthorizedState(store, actor, token);
+        const readError = publicReadError(state);
+        if (readError) return reply(res, readError.status, {code:readError.code});
+        if (!state || state.matchId !== matchId) return reply(res, 503, {code:'SERVICE_UNAVAILABLE'});
+        const command = {type:body.type,
+          expectedRevision:body.expectedRevision, idempotencyKey:body.idempotencyKey,
+          cardRef:body.cardRef, unitIds:body.unitIds,
+          unitId:body.unitId, path:body.path,
+          targetUnit:body.targetUnit, choice:body.choice};
+        // SQLite checks session and membership again under its writer lock.
+        const result = typeof store.dispatchForSession === 'function'
+          ? await store.dispatchForSession({sessionToken:token,...command})
+          : await store.dispatch({actor,...command});
         if (result.view && result.view.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
       }

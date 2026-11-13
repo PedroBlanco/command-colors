@@ -284,7 +284,7 @@ La consulta interna `precheckExperimentalSectionMovement({sessionToken,expectedR
 **Evidencia integrada real:** seis nuevos casos de sesiones, suplantación, privacidad, concurrencia WAL, adulteración de eventos, validación estricta y ausencia de escrituras; ejecución conjunta del filtro, puente y composición de identidad **52/52 PASS (0 FAIL, 0 SKIP)** con Node.js 22.16.0/Linux sin WSL. TAP SHA-256 `0244d48c9bbd5d44f38310234ebe15cc295417f15c9a9951252e85b2927659c2`. Se mantienen **69 suites** en el manifiesto, sin ejecutar todavía la regresión total. Pendientes Windows, HTTP/SSE, dos navegadores, escenarios oficiales y transacciones que apliquen movimientos. Véase [previsualización privada autenticada](71-previsualizacion-privada-movimiento-ancients.md).
 
 
-## Cierre de exposición indirecta en HTTP y SSE — CCW-015 (12/11/2026)
+## Cierre de exposición indirecta en HTTP y SSE — SEC-001 (12/11/2026)
 
 La vista experimental de CCWB se obtenía también desde `getStore(matchId).view(actor)`, que era utilizado por la ruta **preexistente** `GET /api/matches/:id`. Por tanto, la afirmación histórica «sin una nueva ruta HTTP» no garantizaba el aislamiento del laboratorio. La rama `fix/i4-ccwb-lab-http-read-boundary` devuelve ahora `409 SECTION_LAB_INTERNAL_ONLY` para estado y eventos HTTP cuando se detecta `LAB_ONLY`, bloquea comandos genéricos y suscripciones SSE al laboratorio, y cierra los SSE antiguos al activarlo. Las lecturas de eventos HTTP se protegen dentro de su propia instantánea WAL, no solo en una comprobación previa.
 
@@ -294,3 +294,97 @@ Además, el comando sintético `pass_demo_turn` vuelve a comprobar la modalidad 
 ## Exclusión entre laboratorio Ancients y mazo sintético (12/11/2026)
 
 La inicialización ordinaria del mazo debía rechazar `ancientsSectionHistoryLab` **dentro de su propia transacción SQLite**, no solo en el preflight de la composición: otra conexión podía activar el diario entre ambos. Se añade ese guard bajo `BEGIN IMMEDIATE` y bloqueos equivalentes para `dispatch` y `view` del mazo ante estados mixtos. **Cuatro nuevos casos de integración SQLite** repartidos en `packages/command-deck/sqlite-game.test.mjs` y `packages/sqlite-store/ancients-section-history.test.mjs`; pendientes de ejecución nativa en esta rama. Se han superado **5/5 comprobaciones aisladas con transacción simulada** sobre el código Git exacto, que no sustituyen los tests SQLite. Total inventariado: **71 suites**. Documento: [exclusión atómica de modos](73-exclusion-atomica-mazo-laboratorio.md). Las reglas y combates oficiales no se habilitan.
+
+
+## Instantánea WAL de las vistas HTTP de partida (SEC-001, 12/11/2026)
+
+La consulta `getStore(matchId).view(actor,{denyExperimentalLab:true})` reúne selección de modo y proyección en un snapshot SQLite/WAL de solo lectura, para impedir incoherencias entre consultas y evitar construir manos del laboratorio privado en respuestas públicas. El gateway usa la opción de rechazo temprano en vistas, eventos, comandos y negociación SSE; el SSE la utiliza en cada tick. Se mantienen los controles internos de eventos dentro de su propio snapshot y las revalidaciones de escritura.
+
+**5 nuevos casos en suites existentes** (3 SQLite, 1 HTTP+SQLite, 1 SSE). **7/7 PASS SSE** sobre archivos exactos de GitHub con Node.js 22.16.0; cinco comprobaciones aisladas del gateway superadas, sin sustituir integración completa. **Pendientes** ejecución real HTTP+SQLite del cambio y regresión integral de 71 suites. Ver [contrato WAL para lectura HTTP](74-lecturas-publicas-snapshot-sqlite.md). No incorpora reglamento oficial ni autoriza movimientos, ataques o publicación.
+
+
+## Autorización en snapshot y guardia de escritura (SEC-001, 12/11/2026)
+
+Como continuación de la PR #93, la composición experimental incorpora `viewForSession` y
+`publicEventsForSession`: sesión, pertenencia y selección de modo se verifican en
+la **misma instantánea WAL** que proyecta cartas propias o consulta eventos públicos.
+HTTP y SSE rechazan el modo `LAB_ONLY` antes de construir manos internas.
+`dispatchForSession` e `initializeCommandDeckForSession` revalidan la sesión y
+el bando después de adquirir `BEGIN IMMEDIATE`, también en el mazo sintético.
+
+Se añaden **12 casos** (6 SQLite, 4 HTTP, 2 SSE), además de los 5 casos iniciales
+de #93. La lectura `invitations.getMatch()` también valida identidad, pertenencia
+y lista de participantes dentro de una instantánea WAL; incorpora **2 casos SQLite**
+adicionales de revocación y actualización de membresía. Total nuevo en #93: **21 casos**.
+**Solo consta verificación de sintaxis del código actualizado**; las
+pruebas nativas y la regresión completa siguen pendientes. Se mantiene `main`
+sin cambios, la PR en borrador y la prohibición de despliegue. Consultar
+[SEC-001: contrato de lecturas y escrituras autenticadas](74-lecturas-publicas-snapshot-sqlite.md).
+
+
+## Referencias de tareas: LAB-ANC, SEC-001 y CCW-015 (12/11/2026)
+
+Se corrigen los encabezados de los documentos 60–62 y 67–73. `LAB-ANC`
+identifica trabajo interno de cartas/órdenes y prevalidaciones; `SEC-001` y
+[issue #94](https://github.com/PedroBlanco/command-colors/issues/94) identifican
+aislamiento, sesiones y seguridad transaccional. **`CCW-015` queda reservado
+a dados digitales con azar del servidor**, conforme a la [issue #15](https://github.com/PedroBlanco/command-colors/issues/15).
+Los PR históricos conservan su numeración original; la reclasificación
+documental no cambia funcionalidad, pruebas ni las reglas oficiales.
+
+
+## Invitaciones y creación de partida — cierre transaccional (SEC-001, 12/11/2026)
+
+Las cinco mutaciones del lobby `createMatch`, `issueInvitation`,
+`acceptInvitation`, `rejectInvitation` y `revokeInvitation` verifican la
+sesión, la propiedad o pertenencia de la partida y el estado de invitación
+**dentro de la transacción `BEGIN IMMEDIATE`**, no durante una precomprobación
+que podría volverse obsoleta. Las operaciones existentes conservan sus
+códigos de error y semántica de invitación, sin migraciones
+ni rutas nuevas. Se añaden dos pruebas en `sqlite.test.mjs` para comprobar
+la existencia del bloqueo durante la autenticación y la negativa tras un
+logout confirmado desde otra conexión WAL. **Pendientes ejecución nativa y
+regresión completa**: la sintaxis y la inspección estática no son evidencia
+suficiente para fusionar la PR #93.
+
+
+## Lanzador portátil de pruebas de seguridad CCWB (SEC-001, 12/11/2026)
+
+Se detectó que el lanzador prioritario original de ocho suites omitía
+`packages/sqlite-store/sqlite.test.mjs`, que contiene los cuatro casos nuevos
+de sesión/lobby, así como varias pruebas preexistentes de transacciones y
+revocación WAL. Se sustituye la lista duplicada de PowerShell por
+`scripts/validate-ccwb-http.mjs`, con **12 suites prioritarias** sobre
+el manifiesto de **72 suites** (71 históricas y la nueva suite del propio
+validador). En Windows, `scripts/validate-ccwb-http.ps1` solo delega en
+Node.js nativo; en Debian se ejecuta directamente el archivo `.mjs`.
+
+El validador rechaza Node anterior a 22.16.0, manifiestos incompatibles,
+argumentos ajenos y rutas inyectadas; guarda resultados en TAP inmutables
+con hash SHA-256 y bloquea la regresión completa cuando falla la fase de
+seguridad. Seis casos de la nueva suite describen este comportamiento.
+La lógica del validador se inspeccionó y comprobó de forma aislada mediante
+V8 y lotes simulados; **no es una ejecución de las 12 ni las 72 suites**.
+La PR #93 sigue bloqueada hasta integrar y ejecutar pruebas reales de SQLite,
+HTTP y SSE.
+
+
+## Auditoría exhaustiva de suites del repositorio (SEC-001, 12/11/2026)
+
+El ejecutor nativo canónico (`scripts/run-test-suite.mjs`) y el validador
+de seguridad portátil (`scripts/validate-ccwb-http.mjs`) realizan
+`auditLocalTestManifest()` **antes de ejecutar cualquier suite**. La auditoría
+compara las rutas reales `*.test.mjs` bajo `packages/`, `scripts/` y
+`spikes/` con las declaradas en `LOCAL_TEST_FILES`, sin recorrer enlaces
+simbólicos. Tanto suites faltantes como suites nuevas no registradas
+producen `TEST_MANIFEST_DRIFT` y detienen la ejecución; se evita afirmar
+una regresión completa cuando el manifiesto no está actualizado.
+
+Se añadieron tres pruebas a suites existentes o recién incorporadas:
+validación negativa del modo portátil; detección de omisión/sobra y
+no recorrido de enlaces externos en el ejecutor genérico.
+Inventario verificado de forma aislada contra el árbol GitHub: **72 archivos
+de prueba presentes, 72 declarados**. Los 21 casos de seguridad y
+8 casos del lanzador/auditoría suman **29 casos nuevos** en la PR #93,
+pero las **72 suites y la integración Node.js/SQLite/HTTP/SSE permanecen
+sin ejecutar sobre el SHA actual**. `main` permanece intacta.

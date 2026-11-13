@@ -136,48 +136,58 @@ export function openSqliteComposition({file, clock = Date.now,
 
   const invitations = {
     createMatch({sessionToken} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      const id = randomUUID();
-      db.prepare('INSERT INTO matches(id, owner_id, private_state) VALUES (?,?,?)')
-        .run(id, user.userId, JSON.stringify(initialState(id)));
-      return {ok:true, matchId:id};
+      // Authorization must be observed after BEGIN IMMEDIATE: a concurrent
+      // logout must not leave an orphan match created by a revoked session.
+      return atomic(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const id = randomUUID();
+        db.prepare('INSERT INTO matches(id, owner_id, private_state) VALUES (?,?,?)')
+          .run(id, user.userId, JSON.stringify(initialState(id)));
+        return {ok:true, matchId:id};
+      });
     },
     getMatch({sessionToken, matchId} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      if (!UUID.test(String(matchId ?? ''))) return denied('NOT_FOUND');
-      const match = getMember.get(matchId);
-      if (!match || !checkActor(match, user.userId)) return denied('NOT_FOUND');
-      const owner = db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.owner_id);
-      const guest = match.guest_id ? db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.guest_id) : null;
-      const result = {ok:true, matchId, revision:getMatchRow.get(matchId).lobby_revision,
-        players:[{side:'A',handle:owner.handle},...(guest ? [{side:'B',handle:guest.handle}] : [])],
-        status:guest?'READY':'INVITING'};
-      if (match.owner_id === user.userId) {
-        result.invitations = db.prepare('SELECT id, target_handle, status, expires_at FROM invitations WHERE match_id=? ORDER BY rowid')
-          .all(matchId).map(i => ({invitationId:i.id,targetHandle:i.target_handle,
-            status: i.status === 'PENDING' && clock() >= i.expires_at ? 'EXPIRED' : i.status,expiresAt:i.expires_at}));
-      }
-      return result;
+      // The lobby metadata is security-sensitive too: a logout, change of
+      // membership and the participant list must share one WAL snapshot.
+      return readSnapshot(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        if (!UUID.test(String(matchId ?? ''))) return denied('NOT_FOUND');
+        const match = getMember.get(matchId);
+        if (!match || !checkActor(match, user.userId)) return denied('NOT_FOUND');
+        const owner = db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.owner_id);
+        const guest = match.guest_id ? db.prepare('SELECT handle FROM accounts WHERE id = ?').get(match.guest_id) : null;
+        const result = {ok:true, matchId, revision:getMatchRow.get(matchId).lobby_revision,
+          players:[{side:'A',handle:owner.handle},...(guest ? [{side:'B',handle:guest.handle}] : [])],
+          status:guest?'READY':'INVITING'};
+        if (match.owner_id === user.userId) {
+          result.invitations = db.prepare('SELECT id, target_handle, status, expires_at FROM invitations WHERE match_id=? ORDER BY rowid')
+            .all(matchId).map(i => ({invitationId:i.id,targetHandle:i.target_handle,
+              status: i.status === 'PENDING' && clock() >= i.expires_at ? 'EXPIRED' : i.status,expiresAt:i.expires_at}));
+        }
+        return result;
+      });
     },
     issueInvitation({sessionToken,matchId,targetHandle} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      const m = getMember.get(matchId);
-      if (!m || m.owner_id !== user.userId) return denied('NOT_FOUND');
-      const h = normalizeHandle(targetHandle);
-      if (!h || h === user.handle || m.guest_id !== null) return denied('INVITATION_NOT_AVAILABLE');
-      const id = randomUUID(), token = randomToken(), expiresAt=clock()+invitationTtlMs;
-      db.prepare('INSERT INTO invitations(id,match_id,token_digest,target_handle,expires_at,status) VALUES(?,?,?,?,?,?)')
-        .run(id,matchId,digest(token),h,expiresAt,'PENDING');
-      return {ok:true, invitationId:id, token, expiresAt};
+      return atomic(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const m = getMember.get(matchId);
+        if (!m || m.owner_id !== user.userId) return denied('NOT_FOUND');
+        const h = normalizeHandle(targetHandle);
+        if (!h || h === user.handle || m.guest_id !== null) return denied('INVITATION_NOT_AVAILABLE');
+        const id = randomUUID(), token = randomToken(), expiresAt=clock()+invitationTtlMs;
+        db.prepare('INSERT INTO invitations(id,match_id,token_digest,target_handle,expires_at,status) VALUES(?,?,?,?,?,?)')
+          .run(id,matchId,digest(token),h,expiresAt,'PENDING');
+        return {ok:true, invitationId:id, token, expiresAt};
+      });
     },
     acceptInvitation({sessionToken,invitationToken} = {}) {
-      const user = sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
       return atomic(() => {
+        const user = sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
         const i=db.prepare('SELECT * FROM invitations WHERE token_digest=?').get(digest(invitationToken));
         if (!i || i.status !== 'PENDING' || i.target_handle !== user.handle || clock() >= i.expires_at) return denied('INVITATION_NOT_AVAILABLE');
         const m=getMember.get(i.match_id);
@@ -190,22 +200,26 @@ export function openSqliteComposition({file, clock = Date.now,
       });
     },
     rejectInvitation({sessionToken, invitationToken} = {}) {
-      const user=sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
-      const row = db.prepare('SELECT id,target_handle,expires_at,status FROM invitations WHERE token_digest=?').get(digest(invitationToken));
-      if (!row || row.status!=='PENDING' || row.target_handle!==user.handle || clock()>=row.expires_at) return denied('INVITATION_NOT_AVAILABLE');
-      db.prepare("UPDATE invitations SET status='REJECTED' WHERE id=?").run(row.id);
-      return {ok:true};
+      return atomic(() => {
+        const user=sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        if (typeof invitationToken !== 'string' || invitationToken.length > 256 || invitationToken.length < 20) return denied('INVITATION_NOT_AVAILABLE');
+        const row = db.prepare('SELECT id,target_handle,expires_at,status FROM invitations WHERE token_digest=?').get(digest(invitationToken));
+        if (!row || row.status!=='PENDING' || row.target_handle!==user.handle || clock()>=row.expires_at) return denied('INVITATION_NOT_AVAILABLE');
+        db.prepare("UPDATE invitations SET status='REJECTED' WHERE id=?").run(row.id);
+        return {ok:true};
+      });
     },
     revokeInvitation({sessionToken,matchId,invitationId}={}) {
-      const user=sessions.resolveSession(sessionToken);
-      if (!user) return denied('UNAUTHENTICATED');
-      const m=getMember.get(matchId);
-      if (!m || m.owner_id!==user.userId) return denied('NOT_FOUND');
-      const row=db.prepare("UPDATE invitations SET status='REVOKED' WHERE id=? AND match_id=? AND status='PENDING'")
-        .run(invitationId,matchId);
-      return row.changes === 1 ? {ok:true} : denied('INVITATION_NOT_AVAILABLE');
+      return atomic(() => {
+        const user=sessions.resolveSession(sessionToken);
+        if (!user) return denied('UNAUTHENTICATED');
+        const m=getMember.get(matchId);
+        if (!m || m.owner_id!==user.userId) return denied('NOT_FOUND');
+        const row=db.prepare("UPDATE invitations SET status='REVOKED' WHERE id=? AND match_id=? AND status='PENDING'")
+          .run(invitationId,matchId);
+        return row.changes === 1 ? {ok:true} : denied('INVITATION_NOT_AVAILABLE');
+      });
     }
   };
 
@@ -242,18 +256,54 @@ export function openSqliteComposition({file, clock = Date.now,
         db, resolveActor:resolveSectionLabActor, sessionToken, expectedActor:originalActor
       });
     }
-    return {
+    function projectForActor(actor, denyExperimentalLab) {
+      const row = rowOrThrow();
+      if (hasExperimentalSectionHistory(row)) {
+        // HTTP/SSE must never build a private laboratory hand.
+        if (denyExperimentalLab)
+          return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        return sectionHistory.view(actor);
+      }
+      return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+    }
+    function eventsForActor(actor, denyExperimentalLab) {
+      const row = rowOrThrow();
+      if (hasExperimentalSectionHistory(row)) {
+        if (denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        sectionHistory.view(actor);
+      }
+      return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
+        .all(matchId).map(x => decode(x.payload));
+    }
+    const store = {
       // Once the synthetic deck is initialized, the legacy fixture hands
       // must never be returned to a player.
-      view(actor) {
-        const row = rowOrThrow();
-        if (hasExperimentalSectionHistory(row)) return sectionHistory.view(actor);
-        return hasCommandDeck(row) ? commandDeck.view(actor) : project(row,actor);
+      view(actor, {denyExperimentalLab = false} = {}) {
+        // A single WAL snapshot binds mode selection and the private
+        // projection. Another connection cannot switch from a demo deck
+        // to the Ancients lab between separate SELECTs.
+        return readSnapshot(() => projectForActor(actor,denyExperimentalLab));
+      },
+      /** Authenticated HTTP/SSE read. Session, membership and projection share
+       * the first SQLite WAL snapshot; no request-supplied side is accepted. */
+      viewForSession({sessionToken} = {}) {
+        return readSnapshot(() => {
+          const identity = resolveSectionLabActor(sessionToken);
+          if (identity.error) return identity.error;
+          return projectForActor(identity.actor,true);
+        });
       },
       initializeCommandDeck(actor) {
         const row=rowOrThrow();
         if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_MODE_ACTIVE'};
         return commandDeck.initialize(actor);
+      },
+      /** Authenticated HTTP setup, rechecked after BEGIN IMMEDIATE. */
+      initializeCommandDeckForSession({sessionToken} = {}) {
+        const identity = resolveSectionLabActor(sessionToken);
+        if (identity.error) return identity.error;
+        return commandDeck.initialize(identity.actor,
+          mutationSessionGuard(sessionToken,identity.actor));
       },
       /**
        * TEST-ONLY, never an HTTP route. The trusted fixture is supplied by
@@ -330,25 +380,47 @@ export function openSqliteComposition({file, clock = Date.now,
         // snapshot, without holding an IMMEDIATE writer lock.
         // The HTTP gateway opts out of lab data INSIDE this read transaction;
         // a lab activated after an earlier gateway check cannot leak events.
+        return readSnapshot(() => eventsForActor(actor,denyExperimentalLab));
+      },
+      /** Session-bound event read: no stale lobby/actor proof can authorize it. */
+      publicEventsForSession({sessionToken} = {}) {
         return readSnapshot(() => {
-          const row = rowOrThrow();
-          if (hasExperimentalSectionHistory(row)) {
-            if (denyExperimentalLab) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
-            sectionHistory.view(actor);
-          }
-          return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
-            .all(matchId).map(x => decode(x.payload));
+          const identity = resolveSectionLabActor(sessionToken);
+          if (identity.error) return identity.error;
+          return eventsForActor(identity.actor,true);
         });
       },
-      async dispatch(request = {}) {
+      /** HTTP command: never accept a side supplied by the caller. */
+      async dispatchForSession(request = {}) {
+        const {sessionToken,...command} = request;
+        const identity = resolveSectionLabActor(sessionToken);
+        if (identity.error) return identity.error;
+        return store.dispatch({...command,actor:identity.actor},
+          mutationSessionGuard(sessionToken,identity.actor));
+      },
+      async dispatch(request = {}, authGuard = null) {
         const {actor,type,expectedRevision,idempotencyKey} = request;
         if (!['A','B'].includes(actor)) return {status:403,code:'FORBIDDEN'};
         const row=rowOrThrow();
-        if (hasExperimentalSectionHistory(row)) return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
-        if (hasCommandDeck(row)) return commandDeck.dispatch(request);
+        if (hasExperimentalSectionHistory(row)) {
+          // Even a denied lab command must reauthenticate a participant
+          // revoked after HTTP preflight. Do not disclose lab mode first.
+          if(authGuard) return atomic(()=>{
+            const allowed=authGuard();
+            return allowed===true
+              ? {status:409,code:'SECTION_LAB_INTERNAL_ONLY'}
+              : allowed;
+          });
+          return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+        }
+        if (hasCommandDeck(row)) return commandDeck.dispatch(request,authGuard);
         if (type !== 'pass_demo_turn' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
             || typeof idempotencyKey !== 'string' || !COMMAND_KEY.test(idempotencyKey)) return {status:400,code:'INVALID_COMMAND'};
         return atomic(() => {
+          if (authGuard) {
+            const allowed = authGuard();
+            if (allowed !== true) return allowed;
+          }
           const row = rowOrThrow();
           // A second SQLite process may initialize the private section lab
           // after our preflight but before BEGIN IMMEDIATE. Do not append a
@@ -378,6 +450,7 @@ export function openSqliteComposition({file, clock = Date.now,
         });
       }
     };
+    return store;
   }
 
   let closed = false;

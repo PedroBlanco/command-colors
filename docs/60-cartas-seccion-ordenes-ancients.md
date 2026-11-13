@@ -1,4 +1,4 @@
-# CCW-015 — Cartas ordinarias de sección y comprobación histórica de órdenes
+# LAB-ANC — Cartas ordinarias de sección y comprobación histórica de órdenes
 
 **Fecha:** 11/11/2026. **Dependencia:** PR #82. **Reglas:** *Command & Colors: Ancients*, juego básico, tercera edición (2009). **Estado:** comprobación parcial, sin autorización de cartas ni de combate.
 
@@ -61,3 +61,6 @@ El manifiesto general pasa a **59 suites registradas**; las 59 suites no se han 
 Implementar la **autoridad real** de una mano, un mazo, descarte, carta jugada, órdenes y sectores del escenario con eventos persistidos y revisiones, manteniendo la privacidad entre jugadores. Solo entonces se podrá integrar esta comprobación en un comando de autorización de combate; todavía faltan cartas especiales, ataques excepcionales, movimiento completo y comprobaciones de escenario.
 
 **Mantener en borrador. No fusionar, activar bajas ni desplegar.**
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `LAB-ANC` (laboratorio privado de cartas, órdenes o movimiento de *Ancients*).

@@ -16,6 +16,7 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/local-api/browser-sqlite-smoke.test.mjs',
   'scripts/check-browser-lab.test.mjs',
   'scripts/browser-lab.launcher.test.mjs',
+  'scripts/validate-ccwb-http.test.mjs',
   'packages/local-api/revision-stream.test.mjs',
   'packages/local-api/browser-ui.test.mjs',
   'packages/turn-phase/phase.test.mjs',

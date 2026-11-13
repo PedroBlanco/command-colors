@@ -1,4 +1,4 @@
-# CCW-015 — Revalidación de sesión dentro de la transacción CCWB
+# SEC-001 — Revalidación de sesión dentro de la transacción CCWB
 
 **Fecha:** 11/11/2026. **Dependencia:** PR #87. **Ámbito:** únicamente el laboratorio interno de cartas de sección de *Ancients*. No añadir HTTP, migraciones ni permisos reglamentarios.
 
@@ -143,3 +143,6 @@ $LASTEXITCODE
 .\scripts\test-local.ps1
 $LASTEXITCODE
 ```
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `SEC-001` (issue #94, frontera de seguridad y aislamiento).

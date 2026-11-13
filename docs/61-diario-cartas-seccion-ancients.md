@@ -1,4 +1,4 @@
-# CCW-015 — Diario persistente experimental de cartas de sección (*Ancients*)
+# LAB-ANC — Diario persistente experimental de cartas de sección (*Ancients*)
 
 **Fecha:** 11/11/2026. **Base:** PR #83. **Alcance:** nueve definiciones de cartas ordinarias de sección (2, 3 o 4 órdenes; izquierda, centro o derecha), **solo laboratorio**. No hay autorizaciones de combate ni integración con la base principal de partidas.
 
@@ -68,3 +68,6 @@ SHA-256 de la salida TAP nativa: `aae045ad7cf7f48c7729b0477f944ac6159efeaae8e210
 5. Ejecutar las 61 suites nativas y la integración en Windows antes de decidir fusiones/despliegue.
 
 **No hay autorización de cartas, órdenes, impacto, bajas ni combate completo. Mantener en borrador.**
+
+
+> **Clasificación de seguimiento (12/11/2026):** se corrige el identificador inicial de esta documentación, que vinculaba incorrectamente esta fase a `CCW-015` (reservado para dados digitales). El trabajo histórico y sus PR conservan sus números originales; este documento se clasifica ahora como `LAB-ANC` (laboratorio privado de cartas, órdenes o movimiento de *Ancients*).
