@@ -1245,3 +1245,160 @@ test('SEC-001: revocation after session preflight cannot reveal private lab mode
     assert.equal(db.isTransaction,false);
   } finally {app.identity.resolveSession=resolve;}
 }));
+
+test('CCWB generic public read: ordinary view stays usable when denying private lab',()=>fixture(async({app,matchId})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const regular=store.view('A',{denyExperimentalLab:true});
+  assert.equal(regular.matchId,matchId);
+  assert.equal(regular.status,'ACTIVE');
+  assert.equal(Object.hasOwn(regular,'ancientsSectionHistoryLab'),false);
+  assert.equal(db.isTransaction,false);
+  // A public snapshot does not acquire a writer lock or mutate the DB.
+  const row=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  assert.deepEqual(store.view('A',{denyExperimentalLab:true}),regular);
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),row);
+}));
+
+test('CCWB generic public read: private laboratory is denied before any hand projection',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  assert.equal(store.initializeExperimentalSectionHistory({
+    sessionToken:tokens.A,trustedSetup:setup()
+  }).status,201);
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  const internal=store.view('A');
+  assert.equal(internal.status,'LAB_ONLY');
+  assert.ok(internal.yourHand.length>0);
+  for(const actor of ['A','B']) {
+    const safe=store.view(actor,{denyExperimentalLab:true});
+    assert.deepEqual(safe,{status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+    assert.equal(JSON.stringify(safe).includes('yourHand'),false);
+    assert.equal(JSON.stringify(safe).includes('card_a_left'),false);
+  }
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB generic public read: second SQLite connection activates lab before next snapshot',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),other=connect().getStore(matchId);
+  assert.equal(store.view('A',{denyExperimentalLab:true}).status,'ACTIVE');
+  assert.equal(other.initializeExperimentalSectionHistory({
+    sessionToken:tokens.A,trustedSetup:setup()
+  }).status,201);
+  // A new snapshot must observe the committed mode and never publish a hand.
+  assert.deepEqual(store.view('A',{denyExperimentalLab:true}),
+    {status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('SEC-001: session-bound ordinary reads authorize a live side and reject outsiders',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const a=store.viewForSession({sessionToken:tokens.A});
+  const b=store.viewForSession({sessionToken:tokens.B});
+  assert.equal(a.you,'A');assert.equal(b.you,'B');
+  assert.equal(a.matchId,matchId);assert.equal(b.matchId,matchId);
+  assert.deepEqual(a.yourHand,['PRIVATE_A_1','PRIVATE_A_2']);
+  assert.equal(JSON.stringify(b).includes('PRIVATE_A_1'),false);
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.A}),[]);
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.outsider}),
+    {status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.outsider}),
+    {status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.viewForSession({sessionToken:'invalid'}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:'invalid'}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.equal(db.isTransaction,false);
+}));
+
+test('SEC-001: committed logout on another WAL connection denies next public view and events',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),other=connect();
+  assert.equal(store.viewForSession({sessionToken:tokens.A}).you,'A');
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.A}),[]);
+  other.identity.logOut(tokens.A);
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.A}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.A}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.equal(store.viewForSession({sessionToken:tokens.B}).you,'B');
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('SEC-001: same-snapshot membership change revokes session-bound guest projection',()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  assert.equal(store.viewForSession({sessionToken:tokens.B}).you,'B');
+  const writer=connect().unsafeTestDatabase();
+  writer.prepare('UPDATE matches SET guest_id=NULL,lobby_revision=lobby_revision+1 WHERE id=?')
+    .run(matchId);
+  assert.deepEqual(store.viewForSession({sessionToken:tokens.B}),
+    {status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.publicEventsForSession({sessionToken:tokens.B}),
+    {status:404,code:'NOT_FOUND'});
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('SEC-001: session-bound public APIs never project a laboratory hand',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  assert.equal(store.initializeExperimentalSectionHistory({
+    sessionToken:tokens.A,trustedSetup:setup()
+  }).status,201);
+  for(const sessionToken of [tokens.A,tokens.B]){
+    const state=store.viewForSession({sessionToken});
+    assert.deepEqual(state,{status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+    assert.deepEqual(store.publicEventsForSession({sessionToken}),
+      {status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+    assert.equal(JSON.stringify(state).includes('yourHand'),false);
+  }
+  assert.equal(store.viewExperimentalSectionHistory({sessionToken:tokens.A}).status,200);
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('SEC-001: public demo command rechecks authorization while holding writer lock',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  let checked=0;
+  const result=await store.dispatch({
+    actor:'A',type:'pass_demo_turn',expectedRevision:0,
+    idempotencyKey:'guard_demo_command_001'
+  },()=>{
+    checked++;
+    assert.equal(db.isTransaction,true);
+    return {status:401,code:'UNAUTHENTICATED'};
+  });
+  assert.equal(checked,1);
+  assert.deepEqual(result,{status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.prepare('SELECT count(*) n FROM game_commands WHERE match_id=?').get(matchId).n,0);
+  assert.deepEqual(await store.dispatchForSession({
+    sessionToken:tokens.outsider,actor:'A',type:'pass_demo_turn',
+    expectedRevision:0,idempotencyKey:'forged_outsider_command_001'
+  }),{status:404,code:'NOT_FOUND'});
+  assert.equal(db.isTransaction,false);
+}));
+
+test('SEC-001: command deck writer rechecks session inside BEGIN IMMEDIATE',()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  assert.equal(store.initializeCommandDeckForSession({sessionToken:tokens.B}).code,'FORBIDDEN');
+  assert.equal(store.initializeCommandDeckForSession({sessionToken:tokens.A}).status,201);
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  let checked=0;
+  const attempt=await store.dispatch({
+    actor:'A',type:'play_synthetic_card',cardRef:'synthetic_card_01',
+    expectedRevision:0,idempotencyKey:'guard_deck_command_001'
+  },()=>{
+    checked++;
+    assert.equal(db.isTransaction,true);
+    return {status:401,code:'UNAUTHENTICATED'};
+  });
+  assert.equal(checked,1);
+  assert.deepEqual(attempt,{status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.prepare('SELECT count(*) n FROM game_commands WHERE match_id=?').get(matchId).n,0);
+  app.identity.logOut(tokens.A);
+  assert.deepEqual(await store.dispatchForSession({
+    sessionToken:tokens.A,type:'play_synthetic_card',cardRef:'synthetic_card_01',
+    expectedRevision:0,idempotencyKey:'revoked_deck_command_001'
+  }),{status:401,code:'UNAUTHENTICATED'});
+  assert.deepEqual(store.initializeCommandDeckForSession({sessionToken:tokens.A}),
+    {status:401,code:'UNAUTHENTICATED'});
+  assert.equal(db.isTransaction,false);
+}));
