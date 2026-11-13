@@ -13,7 +13,8 @@ import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
 import {proposeMovementDraft, projectMovementDraft} from '../ancients-rules/movement-draft-contract.mjs';
 import {screenAncientsMovementCommitIntent} from '../ancients-rules/movement-commit-intent-screen.mjs';
-import {snapshotStagedSequenceRequest} from '../ancients-rules/staged-sequence-request-snapshot.mjs';
+import {snapshotStagedSequenceRequest,
+  snapshotStagedMovementDraftRequest} from '../ancients-rules/staged-sequence-request-snapshot.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -487,34 +488,22 @@ export function openSqliteComposition({file, clock = Date.now,
        * board never change. No HTTP endpoint calls this method.
        */
       saveExperimentalSectionMovementDraft(request = {},trustedContext) {
-        if(!plainLabRequest(request) || Object.keys(request).length!==5 ||
-           !['sessionToken','expectedRevision','expectedDraftRevision',
-             'idempotencyKey','actions'].every(k=>Object.hasOwn(request,k)) ||
-           typeof request.sessionToken!=='string' ||
-           !Number.isSafeInteger(request.expectedRevision)||request.expectedRevision<0 ||
-           !Number.isSafeInteger(request.expectedDraftRevision)||request.expectedDraftRevision<0 ||
-           typeof request.idempotencyKey!=='string'||!COMMAND_KEY.test(request.idempotencyKey)||
-           !Array.isArray(request.actions)||request.actions.length<1||
-           request.actions.length>117||
-           !request.actions.every(a=>plainLabRequest(a)&&Object.keys(a).length===3&&
-             ['kind','id','path'].every(k=>Object.hasOwn(a,k))&&
-             ['UNIT','LEADER'].includes(a.kind)&&typeof a.id==='string'&&
-             /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(a.id)&&a.id!=='__proto__'&&
-             Array.isArray(a.path)&&a.path.length>0&&a.path.length<=32&&
-             a.path.every(c=>plainLabRequest(c)&&Object.keys(c).length===2&&
-               Object.hasOwn(c,'col')&&Object.hasOwn(c,'row')&&inBounds(c))))
+        // Descriptor-only data capture happens exactly once outside the lock.
+        // Never read mutable request fields again after authentication begins.
+        const stable=snapshotStagedMovementDraftRequest(request);
+        if(stable===null)
           return {status:400,code:'INVALID_SECTION_LAB_DRAFT_REQUEST'};
         // No auth may be cached from outside this writer lock. An already
         // committed logout or membership change wins over any draft write.
         return atomic(() => {
-          const identity=resolveSectionLabActor(request.sessionToken);
+          const identity=resolveSectionLabActor(stable.sessionToken);
           if(identity.error)return identity.error;
           const row=rowOrThrow();
           if(!hasExperimentalSectionHistory(row))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-          if(row.game_revision!==request.expectedRevision)
+          if(row.game_revision!==stable.expectedRevision)
             return {status:409,code:'STALE_REVISION'};
-          const preview=sectionHistory.previewMovementSequence(identity.actor,request,trustedContext);
+          const preview=sectionHistory.previewMovementSequence(identity.actor,stable,trustedContext);
           if(preview.preview.status!=='CANDIDATE_SEQUENCE')
             return {status:409,code:'SECTION_LAB_DRAFT_NOT_CANDIDATE',
               reason:preview.preview.reason};
@@ -523,8 +512,8 @@ export function openSqliteComposition({file, clock = Date.now,
             ? persisted.ancientsSectionMovementDraft : null;
           const proposal=proposeMovementDraft({
             previous,matchId,actor:identity.actor,gameRevision:row.game_revision,
-            expectedDraftRevision:request.expectedDraftRevision,
-            idempotencyKey:request.idempotencyKey,actions:request.actions
+            expectedDraftRevision:stable.expectedDraftRevision,
+            idempotencyKey:stable.idempotencyKey,actions:stable.actions
           });
           if(!proposal.ok)return {status:409,code:proposal.code};
           if(proposal.code==='ALREADY_APPLIED')
