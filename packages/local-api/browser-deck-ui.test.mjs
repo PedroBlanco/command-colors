@@ -169,15 +169,17 @@ test('a forged card or invalid orders are rejected before HTTP mutation',()=>wit
  c.element('deck-card').value='own_1';
  await c.element('deck-play').dispatch('click');
  const count=c.requests.length;
- c.element('deck-units').value='same';
- await c.element('deck-units').dispatch('change');
- assert.equal(c.element('deck-unit-add').disabled,true,'fabricated unit must not become selectable');
- // Directly invoke the handler as a negative case: even if the disabled
- // button were activated programmatically, it must not send a command.
- await c.element('deck-unit-add').dispatch('click');
- assert.equal(c.requests.length,count);
- assert.equal(c.element('message').textContent,'UNIDAD_NO_DISPONIBLE');
- assert.equal(c.element('deck-orders').disabled,true);
+ for(const forgedId of ['same','unit_b']) {
+   c.element('deck-units').value=forgedId;
+   await c.element('deck-units').dispatch('change');
+   assert.equal(c.element('deck-unit-add').disabled,true,
+     'nonexistent or enemy units must not be selectable');
+   // Even an artificial event on the disabled add button must fail closed.
+   await c.element('deck-unit-add').dispatch('click');
+   assert.equal(c.requests.length,count);
+   assert.equal(c.element('message').textContent,'UNIDAD_NO_DISPONIBLE');
+   assert.equal(c.element('deck-orders').disabled,true);
+ }
 }));
 
 test('SSE refresh and logout never revive cards from a previous session',()=>withBrowser(async c=>{
