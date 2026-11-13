@@ -10,6 +10,7 @@ import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempo
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
 import {previewPrivateOneHexAncientsIntent} from './private-one-hex-intent-preview.mjs';
+import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence,
@@ -201,6 +202,24 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     });
     return Object.freeze({status:200,code:'SECTION_LAB_SEQUENCE_PREVIEW',preview});
   }
+  /**
+   * INTERNAL LAB ONLY: project public positions from a fully replay-verified
+   * CCWB section state. The caller must hold a WAL read snapshot covering
+   * session + membership + row. No movement is confirmed or persisted.
+   */
+  function previewBoardProjection(actor,request,trustedContext){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const projection=projectStagedAncientsBoard({
+      state:snapshot,actor,expectedRevision:request.expectedRevision,
+      actions:request.actions,serverContext:trustedContext
+    });
+    return Object.freeze({
+      status:200,code:'SECTION_LAB_BOARD_PROJECTION',
+      projection,movementAuthorized:false,attackAuthorized:false,
+      boardChanged:false,canCommit:false
+    });
+  }
   /** INTERNAL LAB ONLY. Replay verifies the private journal under the
    *  caller's WAL snapshot before building immutable audit evidence.
    *  Never persist or broadcast this trace as an executed movement. */
@@ -237,6 +256,6 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     });
   }
   return Object.freeze({initialize,view,dispatch,previewMovement,
-    previewLeaderMovement,previewMovementSequence,previewMovementEvidence,
-    previewOneHexIntent});
+    previewLeaderMovement,previewMovementSequence,previewBoardProjection,
+    previewMovementEvidence,previewOneHexIntent});
 }
