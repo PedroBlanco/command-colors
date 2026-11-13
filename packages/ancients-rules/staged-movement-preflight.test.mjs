@@ -2,6 +2,7 @@ import test from 'node:test';
 import {snapshotStagedSequenceRequest,
   snapshotStagedMovementDraftRequest} from './staged-sequence-request-snapshot.mjs';
 import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
+import {previewStagedAncientsOrderBudget} from './staged-order-budget.mjs';
 import assert from 'node:assert/strict';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply}
   from './section-history-journal.mjs';
@@ -636,4 +637,157 @@ test('draft write snapshot reads own descriptors only, never getters',()=>{
     enumerable:true,get(){throw Error('EXECUTED GETTER');}
   });
   assert.equal(snapshotStagedMovementDraftRequest(dangerous),null);
+});
+
+const orderBudget=(state,actions,overrides={})=>previewStagedAncientsOrderBudget({
+  state,actor:'A',expectedRevision:state.revision,actions,
+  serverContext:context(),...overrides
+});
+const byOrder=(result,kind,id)=>result.orders.find(x=>x.kind===kind&&x.id===id);
+
+test('private budget: a staged single unit would use one order, without consuming it',()=>{
+  const {state}=ready(),original=structuredClone(state);
+  const result=orderBudget(state,[unitMove()]);
+  assert.equal(result.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+  assert.equal(result.kind,'PRIVATE_STAGED_ORDER_BUDGET_V1');
+  assert.deepEqual([result.totalOrders,result.wouldUseCount,result.lockedCount,
+    result.availableCount],[1,1,0,0]);
+  assert.deepEqual(result.orders,[{kind:'UNIT',id:'unitA',status:'USED'}]);
+  assert.equal(result.projectedBoard.units.find(x=>x.id==='unitA').col,3);
+  assert.equal(result.canCommit,false);
+  assert.equal(result.movementAuthorized,false);
+  assert.equal(result.stateChanged,false);
+  assert.deepEqual(state,original);
+});
+
+test('private budget: leader carried by unit makes separate leader order locked, not spent',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const result=orderBudget(state,[unitMove()]);
+  assert.equal(result.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+  assert.deepEqual([result.totalOrders,result.wouldUseCount,result.lockedCount,
+    result.availableCount],[2,1,1,0]);
+  assert.equal(byOrder(result,'UNIT','unitA').status,'USED');
+  assert.equal(byOrder(result,'LEADER','leaderA').status,'LOCKED');
+  assert.equal(result.moves[0].leaderCarried,'leaderA');
+  assert.equal(result.projectedBoard.leaders.find(x=>x.id==='leaderA').col,3);
+});
+
+test('private budget: ordered leader detaches before unit; two distinct orders would be used',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const result=orderBudget(state,[leaderMove(),unitMove()]);
+  assert.equal(result.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+  assert.deepEqual([result.totalOrders,result.wouldUseCount,result.lockedCount,
+    result.availableCount],[2,2,0,0]);
+  assert.equal(byOrder(result,'LEADER','leaderA').status,'USED');
+  assert.equal(byOrder(result,'UNIT','unitA').status,'USED');
+  assert.equal(result.projectedBoard.leaders.find(x=>x.id==='leaderA').row,5);
+});
+
+test('private budget: individually ordered leader can move alone',()=>{
+  const {state}=readyLeader();
+  const result=orderBudget(state,[leaderMove()]);
+  assert.equal(result.status,'PRIVATE_ORDER_BUDGET_CANDIDATE');
+  assert.equal(result.wouldUseCount,1);
+  assert.deepEqual(result.orders,[{kind:'LEADER',id:'leaderA',status:'USED'}]);
+});
+
+function scenarioForBudget({leaderOnTarget=false,unitOnTarget=false}={}){
+  const initial=init({
+    cardInstances:[
+      {instanceId:'a_left',definitionId:'ORDER_2_LEFT'},
+      {instanceId:'b_left',definitionId:'ORDER_2_LEFT'},
+      {instanceId:'c_left',definitionId:'ORDER_2_LEFT'},
+      {instanceId:'d_left',definitionId:'ORDER_2_LEFT'}],
+    handSizes:{A:2,B:1},startingSide:'A',randomIndex:()=>0,
+    board:{
+      units:[{id:'unitA',side:'A',col:2,row:4},
+        ...(unitOnTarget?[{id:'unitC',side:'A',col:3,row:4}]:[]),
+        {id:'unitB',side:'B',col:10,row:4}],
+      leaders:[{id:'leaderA',side:'A',col:leaderOnTarget?3:2,row:4}]
+    },
+    sectorCells:{'2,4':['LEFT'],'3,4':['LEFT'],'10,4':['RIGHT']}
+  });
+  const played=apply(initial,{actor:'A',type:'PLAY_SECTION_CARD',
+    expectedRevision:0,cardInstanceId:initial.hands.A[0].instanceId});
+  assert.equal(played.accepted,true);
+  const ordered=apply(played.nextState,{actor:'A',type:'ASSIGN_SECTION_ORDERS',
+    expectedRevision:1,unitIds:[unitOnTarget?'unitC':'unitA'],
+    leaderIds:['leaderA']});
+  assert.equal(ordered.accepted,true);
+  return {state:ordered.nextState,
+    serverContext:{unitTypes:{unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY',
+      ...(unitOnTarget?{unitC:'LIGHT_INFANTRY'}:{})},terrain:[]}};
+}
+
+test('private budget: moving leader joins ordered stationary unit and locks its order',()=>{
+  const {state,serverContext}=scenarioForBudget({unitOnTarget:true});
+  const before=structuredClone(state);
+  const result=orderBudget(state,[{kind:'LEADER',id:'leaderA',path:[at(3,4)]}],
+    {serverContext});
+  assert.equal(result.status,'PRIVATE_ORDER_BUDGET_CANDIDATE',result.reason);
+  assert.deepEqual([result.wouldUseCount,result.lockedCount,result.availableCount],[1,1,0]);
+  assert.equal(byOrder(result,'LEADER','leaderA').status,'USED');
+  assert.equal(byOrder(result,'UNIT','unitC').status,'LOCKED');
+  assert.equal(result.moves[0].joinedUnit,'unitC');
+  assert.deepEqual(state,before);
+});
+
+test('private budget: moving unit joins ordered stationary leader and locks leader order',()=>{
+  const {state,serverContext}=scenarioForBudget({leaderOnTarget:true});
+  const result=orderBudget(state,[unitMove()],{serverContext});
+  assert.equal(result.status,'PRIVATE_ORDER_BUDGET_CANDIDATE',result.reason);
+  assert.deepEqual([result.wouldUseCount,result.lockedCount,result.availableCount],[1,1,0]);
+  assert.equal(byOrder(result,'UNIT','unitA').status,'USED');
+  assert.equal(byOrder(result,'LEADER','leaderA').status,'LOCKED');
+  assert.equal(result.moves[0].attachedLeader,'leaderA');
+});
+
+test('private budget: invalid second movement never exposes partial board or orders',()=>{
+  const {state}=readyLeader({includeUnit:true}),before=structuredClone(state);
+  const result=orderBudget(state,[unitMove(),leaderMove()]);
+  assert.equal(result.status,'BLOCKED');
+  assert.equal(result.reason,'LEADER_ALREADY_MOVED');
+  assert.equal(result.projectedBoard,null);
+  assert.equal(result.moves,null);
+  assert.equal(result.orders,null);
+  assert.deepEqual([result.wouldUseCount,result.lockedCount,result.availableCount],[0,0,0]);
+  assert.equal(result.canCommit,false);
+  assert.deepEqual(state,before);
+});
+
+test('private budget: identity, revision and forged sibling order fail closed',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const forged=structuredClone(state);
+  forged.orderSnapshot.pieces.find(x=>x.kind==='LEADER').col=9;
+  for(const result of [
+    orderBudget(state,[unitMove()],{actor:'B'}),
+    orderBudget(state,[unitMove()],{expectedRevision:1}),
+    orderBudget(forged,[unitMove()]),
+    orderBudget(state,[{kind:'UNIT',id:'unitB',path:[at(9,4)]}])
+  ]){
+    assert.equal(result.status,'BLOCKED');
+    assert.equal(result.orders,null);
+    assert.equal(result.projectedBoard,null);
+    assert.equal(result.movementAuthorized,false);
+  }
+});
+
+test('private budget: result is immutable, reproducible and strips private metadata',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  state.board.hiddenCard='SECRET_CARD';
+  state.board.units[0].internalNote='SECRET_UNIT';
+  const before=structuredClone(state);
+  const one=orderBudget(state,[unitMove()]);
+  const two=orderBudget(state,[unitMove()]);
+  assert.deepEqual(one,two);
+  for(const fragment of ['SECRET_CARD','SECRET_UNIT','drawPile','sessionToken',
+    'idempotencyKey','instanceId'])
+    assert.equal(JSON.stringify(one).includes(fragment),false);
+  for(const entry of [one,one.projectedBoard,one.projectedBoard.units,
+    one.projectedBoard.units[0],one.moves,one.moves[0],one.orders,one.orders[0]])
+    assert.equal(Object.isFrozen(entry),true);
+  assert.throws(()=>{one.orders[0].status='AVAILABLE'},TypeError);
+  assert.equal(one.officialMovementAuthorized,false);
+  assert.equal(one.labSimulationOnly,true);
+  assert.deepEqual(state,before);
 });
