@@ -310,3 +310,22 @@ test('waiting lobby recovery is hidden-tab safe and terminates on logout',()=>wi
   await ctx.element('logout').dispatch('click');
   assert.equal(ctx.timerCount(),0);
 },{owner:'bob'}));
+
+
+test('changing the selected lobby cancels the old recovery timer before a new match',()=>withBrowser(async ctx=>{
+  await ctx.element('login-form').dispatch('submit');
+  await ctx.element('create').dispatch('click');
+  assert.equal(ctx.timerCount(),1);
+  const previousFeed=ctx.feeds.at(-1);
+  ctx.element('match-id').value='not-a-match';
+  await ctx.element('match-id').dispatch('input');
+  assert.equal(previousFeed.closed,true);
+  assert.equal(ctx.timerCount(),0,'old match poll must be canceled');
+  const before=ctx.requests.length;
+  await ctx.pulseLobby();
+  assert.equal(ctx.requests.length,before,'old timer cannot revive a stale match');
+  await ctx.element('create').dispatch('click');
+  assert.equal(ctx.timerCount(),1,'fresh selected lobby receives a new recovery timer');
+  await ctx.element('logout').dispatch('click');
+  assert.equal(ctx.timerCount(),0);
+},{owner:'bob'}));
