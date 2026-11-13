@@ -659,3 +659,25 @@ a SQLite real**. La rama #96 tiene **10 casos nuevos
 de composición CCWB/SQLite pendientes** y el manifiesto
 permanece en **80 suites**. Las PR se mantienen en
 borrador, sin fusión a `main`.
+
+
+## SEC-001 — verificación nativa de frontera HTTP y mazo (13/11/2026)
+
+Se reconstruyeron desde los blobs Git **exactos** de PR #96 el guardia
+transaccional, SSE y gateway, con sus tres suites y dependencia del
+navegador. Se ejecutaron bajo Node 22.16.0: **27 PASS / 0 FAIL /
+0 SKIP** (8 guardia SQLite/WAL real, 8 SSE y 11 HTTP real con
+almacén/identidad simulados). Evidencia y hashes en
+[documento 87](87-validacion-nativa-autoridad-sse-http.md).
+
+La revisión detectó y corrigió que `deck/initialize` no verificaba
+`result.view.matchId`: ahora rechaza con 503 una vista de otra
+partida antes de serializarla. Prueba nativa nueva: una mano privada
+de otro match no sale en HTTP. La misma corrección y su regresión
+se publicaron en PR #93; esa variante no tiene ejecución nativa
+propia todavía.
+
+**Límites:** no es una ejecución integral CCWB/SQLite, ni se han
+ejecutado las **80 suites** del manifiesto. SEC-001 continúa
+abierta y las dos PR permanecen en borrador. Ninguna regla de
+movimiento autoriza todavía un commit.
