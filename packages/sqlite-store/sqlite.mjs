@@ -411,14 +411,29 @@ export function openSqliteComposition({file, clock = Date.now,
        * NEVER expose this method through the HTTP or SSE gateway.
        */
       precheckExperimentalSectionOneHexIntent(request = {},trustedContext,policy) {
-        if(screenAncientsMovementCommitIntent(request).status!=='INTENT_SHAPE_VALID')
+        const checked=screenAncientsMovementCommitIntent(request);
+        if(checked.status!=='INTENT_SHAPE_VALID')
+          return {status:400,code:'INVALID_SECTION_LAB_ONE_HEX_REQUEST'};
+        // Do not re-read caller-owned fields after resolving identity. A
+        // mutation during the session lookup must not change the piece, path
+        // or revision that was screened before opening the WAL snapshot.
+        // The screen deliberately omits credentials from its returned intent.
+        let sessionToken;
+        try { sessionToken=Object.getOwnPropertyDescriptor(request,'sessionToken').value; }
+        catch { return {status:400,code:'INVALID_SECTION_LAB_ONE_HEX_REQUEST'}; }
+        const normalizedRequest=Object.freeze({
+          sessionToken,...checked.intent
+        });
+        // Verify that the captured credential still satisfies the same
+        // strict input contract (a hostile proxy may vary its descriptors).
+        if(screenAncientsMovementCommitIntent(normalizedRequest).status!=='INTENT_SHAPE_VALID')
           return {status:400,code:'INVALID_SECTION_LAB_ONE_HEX_REQUEST'};
         return readSnapshot(() => {
-          const identity=resolveSectionLabActor(request.sessionToken);
+          const identity=resolveSectionLabActor(sessionToken);
           if(identity.error)return identity.error;
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-          return sectionHistory.previewOneHexIntent(identity.actor,request,trustedContext,policy);
+          return sectionHistory.previewOneHexIntent(identity.actor,normalizedRequest,trustedContext,policy);
         });
       },
       /**
