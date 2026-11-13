@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ANCIENTS_RULESET} from './movement-profile.mjs';
+import {initializeSectionHistoryLab,applySectionHistoryLabCommand}
+  from './section-history-journal.mjs';
+import {previewVerifiedSectionFootCore} from './verified-foot-core-preview.mjs';
 import {
   CORE_OPEN_FOOT_KIND,CORE_OPEN_FOOT_POLICY,
   reduceCoreOpenFootStep as reduce,replayCoreOpenFootSteps as replay
@@ -301,4 +304,168 @@ test('proposed movement cannot be forged by passing a candidate trace as a param
   }}});
   blocked(r);
   assert.equal(r.reason,'INVALID_CORE_MOVEMENT_ACTION');
+});
+
+function stagedFootHistory(){
+  const initial=initializeSectionHistoryLab({
+    cardInstances:[
+      {instanceId:'a_left',definitionId:'ORDER_2_LEFT'},
+      {instanceId:'b_left',definitionId:'ORDER_2_LEFT'},
+      {instanceId:'c_left',definitionId:'ORDER_2_LEFT'},
+      {instanceId:'d_left',definitionId:'ORDER_2_LEFT'}],
+    handSizes:{A:2,B:1},startingSide:'A',randomIndex:()=>0,
+    board:{units:[
+      {id:'unitA',side:'A',col:2,row:4},
+      {id:'enemy',side:'B',col:10,row:4}
+    ],leaders:[]},
+    sectorCells:{'2,4':['LEFT'],'10,4':['RIGHT']}
+  });
+  const played=applySectionHistoryLabCommand(initial,{
+    actor:'A',type:'PLAY_SECTION_CARD',expectedRevision:0,
+    cardInstanceId:initial.hands.A[0].instanceId
+  });
+  assert.equal(played.accepted,true);
+  const staged=applySectionHistoryLabCommand(played.nextState,{
+    actor:'A',type:'ASSIGN_SECTION_ORDERS',expectedRevision:1,
+    unitIds:['unitA'],leaderIds:[]
+  });
+  assert.equal(staged.accepted,true);
+  return staged.nextState;
+}
+const footScenario=()=>({
+  scope:'SYNTHETIC_OPEN_HEX_V1',ruleset:ANCIENTS_RULESET,
+  terrain:[],scenarioExceptions:[],
+  unitTypes:{unitA:'LIGHT_INFANTRY',enemy:'HEAVY_INFANTRY'}
+});
+const footMove=()=>({kind:'UNIT',id:'unitA',path:[cell(3,4)]});
+const footPreview=(changes={})=>previewVerifiedSectionFootCore({
+  verifiedState:stagedFootHistory(),actor:'A',expectedRevision:2,
+  actions:[footMove()],trustedScenario:footScenario(),...changes
+});
+const deniedPreview=(value,reason)=>{
+  assert.equal(value.status,'BLOCKED');
+  assert.equal(value.reason,reason);
+  assert.equal(value.proposal,null);
+  assert.equal(value.movementAuthorized,false);
+  assert.equal(value.canCommit,false);
+  assert.equal(value.dbChanged,false);
+};
+
+test('verified section adapter proposes one core step with own orders but no authority',()=>{
+  const verifiedState=stagedFootHistory(),before=structuredClone(verifiedState);
+  const preview=footPreview({verifiedState});
+  assert.equal(preview.status,'PRIVATE_CORE_FOOT_PROPOSAL');
+  assert.equal(preview.kind,'PRIVATE_VERIFIED_FOOT_CORE_PREVIEW_V1');
+  assert.equal(preview.proposal.status,'RULE_TRANSITION_CANDIDATE');
+  assert.equal(preview.proposal.nextState.revision,3);
+  assert.deepEqual(preview.proposal.nextState.orderLedger,{
+    issuedUnitIds:['unitA'],movedUnitIds:['unitA']
+  });
+  assert.equal(preview.proposal.nextState.board.units.find(x=>x.id==='unitA').col,3);
+  assert.equal(preview.movementAuthorized,false);
+  assert.equal(preview.officialMovementAuthorized,false);
+  assert.equal(preview.canCommit,false);
+  assert.equal(preview.boardChanged,false);
+  assert.deepEqual(verifiedState,before);
+});
+
+test('verified section adapter rejects stale revision, rival actor and non-staged turn',()=>{
+  deniedPreview(footPreview({expectedRevision:1}),'STALE_REVISION');
+  deniedPreview(footPreview({actor:'B'}),'NOT_ACTING_PLAYER');
+  const s=stagedFootHistory();s.phase='AWAIT_CARD';
+  deniedPreview(footPreview({verifiedState:s}),'ORDERS_NOT_STAGED');
+});
+
+test('verified section adapter requires an eligible witnessed ordinary section card',()=>{
+  const s=stagedFootHistory();s.cardPlay.definitionId='ORDER_2_RIGHT';
+  deniedPreview(footPreview({verifiedState:s}),'UNSUPPORTED_VERIFIED_ORDERS');
+  const out=stagedFootHistory();
+  out.orderSnapshot.pieces[0].col=9;
+  deniedPreview(footPreview({verifiedState:out}),'UNSUPPORTED_VERIFIED_ORDERS');
+});
+
+test('verified section adapter detects tampered sector membership without key order assumptions',()=>{
+  const s=stagedFootHistory();
+  s.orderSnapshot.sectorCells['2,4']=['RIGHT'];
+  deniedPreview(footPreview({verifiedState:s}),'UNSUPPORTED_VERIFIED_BOARD');
+  const copy=stagedFootHistory();
+  copy.orderSnapshot.sectorCells=Object.fromEntries(
+    Object.entries(copy.orderSnapshot.sectorCells).reverse());
+  assert.equal(footPreview({verifiedState:copy}).status,'PRIVATE_CORE_FOOT_PROPOSAL');
+});
+
+test('verified section adapter excludes leaders and independently ordered leaders',()=>{
+  const withLeader=stagedFootHistory();
+  withLeader.board.leaders.push({id:'captain',side:'A',col:2,row:4});
+  deniedPreview(footPreview({verifiedState:withLeader}),'UNSUPPORTED_VERIFIED_BOARD');
+  const forged=stagedFootHistory();
+  forged.orderSnapshot.pieces[0].kind='LEADER';
+  deniedPreview(footPreview({verifiedState:forged}),'UNSUPPORTED_VERIFIED_ORDERS');
+});
+
+test('verified section adapter rejects missing or modified scenario provenance',()=>{
+  for(const change of [
+    s=>s.scope='UNKNOWN',
+    s=>s.ruleset='napoleonics',
+    s=>s.terrain.push({col:10,row:8,kind:'HILL'}),
+    s=>s.scenarioExceptions.push('SPECIAL'),
+    s=>delete s.unitTypes.enemy,
+    s=>s.unitTypes.extra='LIGHT_INFANTRY',
+    s=>s.extraPermission=true
+  ]){
+    const scenario=footScenario();change(scenario);
+    deniedPreview(footPreview({trustedScenario:scenario}),
+      'UNSUPPORTED_VERIFIED_SCENARIO');
+  }
+  deniedPreview(footPreview({trustedScenario:undefined}),
+    'UNSUPPORTED_VERIFIED_SCENARIO');
+});
+
+test('verified section adapter never turns staged candidates into multi-step authority',()=>{
+  deniedPreview(footPreview({actions:[footMove(),footMove()]}),
+    'ONLY_ONE_FOOT_STEP_SUPPORTED');
+  deniedPreview(footPreview({actions:[{kind:'LEADER',id:'captain',path:[cell(3,4)]}]}),
+    'ONLY_ONE_FOOT_STEP_SUPPORTED');
+  deniedPreview(footPreview({actions:[{...footMove(),actor:'A'}]}),
+    'ONLY_ONE_FOOT_STEP_SUPPORTED');
+  deniedPreview(footPreview({actions:[{...footMove(),path:[cell(3,4),cell(4,4)]}]}),
+    'ONLY_ONE_FOOT_STEP_SUPPORTED');
+});
+
+test('verified section adapter rejects enemy and unissued moves, collisions and range',()=>{
+  deniedPreview(footPreview({actions:[{kind:'UNIT',id:'enemy',path:[cell(9,4)]}]}),
+    'UNIT_NOT_ORDERED');
+  deniedPreview(footPreview({actions:[{kind:'UNIT',id:'unitA',path:[cell(4,4)]}]}),
+    'NOT_ONE_ADJACENT_HEX');
+  const s=stagedFootHistory();
+  s.board.units[1].col=3;s.board.units[1].row=4;
+  deniedPreview(footPreview({verifiedState:s}),'OCCUPIED_DESTINATION');
+});
+
+test('verified section adapter independently enforces restricted foot profiles',()=>{
+  const scenario=footScenario();scenario.unitTypes.unitA='ELEPHANT';
+  deniedPreview(footPreview({trustedScenario:scenario}),'UNSUPPORTED_FOOT_UNIT');
+});
+
+test('verified section adapter strips lab hands, token, hidden metadata and replay keys',()=>{
+  const s=stagedFootHistory();
+  s.board.secretMeta='DO_NOT_LEAK_BOARD';
+  s.board.units[0].secretMeta='DO_NOT_LEAK_UNIT';
+  const preview=footPreview({verifiedState:s});
+  assert.equal(preview.status,'PRIVATE_CORE_FOOT_PROPOSAL');
+  const output=JSON.stringify(preview);
+  for(const secret of ['DO_NOT_LEAK_BOARD','DO_NOT_LEAK_UNIT',
+    'handAtPlay','cardPlay','drawPile','idempotencyKey','sessionToken',
+    'instanceId','ANCIENTS_MOVEMENT_COMMITTED_V1'])
+    assert.equal(output.includes(secret),false);
+  for(const part of [preview,preview.proposal,preview.proposal.nextState,
+    preview.proposal.nextState.board,preview.proposal.transition])
+    assert.equal(Object.isFrozen(part),true);
+});
+
+test('verified section adapter rejects invalid trusted state without partial projection',()=>{
+  deniedPreview(footPreview({verifiedState:null}),'INVALID_VERIFIED_CONTEXT');
+  const state=stagedFootHistory();state.orderSnapshot.pieces.push(
+    {...state.orderSnapshot.pieces[0]});
+  deniedPreview(footPreview({verifiedState:state}),'UNSUPPORTED_VERIFIED_ORDERS');
 });

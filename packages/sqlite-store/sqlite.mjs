@@ -452,6 +452,25 @@ export function openSqliteComposition({file, clock = Date.now,
           return sectionHistory.previewOrderBudget(identity.actor,stable,trustedContext);
         });
       },
+      /**
+       * Private-only, read-only first-foot-step core proposal. A descriptor
+       * snapshot is captured before resolving session; the session, match
+       * membership and CCWB replay share ONE WAL read snapshot. In particular
+       * this does not add a public endpoint, commit a movement, or write a
+       * revision/event/command. trustedScenario is server-owned test data.
+       */
+      precheckExperimentalSectionVerifiedFootCore(request = {},trustedScenario) {
+        const stable=snapshotStagedSequenceRequest(request);
+        if(stable===null)
+          return {status:400,code:'INVALID_SECTION_LAB_FOOT_CORE_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(stable.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewVerifiedFootCore(identity.actor,stable,trustedScenario);
+        });
+      },
       /** INTERNAL LAB ONLY: evidence of a hypothetical sequence. Session,
        *  match membership, private replay and candidate trace share one WAL
        *  snapshot. This cannot change game state or publish public events. */
