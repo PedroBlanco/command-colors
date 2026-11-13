@@ -63,3 +63,13 @@ Tras ejecutar la nueva PR #102, el usuario comunica **tests locales correctos** 
 **Evidencia de alcance limitado:** los **23/23** casos de `browser-deck-ui.test.mjs` pasaron en un ejecutor V8 aislado, con módulos de aplicación auténticos y DOM/red/ejecutor Node simulados. Sobre las funciones reales y puras de movimiento se verificaron **4/4** casos: ruta nueva de un hexágono aceptada, oponente no autorizado, ruta de tres pasos rechazada y segundo movimiento rechazado. Esto **no sustituye** el test HTTP real, la base SQLite real o la regresión completa ejecutada con `node --test` en Windows.
 
 La regresión completa de esta revisión **sigue pendiente**. No dar por corregidos los cuatro fallos en Windows hasta repetirla sobre el SHA final de PR #102. Las partidas existentes siguen sin migración.
+
+
+## Confirmación de pruebas corregidas (13/11/2026)
+
+El usuario confirma que **las tres suites locales y la regresión completa en Windows son correctas** después de actualizar los casos heredados de órdenes y movimiento, sin aportar un TAP detallado, recuento de pruebas ni el SHA de su copia local para esta última ejecución. Se registra la confirmación sin inventar cifras ni atribuir una prueba criptográfica del commit.
+
+- Las incidencias anteriores de los tests **637, 638, 690 y 697** no se han reproducido según la nueva comunicación.
+- La validación atañe a **pruebas automáticas**; las tres correcciones visuales de esta PR (sala `bob`, paneles independientes y despliegue apaisado) **todavía no cuentan con aceptación visual posterior a su modificación**.
+- El usuario comunica expresamente que **interrumpe temporalmente las pruebas**. Continuar con desarrollo y revisiones internas, sin exigir nuevas ejecuciones.
+- La rama y PR siguen separadas de `main`; SEC-001 (#94/#93) y las reglas definitivas continúan pendientes.
