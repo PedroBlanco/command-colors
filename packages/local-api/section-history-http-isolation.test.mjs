@@ -333,3 +333,42 @@ test('SEC-001 HTTP: deck initialization never trusts the stale preflight session
   assert.equal(app.unsafeTestDatabase().prepare(
     'SELECT count(*) n FROM game_commands WHERE match_id=?').get(matchId).n,0);
 }));
+
+
+test('SEC-001: mid-request revocation takes precedence over private lab denial',()=>fixture(async({app,tokens,matchId})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  assert.equal(store.initializeExperimentalSectionHistory({
+    sessionToken:tokens.alice,trustedSetup:setup()
+  }).status,201);
+  const before={
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  };
+  const original=app.identity.resolveSession;
+  let revoked=false;
+  try {
+    app.identity.resolveSession=token=>{
+      const identity=original(token);
+      if(token===tokens.alice&&identity&&!revoked){
+        revoked=true;
+        // Race after a successful preflight but before BEGIN IMMEDIATE.
+        assert.equal(app.identity.logOut(token).ok,true);
+      }
+      return identity;
+    };
+    const result=await store.dispatchForSession({
+      sessionToken:tokens.alice,type:'pass_demo_turn',
+      expectedRevision:0,idempotencyKey:'revoked_lab_denial_001'
+    });
+    assert.equal(revoked,true);
+    assert.deepEqual(result,{status:401,code:'UNAUTHENTICATED'});
+    assert.equal(JSON.stringify(result).includes('SECTION_LAB'),false);
+    assert.deepEqual({
+      match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+      events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+      commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+    },before);
+    assert.equal(db.isTransaction,false);
+  } finally {app.identity.resolveSession=original;}
+}));
