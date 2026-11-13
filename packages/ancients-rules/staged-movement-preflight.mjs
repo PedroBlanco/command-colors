@@ -24,6 +24,54 @@ const blocked=reason=>Object.freeze({
 });
 
 /**
+ * The physical order in which object keys were serialized is immaterial.
+ * A frontier hex can belong to two sectors: their list order is likewise
+ * immaterial. Fail closed on missing, extra, duplicate or invalid labels.
+ */
+function equalSectorCells(a,b){
+  if(!record(a)||!record(b))return false;
+  const ka=Reflect.ownKeys(a),kb=Reflect.ownKeys(b);
+  if(ka.length!==kb.length)return false;
+  const sector=new Set(['LEFT','CENTER','RIGHT']);
+  return ka.every(k=>{
+    if(typeof k!=='string'||!own(b,k))return false;
+    const left=a[k],right=b[k];
+    if(!Array.isArray(left)||!Array.isArray(right)||
+       left.length<1||left.length>2||left.length!==right.length||
+       new Set(left).size!==left.length||new Set(right).size!==right.length)
+      return false;
+    return left.every(x=>sector.has(x)&&right.includes(x))&&
+      right.every(x=>sector.has(x)&&left.includes(x));
+  });
+}
+
+/**
+ * All staged previews use the SAME complete server-side order ledger check.
+ * A requested piece can be individually correct while a sibling entry was
+ * changed or duplicated. No CANDIDATE may escape such an inconsistent ledger.
+ * This is defense in depth: the caller still MUST replay-verify its CCWB row.
+ */
+function consistentStagedOrderLedger(state,actor) {
+  const snapshot=state.orderSnapshot;
+  if(!record(snapshot)||!equalSectorCells(snapshot.sectorCells,state.sectorCells)||
+     !Array.isArray(snapshot.pieces)||snapshot.pieces.length>117)
+    return false;
+  const seen=new Set();
+  return snapshot.pieces.every(piece=>{
+    if(!record(piece)||Reflect.ownKeys(piece).length!==5||
+       !['id','kind','side','col','row'].every(k=>own(piece,k))||
+       typeof piece.id!=='string'||!ID.test(piece.id)||piece.id==='__proto__'||
+       !['UNIT','LEADER'].includes(piece.kind)||piece.side!==actor||
+       !Number.isSafeInteger(piece.col)||!Number.isSafeInteger(piece.row)||
+       seen.has(piece.id))return false;
+    seen.add(piece.id);
+    const collection=piece.kind==='UNIT'?state.board.units:state.board.leaders;
+    return collection.some(current=>current.id===piece.id&&current.side===piece.side&&
+      current.col===piece.col&&current.row===piece.row);
+  });
+}
+
+/**
  * For convenience the context maps every server-known unit ID to an official
  * profile. No defaults or guessed unit types are permitted.
  */
@@ -63,6 +111,8 @@ export function precheckStagedAncientsMovement({
        x.kind==='UNIT'&&x.side===actor&&state.board.units.some(y=>
          y.id===x.id&&y.side===x.side&&y.col===x.col&&y.row===x.row)))
     return blocked('UNIT_NOT_ORDERED');
+  if(!consistentStagedOrderLedger(state,actor))
+    return blocked('ORDER_LEDGER_MISMATCH');
   // Force trusted data to exist and to cover all units before any candidate.
   const roster=trustedRoster(state,serverContext);
   const screen=precheckAncientsMovementPath({
@@ -104,6 +154,8 @@ export function precheckStagedAncientsLeaderMovement({
       state.board.leaders.some(current=>current.id===piece.id&&
         current.side===piece.side&&current.col===piece.col&&current.row===piece.row)))
     return blocked('LEADER_NOT_ORDERED');
+  if(!consistentStagedOrderLedger(state,actor))
+    return blocked('ORDER_LEDGER_MISMATCH');
   if(!record(serverContext)||!Array.isArray(serverContext.terrain))
     throw new TypeError('INVALID_STAGED_LEADER_CONTEXT');
   const preview=precheckAncientsLeaderPath({
@@ -136,17 +188,8 @@ export function precheckStagedAncientsMovementSequence({
     return blocked('ORDERS_NOT_STAGED');
   // Do not extrapolate from or trust an incomplete/forged set of orders.
   // These rows must also be authenticated against the event replay by caller.
-  const seen=new Set();
-  const complete=snapshot.pieces.every(piece=>{
-    if(!record(piece)||!ID.test(piece.id)||piece.id==='__proto__'||
-       !['UNIT','LEADER'].includes(piece.kind)||piece.side!==actor||
-       seen.has(piece.id))return false;
-    seen.add(piece.id);
-    const collection=piece.kind==='UNIT'?state.board.units:state.board.leaders;
-    return collection.some(current=>current.id===piece.id&&current.side===piece.side&&
-      current.col===piece.col&&current.row===piece.row);
-  });
-  if(!complete)return blocked('ORDER_LEDGER_MISMATCH');
+  if(!consistentStagedOrderLedger(state,actor))
+    return blocked('ORDER_LEDGER_MISMATCH');
   // An otherwise validly shaped hypothetical route cannot consume more
   // moves than the authenticated order ledger contains. Fail closed rather
   // than let the lower-level sequence reject with a configuration error.

@@ -23,28 +23,41 @@ const blocked=()=>Object.freeze({
   status:'BLOCKED',code:'INVALID_MOVEMENT_INTENT',intent:null,...guard
 });
 
-function exactDataRecord(value,fields) {
+/**
+ * Create a descriptor-only snapshot of an untrusted plain record.
+ * Never check descriptors and then read source properties again: a Proxy's
+ * get trap (or a mutation during validation) may yield different data.
+ * Frozen results of this function are untrusted DATA, not authorized facts.
+ */
+function snapshotRecord(value,fields) {
   if(value===null||typeof value!=='object'||Array.isArray(value)||
-     Object.getPrototypeOf(value)!==Object.prototype) return false;
+     Object.getPrototypeOf(value)!==Object.prototype) return null;
   const keys=Reflect.ownKeys(value);
-  return keys.length===fields.length&&fields.every(key=>{
+  if(keys.length!==fields.length||!fields.every(key=>keys.includes(key)))return null;
+  const snapshot=Object.create(null);
+  for(const key of fields) {
     const desc=Object.getOwnPropertyDescriptor(value,key);
-    return desc!==undefined&&Object.hasOwn(desc,'value')&&desc.enumerable;
-  });
-}
-function exactPath(value) {
-  if(!Array.isArray(value)||Object.getPrototypeOf(value)!==Array.prototype||
-     value.length<1||value.length>32||
-     Reflect.ownKeys(value).length!==value.length+1) return false;
-  for(let i=0;i<value.length;i++) {
-    const entry=Object.getOwnPropertyDescriptor(value,String(i));
-    if(!entry||!Object.hasOwn(entry,'value')||!entry.enumerable||
-       !exactDataRecord(entry.value,LOCATION_FIELDS)) return false;
-    const col=entry.value.col,row=entry.value.row;
-    if(!Number.isSafeInteger(col)||!Number.isSafeInteger(row)||
-       !inBounds({col,row})) return false;
+    if(!desc||!Object.hasOwn(desc,'value')||!desc.enumerable)return null;
+    snapshot[key]=desc.value;
   }
-  return true;
+  return snapshot;
+}
+function snapshotPath(value) {
+  if(!Array.isArray(value)||Object.getPrototypeOf(value)!==Array.prototype)
+    return null;
+  const length=Object.getOwnPropertyDescriptor(value,'length')?.value;
+  if(!Number.isSafeInteger(length)||length<1||length>32||
+     Reflect.ownKeys(value).length!==length+1)return null;
+  const path=[];
+  for(let i=0;i<length;i++) {
+    const entry=Object.getOwnPropertyDescriptor(value,String(i));
+    if(!entry||!Object.hasOwn(entry,'value')||!entry.enumerable)return null;
+    const cell=snapshotRecord(entry.value,LOCATION_FIELDS);
+    if(!cell||!Number.isSafeInteger(cell.col)||!Number.isSafeInteger(cell.row)||
+       !inBounds({col:cell.col,row:cell.row}))return null;
+    path.push(Object.freeze({col:cell.col,row:cell.row}));
+  }
+  return Object.freeze(path);
 }
 
 /**
@@ -57,23 +70,21 @@ function exactPath(value) {
  */
 export function screenAncientsMovementCommitIntent(request) {
   try {
-    if(!exactDataRecord(request,REQUEST_FIELDS)||
-       typeof request.sessionToken!=='string'||
-       request.sessionToken.length<16||request.sessionToken.length>256||
-       typeof request.idempotencyKey!=='string'||
-       !KEY.test(request.idempotencyKey)||
-       !Number.isSafeInteger(request.expectedRevision)||
-       request.expectedRevision<0||
-       !['UNIT','LEADER'].includes(request.kind)||
-       typeof request.pieceId!=='string'||!ID.test(request.pieceId)||
-       request.pieceId==='__proto__'||!exactPath(request.path))
+    const data=snapshotRecord(request,REQUEST_FIELDS);
+    if(!data||typeof data.sessionToken!=='string'||
+       data.sessionToken.length<16||data.sessionToken.length>256||
+       typeof data.idempotencyKey!=='string'||!KEY.test(data.idempotencyKey)||
+       !Number.isSafeInteger(data.expectedRevision)||data.expectedRevision<0||
+       !['UNIT','LEADER'].includes(data.kind)||
+       typeof data.pieceId!=='string'||!ID.test(data.pieceId)||
+       data.pieceId==='__proto__')
       return blocked();
-
-    const path=Object.freeze(request.path.map(({col,row})=>Object.freeze({col,row})));
+    const path=snapshotPath(data.path);
+    if(!path)return blocked();
     const intent=Object.freeze({
-      expectedRevision:request.expectedRevision,
-      idempotencyKey:request.idempotencyKey,
-      kind:request.kind,pieceId:request.pieceId,path
+      expectedRevision:data.expectedRevision,
+      idempotencyKey:data.idempotencyKey,
+      kind:data.kind,pieceId:data.pieceId,path
     });
     // The credential remains solely in the caller's request. This is not
     // a commit command and must never be sent to game_events.

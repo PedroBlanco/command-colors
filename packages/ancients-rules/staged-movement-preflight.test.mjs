@@ -1,4 +1,7 @@
 import test from 'node:test';
+import {snapshotStagedSequenceRequest,
+  snapshotStagedMovementDraftRequest} from './staged-sequence-request-snapshot.mjs';
+import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
 import assert from 'node:assert/strict';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply}
   from './section-history-journal.mjs';
@@ -332,4 +335,305 @@ test('evidence binds terrain and match revision, not caller-provided card or act
   assert.throws(()=>checkEvidence(state,{matchId:'bad'}),/INVALID_CANDIDATE_JOURNAL_SCOPE/);
   assert.throws(()=>checkEvidence(state,{actions:[{...leaderMove(),actor:'B'}]}),
     /INVALID_SEQUENCE_CONTEXT/);
+});
+
+
+test('single-unit preview rejects an unrelated forged leader order',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const forged=structuredClone(state);
+  const sibling=forged.orderSnapshot.pieces.find(p=>p.kind==='LEADER');
+  sibling.col+=1;
+  const before=structuredClone(forged);
+  const result=check(forged);
+  assert.equal(result.status,'BLOCKED');
+  assert.equal(result.reason,'ORDER_LEDGER_MISMATCH');
+  assert.equal(result.movementAuthorized,false);
+  assert.equal(result.stateChanged,false);
+  assert.deepEqual(forged,before);
+});
+
+test('single-leader preview rejects a separately forged unit order',()=>{
+  const {state}=readyLeader({includeUnit:true}),forged=structuredClone(state);
+  forged.orderSnapshot.pieces.find(p=>p.kind==='UNIT').row=8;
+  const result=checkLeader(forged);
+  assert.equal(result.status,'BLOCKED');
+  assert.equal(result.reason,'ORDER_LEDGER_MISMATCH');
+  assert.equal(result.movementAuthorized,false);
+  assert.equal(result.stateChanged,false);
+});
+
+test('all previews reject duplicate, extra-field and mismatched sector ledgers',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  for(const corrupt of [
+    s=>s.orderSnapshot.pieces.push({...s.orderSnapshot.pieces[0]}),
+    s=>{s.orderSnapshot.pieces[0].permission='ALLOWED';},
+    s=>{s.orderSnapshot.sectorCells['2,4']=['RIGHT'];},
+    s=>s.orderSnapshot.pieces.push({id:'ghost',kind:'UNIT',side:'A',col:5,row:5})
+  ]) {
+    const forged=structuredClone(state);corrupt(forged);
+    const original=structuredClone(forged);
+    for(const result of [
+      check(forged),checkLeader(forged),
+      checkSequence(forged,[leaderMove()])
+    ]) {
+      assert.equal(result.status,'BLOCKED');
+      assert.equal(result.reason,'ORDER_LEDGER_MISMATCH');
+      assert.equal(result.movementAuthorized,false);
+      assert.equal(result.stateChanged,false);
+    }
+    assert.deepEqual(forged,original);
+  }
+});
+
+test('sector map key insertion order cannot invalidate an equivalent staged ledger',()=>{
+  const {state}=readyLeader({includeUnit:true}),before=structuredClone(state);
+  state.orderSnapshot.sectorCells=Object.fromEntries(
+    Object.entries(state.orderSnapshot.sectorCells).reverse());
+  assert.notEqual(JSON.stringify(state.orderSnapshot.sectorCells),
+    JSON.stringify(state.sectorCells));
+  for(const result of [
+    check(state),checkLeader(state),checkSequence(state,[leaderMove()])
+  ]){
+    assert.ok(['CANDIDATE','CANDIDATE_SEQUENCE'].includes(result.status),
+      result.reason);
+    assert.equal(result.movementAuthorized,false);
+    assert.equal(result.stateChanged,false);
+  }
+  assert.deepEqual(state.board,before.board);
+});
+
+test('frontier sectors compare by membership, but reject altered values',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  // Two-sector frontier mapping is a legitimate server-side scenario value.
+  state.sectorCells['2,4']=['LEFT','CENTER'];
+  state.orderSnapshot.sectorCells['2,4']=['CENTER','LEFT'];
+  assert.equal(check(state).status,'CANDIDATE');
+  assert.equal(checkLeader(state).status,'CANDIDATE');
+  assert.equal(checkSequence(state,[leaderMove()]).status,'CANDIDATE_SEQUENCE');
+  state.orderSnapshot.sectorCells['2,4']=['LEFT','RIGHT'];
+  assert.equal(checkSequence(state,[leaderMove()]).reason,'ORDER_LEDGER_MISMATCH');
+});
+
+test('staged sector ledger rejects missing or extra keys and duplicate labels',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  for(const tamper of [
+    s=>delete s.orderSnapshot.sectorCells['10,4'],
+    s=>{s.orderSnapshot.sectorCells['9,8']=['LEFT'];},
+    s=>{s.orderSnapshot.sectorCells['2,4']=['LEFT','LEFT'];},
+    s=>{s.orderSnapshot.sectorCells['2,4']=['UNSUPPORTED'];}
+  ]){
+    const corrupted=structuredClone(state);
+    tamper(corrupted);
+    for(const result of [
+      check(corrupted),checkLeader(corrupted),
+      checkSequence(corrupted,[leaderMove()])
+    ]){
+      assert.equal(result.status,'BLOCKED');
+      assert.equal(result.reason,'ORDER_LEDGER_MISMATCH');
+      assert.equal(result.movementAuthorized,false);
+    }
+  }
+});
+
+const projectBoard=(state,actions,overrides={})=>projectStagedAncientsBoard({
+  state,actor:'A',expectedRevision:state.revision,actions,
+  serverContext:context(),...overrides
+});
+test('private staged board: leader detaches before unit and both positions are projected',()=>{
+  const {state}=readyLeader({includeUnit:true}),before=structuredClone(state);
+  const r=projectBoard(state,[leaderMove(),unitMove()]);
+  assert.equal(r.status,'PRIVATE_BOARD_CANDIDATE');
+  assert.equal(r.kind,'PRIVATE_STAGED_BOARD_PREVIEW_V1');
+  assert.equal(r.moveCount,2);
+  assert.deepEqual(r.projectedBoard.units.find(x=>x.id==='unitA'),{
+    id:'unitA',side:'A',col:3,row:4
+  });
+  assert.deepEqual(r.projectedBoard.leaders.find(x=>x.id==='leaderA'),{
+    id:'leaderA',side:'A',col:2,row:5
+  });
+  assert.equal(r.moves[0].detachedFromUnit,'unitA');
+  assert.equal(r.moves[1].leaderCarried,null);
+  for(const name of ['movementAuthorized','officialMovementAuthorized',
+    'attackAuthorized','stateChanged','canCommit'])
+    assert.equal(r[name],false);
+  assert.equal(r.needsFullLegalityCheck,true);
+  assert.equal(r.labSimulationOnly,true);
+  assert.deepEqual(state,before);
+});
+test('private staged board: unit carries attached leader without a second action',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const r=projectBoard(state,[unitMove()]);
+  assert.equal(r.status,'PRIVATE_BOARD_CANDIDATE');
+  const u=r.projectedBoard.units.find(x=>x.id==='unitA');
+  const l=r.projectedBoard.leaders.find(x=>x.id==='leaderA');
+  assert.deepEqual(at(u.col,u.row),at(3,4));
+  assert.deepEqual(at(l.col,l.row),at(3,4));
+  assert.equal(r.moves[0].leaderCarried,'leaderA');
+  assert.equal(r.moves[0].attachedLeader,'leaderA');
+  assert.equal(r.canCommit,false);
+});
+test('private staged board: invalid second move exposes no partial result',()=>{
+  const {state}=readyLeader({includeUnit:true}),before=structuredClone(state);
+  const r=projectBoard(state,[unitMove(),leaderMove()]);
+  assert.equal(r.status,'BLOCKED');
+  assert.equal(r.reason,'LEADER_ALREADY_MOVED');
+  assert.equal(r.projectedBoard,null);
+  assert.equal(r.moves,null);
+  assert.equal(r.moveCount,0);
+  assert.equal(r.stateChanged,false);
+  assert.deepEqual(state,before);
+});
+test('private staged board: forged sibling order, actor and revision cannot project',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const forged=structuredClone(state);
+  forged.orderSnapshot.pieces.find(p=>p.kind==='LEADER').col=9;
+  const failures=[
+    projectBoard(forged,[unitMove()]),
+    projectBoard(state,[unitMove()],{actor:'B'}),
+    projectBoard(state,[unitMove()],{expectedRevision:0})
+  ];
+  for(const r of failures){
+    assert.equal(r.status,'BLOCKED');
+    assert.equal(r.projectedBoard,null);
+    assert.equal(r.moves,null);
+    assert.equal(r.canCommit,false);
+  }
+  assert.equal(failures[0].reason,'ORDER_LEDGER_MISMATCH');
+});
+test('private staged board: result is deeply frozen and secrets are stripped',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  state.board.hiddenScenario='SCENARIO_SECRET_123';
+  state.board.units[0].secretMarker='UNIT_SECRET_123';
+  state.board.leaders[0].privateOrders='LEADER_SECRET_123';
+  const before=structuredClone(state);
+  const r=projectBoard(state,[unitMove()]);
+  assert.equal(r.status,'PRIVATE_BOARD_CANDIDATE');
+  const output=JSON.stringify(r);
+  for(const secret of ['SCENARIO_SECRET_123','UNIT_SECRET_123',
+    'LEADER_SECRET_123','hands','drawPile','cardInstanceId'])
+    assert.equal(output.includes(secret),false);
+  assert.deepEqual(Object.keys(r.projectedBoard).sort(),['leaders','units']);
+  for(const p of [...r.projectedBoard.units,...r.projectedBoard.leaders])
+    assert.deepEqual(Object.keys(p).sort(),['col','id','row','side']);
+  for(const frozen of [r,r.projectedBoard,r.projectedBoard.units,
+    r.projectedBoard.units[0],r.projectedBoard.leaders[0],r.moves,r.moves[0],r.moves[0].to])
+    assert.equal(Object.isFrozen(frozen),true);
+  assert.throws(()=>{r.projectedBoard.units[0].col=8},TypeError);
+  assert.deepEqual(state,before);
+});
+test('private staged board: repeated previews are deterministic, never persist',()=>{
+  const {state}=readyLeader({includeUnit:true});
+  const one=projectBoard(state,[leaderMove(),unitMove()]);
+  const two=projectBoard(state,[leaderMove(),unitMove()]);
+  assert.deepEqual(one,two);
+  assert.notEqual(one.projectedBoard,state.board);
+  assert.equal(state.revision,2);
+  assert.equal(state.board.units.find(x=>x.id==='unitA').col,2);
+  assert.equal(state.board.leaders.find(x=>x.id==='leaderA').row,4);
+});
+
+const sequenceInput=()=>({
+  sessionToken:'s'.repeat(48),expectedRevision:2,
+  actions:[{kind:'LEADER',id:'leaderA',path:[{col:2,row:5}]},
+    {kind:'UNIT',id:'unitA',path:[{col:3,row:4}]}]
+});
+test('sequence snapshot is frozen and cannot be changed by caller after parsing',()=>{
+  const input=sequenceInput(),before=structuredClone(input);
+  const stable=snapshotStagedSequenceRequest(input);
+  assert.deepEqual(stable,before);
+  assert.equal(Object.isFrozen(stable),true);
+  assert.equal(Object.isFrozen(stable.actions),true);
+  assert.equal(Object.isFrozen(stable.actions[0].path[0]),true);
+  input.expectedRevision=99;
+  input.actions[0].id='enemy';
+  input.actions[0].path[0].col=11;
+  input.actions.push({kind:'UNIT',id:'fake',path:[{col:4,row:4}]});
+  assert.deepEqual(stable,before);
+  assert.throws(()=>{stable.actions[0].path[0].col=12},TypeError);
+});
+test('sequence snapshot rejects extras, inherited fields, accessors and sparse paths',()=>{
+  const extras=[{...sequenceInput(),actor:'B'},
+    {...sequenceInput(),board:{}},
+    {...sequenceInput(),actions:[{...sequenceInput().actions[0],actor:'B'}]},
+    {...sequenceInput(),actions:[{kind:'UNIT',id:'unitA',path:[{col:3,row:4,side:'B'}]}]},
+    {...sequenceInput(),actions:[]},
+    {...sequenceInput(),actions:[{kind:'UNIT',id:'__proto__',path:[{col:3,row:4}]}]}];
+  for(const input of extras)assert.equal(snapshotStagedSequenceRequest(input),null);
+  const inherited=Object.create(sequenceInput());
+  assert.equal(snapshotStagedSequenceRequest(inherited),null);
+  const sparse=sequenceInput();
+  sparse.actions[0].path=new Array(1);
+  assert.equal(snapshotStagedSequenceRequest(sparse),null);
+  const getter=sequenceInput();let hits=0;
+  Object.defineProperty(getter.actions[0].path[0],'col',{enumerable:true,
+    get(){hits++;throw Error('never read');}});
+  assert.equal(snapshotStagedSequenceRequest(getter),null);
+  assert.equal(hits,0);
+});
+test('sequence snapshot never invokes hostile Proxy property getters',()=>{
+  const raw=sequenceInput(),gets=[];
+  raw.actions[0].path[0]=new Proxy(raw.actions[0].path[0],{
+    get(target,key){gets.push('cell:'+String(key));throw Error('cell getter');}
+  });
+  const proxied=new Proxy(raw,{
+    get(target,key){gets.push('root:'+String(key));throw Error('root getter');}
+  });
+  const r=snapshotStagedSequenceRequest(proxied);
+  assert.deepEqual(r.actions[0].path[0],{col:2,row:5});
+  assert.deepEqual(gets,[]);
+});
+
+const draftInput=()=>({
+  sessionToken:'s'.repeat(48),expectedRevision:2,expectedDraftRevision:0,
+  idempotencyKey:'draft_request_001',actions:sequenceInput().actions
+});
+
+test('draft write snapshot captures revisions, idempotency and full actions immutably',()=>{
+  const incoming=draftInput(),before=structuredClone(incoming);
+  const stable=snapshotStagedMovementDraftRequest(incoming);
+  assert.deepEqual(stable,before);
+  for(const item of [stable,stable.actions,stable.actions[0],stable.actions[0].path,
+    stable.actions[0].path[0]])assert.equal(Object.isFrozen(item),true);
+  incoming.expectedRevision=12;
+  incoming.expectedDraftRevision=55;
+  incoming.idempotencyKey='changed_draft_request_002';
+  incoming.actions[0].id='fake';
+  incoming.actions[0].path[0].col=12;
+  assert.deepEqual(stable,before);
+  assert.throws(()=>{stable.expectedDraftRevision=99},TypeError);
+});
+test('draft write snapshot rejects spoofed authority, invalid keys and array tricks',()=>{
+  const forged=[
+    {...draftInput(),actor:'B'},
+    {...draftInput(),terrain:[]},
+    {...draftInput(),expectedRevision:1.1},
+    {...draftInput(),expectedDraftRevision:-1},
+    {...draftInput(),idempotencyKey:'short'},
+    {...draftInput(),idempotencyKey:'x'.repeat(81)},
+    {...draftInput(),actions:[]},
+    {...draftInput(),actions:[{...draftInput().actions[0],side:'B'}]},
+    {...draftInput(),actions:[{kind:'UNIT',id:'unitA',
+      path:[{col:3,row:4,privateCard:'secret'}]}]}
+  ];
+  for(const request of forged)
+    assert.equal(snapshotStagedMovementDraftRequest(request),null);
+  const holes=draftInput();
+  holes.actions=new Array(1);
+  assert.equal(snapshotStagedMovementDraftRequest(holes),null);
+  const inherited=Object.create(draftInput());
+  assert.equal(snapshotStagedMovementDraftRequest(inherited),null);
+});
+test('draft write snapshot reads own descriptors only, never getters',()=>{
+  const input=draftInput(),reads=[];
+  const wrapped=new Proxy(input,{
+    get(target,key){reads.push(String(key));throw Error('GET forbidden');}
+  });
+  const stable=snapshotStagedMovementDraftRequest(wrapped);
+  assert.deepEqual(stable,input);
+  assert.deepEqual(reads,[]);
+  const dangerous=draftInput();
+  Object.defineProperty(dangerous.actions[0].path[0],'col',{
+    enumerable:true,get(){throw Error('EXECUTED GETTER');}
+  });
+  assert.equal(snapshotStagedMovementDraftRequest(dangerous),null);
 });

@@ -13,6 +13,8 @@ import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
 import {proposeMovementDraft, projectMovementDraft} from '../ancients-rules/movement-draft-contract.mjs';
 import {screenAncientsMovementCommitIntent} from '../ancients-rules/movement-commit-intent-screen.mjs';
+import {snapshotStagedSequenceRequest,
+  snapshotStagedMovementDraftRequest} from '../ancients-rules/staged-sequence-request-snapshot.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -279,30 +281,6 @@ export function openSqliteComposition({file, clock = Date.now,
       return db.prepare("SELECT payload FROM game_events WHERE match_id=? AND visibility='public' ORDER BY sequence")
         .all(matchId).map(x => decode(x.payload));
     }
-    /** Shared strict input contract for the two read-only sequence
-     *  previews. Never accept client-supplied actor, game or terrain. */
-    function validSequenceRequest(request) {
-      return !(!plainLabRequest(request) ||
-            Object.keys(request).length!==3 ||
-            !['sessionToken','expectedRevision','actions'].every(k => Object.hasOwn(request,k)) ||
-            typeof request.sessionToken!=='string' ||
-            !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision<0 ||
-            !Array.isArray(request.actions) || request.actions.length<1 ||
-            request.actions.length>117 ||
-            !request.actions.every(action => plainLabRequest(action) &&
-              Object.keys(action).length===3 &&
-              ['kind','id','path'].every(k => Object.hasOwn(action,k)) &&
-              ['UNIT','LEADER'].includes(action.kind) &&
-              typeof action.id==='string' &&
-              /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(action.id) &&
-              action.id!=='__proto__' &&
-              Array.isArray(action.path) && action.path.length>0 &&
-              action.path.length<=32 &&
-              action.path.every(cell => plainLabRequest(cell) &&
-                Object.keys(cell).length===2 &&
-                Object.hasOwn(cell,'col') && Object.hasOwn(cell,'row') &&
-                inBounds(cell))));
-    }
     const store = {
       // Legacy internal actor-based method. HTTP/SSE always use the
       // authenticated session-bound view below.
@@ -427,28 +405,48 @@ export function openSqliteComposition({file, clock = Date.now,
        * based on the same WAL snapshot as session, membership and replay.
        * No public route, commands, mutations or gameplay authorization. */
       precheckExperimentalSectionMovementSequence(request = {},trustedContext) {
-        if (!validSequenceRequest(request))
+        const stable=snapshotStagedSequenceRequest(request);
+        if(stable===null)
           return {status:400,code:'INVALID_SECTION_LAB_SEQUENCE_REQUEST'};
         return readSnapshot(() => {
-          const identity=resolveSectionLabActor(request.sessionToken);
+          const identity=resolveSectionLabActor(stable.sessionToken);
           if(identity.error)return identity.error;
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-          return sectionHistory.previewMovementSequence(identity.actor,request,trustedContext);
+          return sectionHistory.previewMovementSequence(identity.actor,stable,trustedContext);
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY: produce a public-field-only hypothetical board
+       * from a verified Section CCWB row. Never expose via HTTP/SSE.
+       * Capture untrusted request data once BEFORE session lookup. Session,
+       * membership, match and replay are then read under ONE WAL snapshot.
+       */
+      precheckExperimentalSectionBoardProjection(request = {},trustedContext) {
+        const stable=snapshotStagedSequenceRequest(request);
+        if(stable===null)
+          return {status:400,code:'INVALID_SECTION_LAB_BOARD_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(stable.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewBoardProjection(identity.actor,stable,trustedContext);
         });
       },
       /** INTERNAL LAB ONLY: evidence of a hypothetical sequence. Session,
        *  match membership, private replay and candidate trace share one WAL
        *  snapshot. This cannot change game state or publish public events. */
       precheckExperimentalSectionMovementEvidence(request = {},trustedContext) {
-        if (!validSequenceRequest(request))
+        const stable=snapshotStagedSequenceRequest(request);
+        if(stable===null)
           return {status:400,code:'INVALID_SECTION_LAB_EVIDENCE_REQUEST'};
         return readSnapshot(() => {
-          const identity=resolveSectionLabActor(request.sessionToken);
+          const identity=resolveSectionLabActor(stable.sessionToken);
           if(identity.error)return identity.error;
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-          return sectionHistory.previewMovementEvidence(identity.actor,request,trustedContext);
+          return sectionHistory.previewMovementEvidence(identity.actor,stable,trustedContext);
         });
       },
       /**
@@ -490,34 +488,22 @@ export function openSqliteComposition({file, clock = Date.now,
        * board never change. No HTTP endpoint calls this method.
        */
       saveExperimentalSectionMovementDraft(request = {},trustedContext) {
-        if(!plainLabRequest(request) || Object.keys(request).length!==5 ||
-           !['sessionToken','expectedRevision','expectedDraftRevision',
-             'idempotencyKey','actions'].every(k=>Object.hasOwn(request,k)) ||
-           typeof request.sessionToken!=='string' ||
-           !Number.isSafeInteger(request.expectedRevision)||request.expectedRevision<0 ||
-           !Number.isSafeInteger(request.expectedDraftRevision)||request.expectedDraftRevision<0 ||
-           typeof request.idempotencyKey!=='string'||!COMMAND_KEY.test(request.idempotencyKey)||
-           !Array.isArray(request.actions)||request.actions.length<1||
-           request.actions.length>117||
-           !request.actions.every(a=>plainLabRequest(a)&&Object.keys(a).length===3&&
-             ['kind','id','path'].every(k=>Object.hasOwn(a,k))&&
-             ['UNIT','LEADER'].includes(a.kind)&&typeof a.id==='string'&&
-             /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(a.id)&&a.id!=='__proto__'&&
-             Array.isArray(a.path)&&a.path.length>0&&a.path.length<=32&&
-             a.path.every(c=>plainLabRequest(c)&&Object.keys(c).length===2&&
-               Object.hasOwn(c,'col')&&Object.hasOwn(c,'row')&&inBounds(c))))
+        // Descriptor-only data capture happens exactly once outside the lock.
+        // Never read mutable request fields again after authentication begins.
+        const stable=snapshotStagedMovementDraftRequest(request);
+        if(stable===null)
           return {status:400,code:'INVALID_SECTION_LAB_DRAFT_REQUEST'};
         // No auth may be cached from outside this writer lock. An already
         // committed logout or membership change wins over any draft write.
         return atomic(() => {
-          const identity=resolveSectionLabActor(request.sessionToken);
+          const identity=resolveSectionLabActor(stable.sessionToken);
           if(identity.error)return identity.error;
           const row=rowOrThrow();
           if(!hasExperimentalSectionHistory(row))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
-          if(row.game_revision!==request.expectedRevision)
+          if(row.game_revision!==stable.expectedRevision)
             return {status:409,code:'STALE_REVISION'};
-          const preview=sectionHistory.previewMovementSequence(identity.actor,request,trustedContext);
+          const preview=sectionHistory.previewMovementSequence(identity.actor,stable,trustedContext);
           if(preview.preview.status!=='CANDIDATE_SEQUENCE')
             return {status:409,code:'SECTION_LAB_DRAFT_NOT_CANDIDATE',
               reason:preview.preview.reason};
@@ -526,8 +512,8 @@ export function openSqliteComposition({file, clock = Date.now,
             ? persisted.ancientsSectionMovementDraft : null;
           const proposal=proposeMovementDraft({
             previous,matchId,actor:identity.actor,gameRevision:row.game_revision,
-            expectedDraftRevision:request.expectedDraftRevision,
-            idempotencyKey:request.idempotencyKey,actions:request.actions
+            expectedDraftRevision:stable.expectedDraftRevision,
+            idempotencyKey:stable.idempotencyKey,actions:stable.actions
           });
           if(!proposal.ok)return {status:409,code:proposal.code};
           if(proposal.code==='ALREADY_APPLIED')
