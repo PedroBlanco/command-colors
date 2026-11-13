@@ -239,3 +239,61 @@ test('API: deck initialization never exposes another match private hand',()=>{
     assert.equal(initialized,1);
   },services);
 });
+
+
+test('SEC-001: revoked session and nonmember override conflicting private lab markers',async()=>{
+  for (const [code,status] of [['UNAUTHENTICATED',401],['NOT_FOUND',404]]) {
+    const services=fixture();
+    let privateReads=0;
+    services.getStore=async()=>({
+      view:()=>{throw Error('ACTOR_VIEW_MUST_NOT_RUN');},
+      viewForSession:({sessionToken})=>{
+        assert.equal(sessionToken,A);
+        privateReads++;
+        // Deliberately inconsistent adapter result: must not disclose LAB_ONLY.
+        return {status:'LAB_ONLY',code,yourHand:['PRIVATE_LAB_SECRET']};
+      },
+      publicEventsForSession:()=>{throw Error('UNAUTHORIZED_EVENTS_MUST_NOT_RUN');},
+      dispatchForSession:()=>{throw Error('UNAUTHORIZED_COMMAND_MUST_NOT_RUN');}
+    });
+    await withApi(async({request})=>{
+      await createReady(request);
+      for (const [method,path,body] of [
+        ['GET',`/api/matches/${MATCH}`],
+        ['GET',`/api/matches/${MATCH}/events`],
+        ['POST',`/api/matches/${MATCH}/commands`,
+          {type:'pass_demo_turn',expectedRevision:0,idempotencyKey:'unauthorized_lab_guard'}]
+      ]) {
+        const response=await request(method,path,A,body);
+        assert.equal(response.status,status);
+        assert.deepEqual(response.body,{code});
+        assert.doesNotMatch(JSON.stringify(response.body),/LAB_ONLY|PRIVATE_LAB_SECRET/);
+      }
+    },services);
+    assert.equal(privateReads,3);
+  }
+});
+
+test('SEC-001: event-read revocation takes precedence over a conflicting lab sentinel',async()=>{
+  for (const [code,status] of [['UNAUTHENTICATED',401],['NOT_FOUND',404]]) {
+    const services=fixture();
+    let eventReads=0;
+    services.getStore=async()=>({
+      view:()=>{throw Error('ACTOR_VIEW_MUST_NOT_RUN');},
+      viewForSession:()=>({matchId:MATCH,revision:0,status:'ACTIVE',you:'A'}),
+      publicEventsForSession:({sessionToken})=>{
+        assert.equal(sessionToken,A);
+        eventReads++;
+        return {status:'LAB_ONLY',code,yourHand:['PRIVATE_EVENTS_SECRET']};
+      }
+    });
+    await withApi(async({request})=>{
+      await createReady(request);
+      const response=await request('GET',`/api/matches/${MATCH}/events`,A);
+      assert.equal(response.status,status);
+      assert.deepEqual(response.body,{code});
+      assert.doesNotMatch(JSON.stringify(response.body),/LAB_ONLY|PRIVATE_EVENTS_SECRET/);
+    },services);
+    assert.equal(eventReads,1);
+  }
+});
