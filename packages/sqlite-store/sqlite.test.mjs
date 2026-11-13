@@ -314,3 +314,24 @@ test('new synthetic matches deploy A and B along opposite long edges, regardless
     assert.equal(s.invitations.getMatch({sessionToken:guest,matchId}).players[1].side,'B');
   }
 }));
+
+
+test('previously saved landscape lab match is preserved without silent board migration',()=>local(async open=>{
+  const s=open(),alice=await account(s,'alice'),bob=await account(s,'bob');
+  const matchId=invite(s,alice,bob);
+  const db=s.unsafeTestDatabase();
+  const existing=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const state=JSON.parse(existing.private_state);
+  const olderBoard=[
+    {id:'synthetic-a',side:'A',col:3,row:4},
+    {id:'synthetic-b',side:'B',col:9,row:4}
+  ];
+  state.board=olderBoard;
+  db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(state),matchId);
+  s.close();
+  const reopened=open();
+  assert.deepEqual(reopened.getStore(matchId).view('A').board,olderBoard);
+  assert.deepEqual(reopened.getStore(matchId).view('B').board,olderBoard);
+  assert.equal(reopened.invitations.getMatch({sessionToken:alice,matchId}).status,'READY');
+}));
