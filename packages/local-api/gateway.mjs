@@ -89,10 +89,13 @@ function readAuthorizedState(store,actor,sessionToken) {
     : store.view(actor,{denyExperimentalLab:true});
 }
 function publicReadError(result) {
-  if(result?.code==='SECTION_LAB_INTERNAL_ONLY'||result?.status==='LAB_ONLY')
-    return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
+  // Authorization must take precedence over an internal laboratory marker.
+  // If an adapter accidentally returns both, never reveal that a private
+  // laboratory exists to a revoked session or a non-member.
   if(result?.code==='UNAUTHENTICATED')return {status:401,code:'UNAUTHENTICATED'};
   if(result?.code==='NOT_FOUND')return {status:404,code:'NOT_FOUND'};
+  if(result?.code==='SECTION_LAB_INTERNAL_ONLY'||result?.status==='LAB_ONLY')
+    return {status:409,code:'SECTION_LAB_INTERNAL_ONLY'};
   return null;
 }
 
