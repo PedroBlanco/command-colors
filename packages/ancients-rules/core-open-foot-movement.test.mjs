@@ -212,7 +212,7 @@ test('tampered board and corrupt issued/moved order ledger are refused',()=>{
     s=>s.board.units[0].col=13,
     s=>s.orderLedger.issuedUnitIds=['unitA','unitA'],
     s=>s.orderLedger.issuedUnitIds=['enemy'],
-    s=>s.orderLedger.movedUnitIds=['reserve'],
+    s=>s.orderLedger.movedUnitIds=['enemy'],
     s=>s.orderLedger.movedUnitIds=['ghost'],
     s=>s.board.secretHand='HIDDEN',
     s=>s.orderLedger.extraPermission=true,
