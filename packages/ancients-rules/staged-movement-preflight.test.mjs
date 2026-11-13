@@ -337,17 +337,16 @@ test('evidence binds terrain and match revision, not caller-provided card or act
 
 test('single-unit preview rejects an unrelated forged leader order',()=>{
   const {state}=readyLeader({includeUnit:true});
-  const forged=structuredClone(state),before=structuredClone(forged);
+  const forged=structuredClone(state);
   const sibling=forged.orderSnapshot.pieces.find(p=>p.kind==='LEADER');
   sibling.col+=1;
+  const before=structuredClone(forged);
   const result=check(forged);
   assert.equal(result.status,'BLOCKED');
   assert.equal(result.reason,'ORDER_LEDGER_MISMATCH');
   assert.equal(result.movementAuthorized,false);
   assert.equal(result.stateChanged,false);
-  assert.deepEqual(forged,{...before,
-    orderSnapshot:{...before.orderSnapshot,pieces:before.orderSnapshot.pieces.map(p=>
-      p.kind==='LEADER'?{...p,col:p.col+1}:p)}});
+  assert.deepEqual(forged,before);
 });
 
 test('single-leader preview rejects a separately forged unit order',()=>{
