@@ -7,7 +7,9 @@ async function withBrowser(run) {
   const originals={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch,EventSource:globalThis.EventSource};
   const elements=new Map(),handlers=new Map(),requests=[],feeds=[];
   function element(id) {
-    if(!elements.has(id))elements.set(id,{value:'',textContent:'',hidden:false,disabled:false,children:[],handlers:new Map(),
+    if(!elements.has(id))elements.set(id,{value:'',textContent:'',hidden:false,disabled:false,open:false,children:[],handlers:new Map(),
+      get options(){return this.children},
+      get selectedOptions(){return this.children.filter(option=>option.selected)},
       addEventListener(event,fn){this.handlers.set(event,fn)},
       replaceChildren(){this.children=[];this.value=''},
       appendChild(option){this.children.push(option);if(this.children.length===1)this.value=option.value},
@@ -17,7 +19,10 @@ async function withBrowser(run) {
   const document={hidden:false,getElementById:element,createElement:()=>({value:'',textContent:''}),
     addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
   const window={addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
-  const state={login:false,lobby:'INVITING',revision:0};
+  const state={login:false,lobby:'INVITING',revision:0,deckPhase:null,
+    board:[{id:'synthetic-a',side:'A',col:2,row:4},
+      {id:'synthetic-a2',side:'A',col:3,row:4},
+      {id:'synthetic-b',side:'B',col:10,row:4}]};
   class FakeEventSource {
     constructor(url){this.url=url;this.events=new Map();this.closed=false;feeds.push(this)}
     addEventListener(name,fn){this.events.set(name,fn)}
@@ -25,14 +30,17 @@ async function withBrowser(run) {
     close(){this.closed=true}
   }
   const fetch=async(path,options={})=>{
-    requests.push({path,method:options.method??'GET'});
+    requests.push({path,method:options.method??'GET',body:options.body});
     let response={code:'NOT_FOUND'},status=404;
     if(path==='/api/session' && options.method==='POST'){state.login=true;response={ok:true};status=200;}
     else if(path==='/api/session' && options.method==='DELETE'){state.login=false;response={ok:true};status=200;}
     else if(path==='/api/session' && state.login){response={authenticated:true,handle:'alice'};status=200;}
     else if(path==='/api/matches' && options.method==='POST'){response={matchId:MATCH};status=201;}
     else if(path===`/api/matches/${MATCH}` && state.login){response={matchId:MATCH,status:state.lobby,players:state.lobby==='READY'?[{side:'A',handle:'alice'},{side:'B',handle:'bob'}]:[{side:'A',handle:'alice'}],
-      ...(state.lobby==='READY'?{state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:[]}}:{})};status=200;}
+      ...(state.lobby==='READY'?{state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:state.board,
+        ...(state.deckPhase?{phase:state.deckPhase,actingSide:'A',
+          pendingDecision:null,movedUnitIds:[],drawPileCount:10,
+          discardPile:[],cardInPlay:null}:{})}}:{})};status=200;}
     else if(path===`/api/matches/${MATCH}/commands` && state.login){state.revision++;response={code:'APPLIED'};status=200;}
     return {ok:status<400,status,json:async()=>response};
   };
@@ -165,4 +173,57 @@ test('visibility race: hiding during session revalidation must not resume queued
   await ctx.document.dispatch('visibilitychange');
   await nextTurn();
   assert.equal(reads(),before+1,'the queued notice resumes only after a fresh visible session check');
+}));
+
+
+test('stage panels collapse unused login/lobby/board and preserve manual folding on refresh',()=>withBrowser(async ctx=>{
+  assert.equal(ctx.element('login-details').open,true);
+  assert.equal(ctx.element('match-details').open,false);
+  assert.equal(ctx.element('movement-details').open,false);
+  await ctx.element('login-form').dispatch('submit');
+  assert.equal(ctx.element('login-details').open,false);
+  assert.equal(ctx.element('login-form').hidden,true);
+  assert.equal(ctx.element('logout').disabled,false);
+  assert.equal(ctx.element('match-details').open,true);
+  assert.equal(ctx.element('invite-details').open,true);
+  await ctx.element('create').dispatch('click');
+  assert.equal(ctx.element('movement-details').open,false);
+  ctx.state.lobby='READY';
+  await ctx.element('refresh').dispatch('click');
+  assert.equal(ctx.element('match-details').open,false);
+  assert.equal(ctx.element('state-details').open,true);
+  assert.equal(ctx.element('deck-details').open,true);
+  ctx.state.deckPhase='ASSIGN_ORDERS';
+  await ctx.element('refresh').dispatch('click');
+  assert.equal(ctx.element('movement-details').open,true);
+  ctx.element('movement-details').open=false;
+  await ctx.element('refresh').dispatch('click');
+  assert.equal(ctx.element('movement-details').open,false,'preserve user collapse during same phase');
+  await ctx.element('logout').dispatch('click');
+  assert.equal(ctx.element('login-form').hidden,false);
+  assert.equal(ctx.element('login-details').open,true);
+  assert.equal(ctx.element('deck-details').open,false);
+  assert.equal(ctx.element('movement-details').open,false);
+}));
+
+test('unit selectors offer current own units, enemy targets and submit selected IDs only',()=>withBrowser(async ctx=>{
+  await ctx.element('login-form').dispatch('submit');
+  await ctx.element('create').dispatch('click');
+  ctx.state.lobby='READY';
+  ctx.state.deckPhase='ASSIGN_ORDERS';
+  await ctx.element('refresh').dispatch('click');
+  const values=id=>ctx.element(id).children.map(option=>option.value).filter(Boolean);
+  assert.deepEqual(values('deck-units'),['synthetic-a','synthetic-a2']);
+  assert.deepEqual(values('deck-move-unit'),['synthetic-a','synthetic-a2']);
+  assert.deepEqual(values('deck-target'),['synthetic-b']);
+  assert.equal(ctx.element('deck-move-unit').value,'','no implicit own unit selected');
+  const select=ctx.element('deck-units');
+  select.children[0].selected=true;
+  select.children[1].selected=true;
+  await ctx.element('deck-orders').dispatch('click');
+  const request=ctx.requests.find(entry=>entry.path===`/api/matches/${MATCH}/commands`);
+  const payload=JSON.parse(request.body);
+  assert.equal(payload.type,'assign_synthetic_orders');
+  assert.deepEqual(payload.unitIds,['synthetic-a','synthetic-a2']);
+  assert.equal(payload.unitIds.includes('synthetic-b'),false);
 }));
