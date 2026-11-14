@@ -165,7 +165,7 @@ test('V2 journal: same key and identical command is a read-only draft retry',()=
 test('V2 journal: same key with different path conflicts, even same destination',()=>{
   const first=proposed();
   for(const other of [
-    command('unitA',2,[cell(2,5),cell(3,5),cell(4,4)]),
+    command('unitA',2,[cell(3,3),cell(4,4)]),
     command('unitA',2,[cell(3,4)]),
     command('unitA',2,[cell(3,4),cell(2,5)]),
     command('reserve',2,[cell(3,6)])
