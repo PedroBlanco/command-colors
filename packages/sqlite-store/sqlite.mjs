@@ -14,7 +14,8 @@ import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.
 import {proposeMovementDraft, projectMovementDraft} from '../ancients-rules/movement-draft-contract.mjs';
 import {screenAncientsMovementCommitIntent} from '../ancients-rules/movement-commit-intent-screen.mjs';
 import {snapshotStagedSequenceRequest,
-  snapshotStagedMovementDraftRequest} from '../ancients-rules/staged-sequence-request-snapshot.mjs';
+  snapshotStagedMovementDraftRequest,
+  snapshotFootTransactionProbeRequest} from '../ancients-rules/staged-sequence-request-snapshot.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -469,6 +470,51 @@ export function openSqliteComposition({file, clock = Date.now,
           if(!hasExperimentalSectionHistory(rowOrThrow()))
             return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
           return sectionHistory.previewVerifiedFootCore(identity.actor,stable,trustedScenario);
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY: evaluate a future commit's admission gates under
+       * BEGIN IMMEDIATE without writing a SINGLE byte of movement data.
+       *
+       * This is deliberately not a move command. No result can be APPLIED:
+       * even a fully checked first-foot-step returns 409 COMMIT_DISABLED.
+       * Authentication, membership, idempotency key lookup, revision and
+       * full CCWB replay are read only AFTER the writer lock is acquired.
+       * No HTTP/SSE route references this method.
+       */
+      probeExperimentalSectionFootCommit(request = {},trustedScenario) {
+        const stable=snapshotFootTransactionProbeRequest(request);
+        if(stable===null)
+          return {status:400,code:'INVALID_SECTION_LAB_FOOT_PROBE_REQUEST'};
+        return atomic(() => {
+          const identity=resolveSectionLabActor(stable.sessionToken);
+          if(identity.error)return identity.error;
+          const row=rowOrThrow();
+          if(!hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          if(row.game_revision!==stable.expectedRevision)
+            return {status:409,code:'STALE_REVISION'};
+          // A key already claimed by a card or section-order command must
+          // NEVER be reused for a different kind of command. The LAB cannot
+          // assert ALREADY_APPLIED for a foot move, because none was saved.
+          const taken=db.prepare(
+            'SELECT committed_revision FROM game_commands WHERE match_id=? AND actor=? AND idem_key=?'
+          ).get(matchId,identity.actor,stable.idempotencyKey);
+          if(taken)
+            return {status:409,code:'SECTION_LAB_FOOT_IDEMPOTENCY_KEY_IN_USE'};
+          const checked=sectionHistory.previewVerifiedFootCore(
+            identity.actor,stable,trustedScenario);
+          if(checked.status!==200||checked.preview.status!=='PRIVATE_CORE_FOOT_PROPOSAL')
+            return {status:409,code:'SECTION_LAB_FOOT_PROBE_REJECTED',
+              reason:checked.preview?.reason??'INVALID_VERIFIED_STATE'};
+          // No proposed board, command, signature or key is returned.
+          return Object.freeze({
+            status:409,code:'SECTION_LAB_FOOT_COMMIT_DISABLED',
+            checkedRevision:row.game_revision,
+            ruleSubset:'BASE_FOOT_OPEN_ONE_HEX_V1',
+            movementAuthorized:false,officialMovementAuthorized:false,
+            canCommit:false,boardChanged:false,dbChanged:false
+          });
         });
       },
       /** INTERNAL LAB ONLY: evidence of a hypothetical sequence. Session,
