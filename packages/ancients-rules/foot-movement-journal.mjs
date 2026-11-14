@@ -42,11 +42,13 @@ const data=(x,depth=0,budget={left:10000},stack=new WeakSet())=>{
   stack.add(x);
   let copy;
   if(Array.isArray(x)){
-    if(Object.getPrototypeOf(x)!==Array.prototype||x.length>MAX_ENTRIES||
-       Reflect.ownKeys(x).length!==x.length+1)
+    const size=Object.getOwnPropertyDescriptor(x,'length')?.value;
+    if(Object.getPrototypeOf(x)!==Array.prototype||
+       !Number.isSafeInteger(size)||size<0||size>MAX_ENTRIES||
+       Reflect.ownKeys(x).length!==size+1)
       throw Error('FOOT_JOURNAL_INVALID_DATA');
     copy=[];
-    for(let i=0;i<x.length;i++){
+    for(let i=0;i<size;i++){
       const d=Object.getOwnPropertyDescriptor(x,String(i));
       if(!d||!Object.hasOwn(d,'value')||!d.enumerable)
         throw Error('FOOT_JOURNAL_INVALID_DATA');
