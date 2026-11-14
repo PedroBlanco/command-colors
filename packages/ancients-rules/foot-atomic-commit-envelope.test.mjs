@@ -46,7 +46,7 @@ const journal=()=>{
   return result.journal;
 };
 const args=()=>({
-  journal:journal(),trustedMatchId:MATCH,
+  journal:structuredClone(journal()),trustedMatchId:MATCH,
   trustedInitialState:board(),trustedPolicy:policy(),
   currentGameRevision:2,
   recordedCommands:historyCommands(),recordedEvents:historyEvents()
