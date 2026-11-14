@@ -141,8 +141,10 @@ test('V2 audit: missing independently sourced anchor or injected authority block
 });
 
 test('V2 audit: invalid actions and duplicate movement have no partial result',()=>{
-  const args=prepare();
-  args.actions=[command(),command('unitA',3,[cell(5,4)])];
+  const args=structuredClone(prepare([
+    command(),command('reserve',3,[cell(3,6)])
+  ]));
+  args.actions[1]=command('unitA',3,[cell(5,4)]);
   denied(audit(args),'UNIT_ALREADY_MOVED',1);
 });
 
@@ -200,7 +202,7 @@ test('V2 audit: cycles, sparse actions and extra array attributes block',()=>{
 });
 
 test('V2 audit: candidate is detached and deeply frozen',()=>{
-  const args=prepare(),r=audit(args);
+  const args=structuredClone(prepare()),r=audit(args);
   args.proposedState.board.units[0].col=8;
   args.proposedTransitions[0].path[1].col=8;
   assert.equal(r.replayedState.board.units[0].col,4);
