@@ -5,6 +5,8 @@ import {initializeSectionHistoryLab,applySectionHistoryLabCommand}
 import {ANCIENTS_RULESET} from './movement-profile.mjs';
 import {planPrivateFootSqliteStage as plan}
   from './private-foot-sqlite-stage.mjs';
+import {inspectFootStageForSectionAdvance as lifecycle}
+  from './private-foot-stage-lifecycle.mjs';
 
 const MATCH='11111111-2222-4333-8444-555555555555';
 const SECOND='99999999-8888-4777-8666-555555555555';
@@ -164,4 +166,49 @@ test('private foot stage: private hand, keys or internal metadata never enter re
     result.journal.entries[0],result.journal.state,
     result.journal.state.board.units[0]])
     assert.equal(Object.isFrozen(v),true);
+});
+
+const footLifecycle=(foot,changes={})=>lifecycle({
+  persisted:{schemaVersion:1,...(foot===undefined?{}:
+    {ancientsFootMovementJournalLab:foot})},
+  matchId:MATCH,gameRevision:2,actor:'A',
+  idempotencyKey:'section_turn_end_001',...changes
+});
+test('private foot lifecycle: no staged journal does not block a fresh section command',()=>{
+  const state=footLifecycle(undefined);
+  assert.equal(state.status,'ABSENT');
+  assert.equal(Object.isFrozen(state),true);
+});
+test('private foot lifecycle: valid stage is replaceable by a different section key',()=>{
+  const saved=plan(input());accepted(saved);
+  const check=footLifecycle(saved.journal);
+  assert.equal(check.status,'REPLACEABLE');
+  assert.equal(check.kind,'PRIVATE_FOOT_STAGE_LIFECYCLE_V1');
+  assert.equal(Object.isFrozen(check),true);
+});
+test('private foot lifecycle: staged foot key cannot masquerade as a section command',()=>{
+  const saved=plan(input());accepted(saved);
+  assert.equal(footLifecycle(saved.journal,{idempotencyKey:KEY}).status,
+    'KEY_CONFLICT');
+  assert.equal(footLifecycle(saved.journal,{actor:'B',idempotencyKey:KEY}).status,
+    'REPLACEABLE');
+});
+test('private foot lifecycle: corrupted, stale and cross-match journals fail closed',()=>{
+  const saved=plan(input());accepted(saved);
+  for(const corrupt of [
+    null,'unknown',[],{},
+    (()=>{const j=structuredClone(saved.journal);j.matchId=SECOND;return j})(),
+    (()=>{const j=structuredClone(saved.journal);j.state.board.units[0].col=9;return j})(),
+    (()=>{const j=structuredClone(saved.journal);j.entries[0].signature='fake';return j})(),
+    (()=>{const j=structuredClone(saved.journal);j.entries.push(j.entries[0]);return j})()
+  ])assert.equal(footLifecycle(corrupt).status,'CORRUPT');
+  assert.equal(footLifecycle(saved.journal,{gameRevision:3}).status,'CORRUPT');
+  assert.equal(footLifecycle(saved.journal,{matchId:SECOND}).status,'CORRUPT');
+});
+test('private foot lifecycle: malformed operation context cannot authorize cleanup',()=>{
+  const saved=plan(input());accepted(saved);
+  for(const override of [
+    {gameRevision:-1},{actor:'G'},{matchId:null},
+    {idempotencyKey:null},{persisted:null}
+  ])assert.equal(footLifecycle(saved.journal,override).status,'CORRUPT');
 });
