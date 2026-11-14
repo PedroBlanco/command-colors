@@ -7,6 +7,7 @@ import {
   FOOT_JOURNAL_KIND,FOOT_JOURNAL_SIGNATURE_PREFIX,
   FOOT_EVENT_PROPOSAL,initializeFootMovementJournal as initialize,
   replayFootMovementJournal as replay,
+  checkFootJournalAnchor as anchored,
   proposeFootMovementJournalAppend as append
 } from './foot-movement-journal.mjs';
 
@@ -294,4 +295,73 @@ test('foot journal: full journal cannot be published as an official event',()=>{
     result.journal.entries[0].signature),false);
   assert.equal(result.canCommit,false);
   assert.equal(result.officialMovementAuthorized,false);
+});
+
+test('foot journal: anchored replay agrees with independent server initial state and policy',()=>{
+  const journal=first().journal;
+  const result=anchored({
+    journal, trustedInitialState:game(),trustedPolicy:rules(),rowRevision:3
+  });
+  assert.equal(result.status,'PRIVATE_FOOT_JOURNAL_ANCHORED_CANDIDATE');
+  assert.equal(result.rowRevision,3);
+  assert.equal(result.entryCount,1);
+  assert.equal(result.journal,null);
+  assert.deepEqual(result.replayedState,journal.state);
+  assert.equal(result.canCommit,false);
+  assert.equal(result.movementAuthorized,false);
+});
+
+test('foot journal: policy or initial board provenance drift prevents an anchored replay',()=>{
+  const journal=first().journal;
+  const policy=rules();policy.unitTypes.unitA='HEAVY_INFANTRY';
+  rejected(anchored({journal,trustedInitialState:game(),
+    trustedPolicy:policy,rowRevision:3}),'FOOT_JOURNAL_PROVENANCE_DRIFT');
+  const initial=game();initial.board.units[0].col=4;
+  rejected(anchored({journal,trustedInitialState:initial,
+    trustedPolicy:rules(),rowRevision:3}),'FOOT_JOURNAL_PROVENANCE_DRIFT');
+});
+
+test('foot journal: database revision must match the replayed revision',()=>{
+  const journal=first().journal;
+  rejected(anchored({journal,trustedInitialState:game(),
+    trustedPolicy:rules(),rowRevision:2}),'FOOT_JOURNAL_ROW_REVISION_DRIFT');
+  rejected(anchored({journal,trustedInitialState:game(),
+    trustedPolicy:rules(),rowRevision:4}),'FOOT_JOURNAL_ROW_REVISION_DRIFT');
+});
+
+test('foot journal: no anchor or invalid revision cannot be used as provenance',()=>{
+  const journal=first().journal;
+  for(const params of [
+    {journal},
+    {journal,trustedInitialState:game(),rowRevision:3},
+    {journal,trustedPolicy:rules(),rowRevision:3},
+    {journal,trustedInitialState:game(),trustedPolicy:rules(),rowRevision:'3'},
+    {journal,trustedInitialState:game(),trustedPolicy:rules(),rowRevision:-1}
+  ])rejected(anchored(params),'FOOT_JOURNAL_ANCHOR_REQUIRED');
+});
+
+test('foot journal: anchored consistency is semantic, not dependent on JSON key order',()=>{
+  const journal=JSON.parse(JSON.stringify(first().journal));
+  const initial=Object.fromEntries(Object.entries(game()).reverse());
+  const policy=Object.fromEntries(Object.entries(rules()).reverse());
+  assert.equal(anchored({journal,trustedInitialState:initial,trustedPolicy:policy,
+    rowRevision:3}).status,'PRIVATE_FOOT_JOURNAL_ANCHORED_CANDIDATE');
+});
+
+test('foot journal: even a trusted anchor never accepts a corrupted persisted step',()=>{
+  const journal=structuredClone(first().journal);
+  journal.entries[0].transition.to.col=9;
+  rejected(anchored({journal,trustedInitialState:game(),
+    trustedPolicy:rules(),rowRevision:3}),'INVALID_FOOT_JOURNAL_REPLAY');
+});
+
+test('foot journal: explicitly occupied adjacent destination is refused',()=>{
+  const initial=game();
+  initial.board.units[1].col=3;initial.board.units[1].row=4;
+  const firstRecord=initialize({initialState:initial,policy:rules()});
+  assert.equal(firstRecord.status,'PRIVATE_FOOT_JOURNAL_INITIAL_CANDIDATE');
+  const result=append({
+    journal:firstRecord.journal,command:command(),idempotencyKey:KEY_A
+  });
+  rejected(result,'OCCUPIED_DESTINATION');
 });
