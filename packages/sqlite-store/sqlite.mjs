@@ -548,8 +548,14 @@ export function openSqliteComposition({file, clock = Date.now,
             return {status:409,code:'SECTION_LAB_FOOT_IDEMPOTENCY_KEY_IN_USE'};
 
           const persisted=decode(row.private_state);
-          const previous=Object.hasOwn(persisted,'ancientsFootMovementJournalLab')
-            ? persisted.ancientsFootMovementJournalLab : null;
+          const exists=Object.hasOwn(persisted,'ancientsFootMovementJournalLab');
+          const previous=exists ? persisted.ancientsFootMovementJournalLab : null;
+          // An existing but null/invalid-looking record is not equivalent
+          // to "no journal": do not replace a corrupted private history.
+          if(exists&&(previous===null||typeof previous!=='object'||
+             Array.isArray(previous)))
+            return {status:409,code:'SECTION_LAB_FOOT_STAGE_REJECTED',
+              reason:'FOOT_LAB_PERSISTED_JOURNAL_DRIFT'};
           const plan=sectionHistory.proposeFootJournalStage(
             identity.actor,stable,trustedScenario,previous);
           if(plan.status==='PRIVATE_FOOT_STAGE_ALREADY_RECORDED')
