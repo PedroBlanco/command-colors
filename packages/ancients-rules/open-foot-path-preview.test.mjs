@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ANCIENTS_RULESET} from './movement-profile.mjs';
+import {precheckAncientsMovementPath}
+  from './movement-path-precheck.mjs';
 import {
   assessOpenHexPathGeometry as pathGeometry
 } from './movement-regimes.mjs';
@@ -273,4 +275,43 @@ test('open foot preview: source changes cannot change frozen candidate result',(
   assert.equal(Object.isFrozen(candidate.destination),true);
   assert.equal(candidate.dbChanged,false);
   assert.equal(before.path[1].col,4);
+});
+
+const previousPrecheck=(type,path,positions=occupied())=>
+  precheckAncientsMovementPath({
+    units:positions.map(u=>({...u,type:u.id==='unitA'?type:'HEAVY_INFANTRY'})),
+    leaders:[],unitId:'unitA',path,terrain:[]
+  });
+
+test('open foot preview: light and auxilia profile verdicts agree with existing path screening',()=>{
+  for(const type of ['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY',
+    'LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY']){
+    const legacy=previousPrecheck(type,two());
+    const newer=preview(input({unitType:type}));
+    assert.equal(legacy.status,'CANDIDATE');
+    assert.equal(newer.status,'OPEN_FOOT_PATH_CANDIDATE');
+    assert.equal(newer.battleAfterMovement,legacy.battleAfterMovement);
+  }
+});
+
+test('open foot preview: medium and heavy two-step rejections agree with prior profile limits',()=>{
+  for(const type of ['MEDIUM_INFANTRY','HEAVY_INFANTRY']){
+    const legacy=previousPrecheck(type,two());
+    const newer=preview(input({unitType:type}));
+    assert.equal(legacy.status,'REQUIRES_RULE_EXCEPTION');
+    fail(newer,'STANDARD_FOOT_MOVEMENT_EXCEEDED');
+    assert.equal(newer.canCommit,false);
+  }
+});
+
+test('open foot preview: occupied intermediate step is rejected by both existing and shared paths',()=>{
+  const positions=[...occupied(),{
+    id:'blocker',side:'B',col:3,row:4
+  }];
+  const legacy=previousPrecheck('LIGHT_INFANTRY',two(),positions);
+  const newer=preview(input({occupiedCells:positions}));
+  assert.equal(legacy.status,'BLOCKED');
+  assert.equal(legacy.reason,'OCCUPIED_HEX');
+  assert.equal(legacy.step,0);
+  fail(newer,'OCCUPIED_DESTINATION',0);
 });
