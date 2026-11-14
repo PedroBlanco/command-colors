@@ -197,7 +197,8 @@ test('foot atomic envelope: stale or fabricated current revision blocks',()=>{
   }
   for(const revision of [-1,'2',1.2,null]){
     const input=args();input.currentGameRevision=revision;
-    blocked(prepare(input),'INVALID_FOOT_ATOMIC_SCOPE');
+    blocked(prepare(input),revision===1.2
+      ?'INVALID_FOOT_ATOMIC_INPUT':'INVALID_FOOT_ATOMIC_SCOPE');
   }
 });
 
