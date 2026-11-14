@@ -130,3 +130,61 @@ export function assessOpenHexStepGeometry(input={}){
     return geometry('CANDIDATE_GEOMETRY',null);
   }catch{return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');}
 }
+
+/**
+ * Type-agnostic complete path geometry, composed from the same one-edge
+ * primitive. It copies all coordinates via own data descriptors BEFORE
+ * walking the path; no getter or browser-calculated permission is trusted.
+ *
+ * This is not an authorization and never changes a board or a revision.
+ */
+const pathVerdict=(status,reason,step=null,destination=null,steps=null)=>
+  Object.freeze({
+    status,reason,step,destination:destination===null?null:
+      Object.freeze({col:destination.col,row:destination.row}),
+    steps,movementAuthorized:false,canCommit:false,needsFullLegalityCheck:true
+  });
+const cellArray=(source,min,max)=>{
+  if(!Array.isArray(source)||Object.getPrototypeOf(source)!==Array.prototype)
+    return null;
+  const size=Object.getOwnPropertyDescriptor(source,'length')?.value;
+  if(!Number.isSafeInteger(size)||size<min||size>max||
+     Reflect.ownKeys(source).length!==size+1)return null;
+  const cells=[];
+  for(let i=0;i<size;i++){
+    const desc=Object.getOwnPropertyDescriptor(source,String(i));
+    if(!desc?.enumerable||!Object.hasOwn(desc,'value'))return null;
+    const cell=readCell(desc.value);
+    if(!cell)return null;
+    cells.push(cell);
+  }
+  return cells;
+};
+export function assessOpenHexPathGeometry(input={}){
+  try{
+    if(!hasFields(input,['from','path','occupiedCells']))
+      return pathVerdict('BLOCKED','INVALID_PATH_GEOMETRY_INPUT');
+    const from=readCell(field(input,'from'));
+    const path=cellArray(field(input,'path'),1,32);
+    const occupied=cellArray(field(input,'occupiedCells'),0,117);
+    if(!from||!path||!occupied)
+      return pathVerdict('BLOCKED','INVALID_PATH_GEOMETRY_INPUT');
+    let previous=from;
+    const visited=new Set([key(from)]);
+    for(let i=0;i<path.length;i++){
+      const target=path[i];
+      if(visited.has(key(target)))
+        return pathVerdict('BLOCKED','REPEATED_HEX',i);
+      const edge=assessOpenHexStepGeometry({
+        from:previous,to:target,occupiedCells:occupied
+      });
+      if(edge.status!=='CANDIDATE_GEOMETRY')
+        return pathVerdict('BLOCKED',edge.reason,i);
+      visited.add(key(target));
+      previous=target;
+    }
+    return pathVerdict('CANDIDATE_PATH_GEOMETRY',null,null,previous,path.length);
+  }catch{
+    return pathVerdict('BLOCKED','INVALID_PATH_GEOMETRY_INPUT');
+  }
+}
