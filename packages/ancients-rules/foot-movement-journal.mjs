@@ -181,6 +181,37 @@ export function replayFootMovementJournal(input){
   }catch{return reject('INVALID_FOOT_JOURNAL');}
 }
 
+/**
+ * Server-owned cross-check for an independently sourced initial state, rule
+ * policy and current row revision. The caller must NOT derive these anchors
+ * by merely reading them back from this same untrusted journal.
+ *
+ * This establishes consistency with the supplied trusted sources, not user
+ * authentication, cryptographic provenance or movement authorization.
+ */
+export function checkFootJournalAnchor({
+  journal:input, trustedInitialState, trustedPolicy, rowRevision
+}={}){
+  try{
+    if(!Number.isSafeInteger(rowRevision)||rowRevision<0||
+       trustedInitialState===undefined||trustedPolicy===undefined)
+      return reject('FOOT_JOURNAL_ANCHOR_REQUIRED');
+    const journal=data(input),state=data(trustedInitialState),
+      policy=data(trustedPolicy);
+    const result=rebuild(journal);
+    if(result.error)return reject(result.error,result.step??null);
+    if(!same(journal.initialState,state)||!same(journal.policy,policy))
+      return reject('FOOT_JOURNAL_PROVENANCE_DRIFT');
+    if(result.state.revision!==rowRevision)
+      return reject('FOOT_JOURNAL_ROW_REVISION_DRIFT');
+    return Object.freeze({
+      status:'PRIVATE_FOOT_JOURNAL_ANCHORED_CANDIDATE',
+      reason:null,journal:null,replayedState:freeze(data(result.state)),
+      entryCount:journal.entries.length,rowRevision,...guard
+    });
+  }catch{return reject('FOOT_JOURNAL_ANCHOR_INVALID');}
+}
+
 /** Propose one append, including semantic idempotent retry behavior.
  * The resulting journal and event proposal must NEVER be persisted without
  * future trusted atomic authorization; a retry here is only a model result. */
