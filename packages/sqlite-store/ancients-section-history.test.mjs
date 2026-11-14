@@ -2926,3 +2926,47 @@ test('CCWB V2 private path: failed private_state update rolls back with no commi
   assert.deepEqual(footStageSnapshot(db,matchId),before);
   assert.equal(db.isTransaction,false);
 }));
+
+test('CCWB V2 private path: authenticated session check executes inside SQLite writer lock',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const other=connect().unsafeTestDatabase();
+  other.exec('PRAGMA busy_timeout=25');
+  const original=app.identity.resolveSession;
+  let checks=0;
+  try{
+    app.identity.resolveSession=token=>{
+      assert.equal(db.isTransaction,true);
+      assert.throws(()=>other.exec('BEGIN IMMEDIATE'),
+        /SQLITE_BUSY|database is locked/i);
+      checks++;
+      return original(token);
+    };
+    assert.equal(stageV2(store,tokens.A).code,
+      'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  }finally{app.identity.resolveSession=original;}
+  assert.equal(checks,1);
+  assert.equal(db.isTransaction,false);
+  other.exec('BEGIN IMMEDIATE');other.exec('ROLLBACK');
+}));
+
+test('CCWB V2 private path: failed real event insertion rolls back draft expiry and revision',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,
+    'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  db.exec(`CREATE TEMP TRIGGER reject_v2_section_event BEFORE INSERT
+    ON game_events BEGIN SELECT RAISE(FAIL,'V2_REAL_EVENT_FAILED'); END;`);
+  try{
+    assert.throws(()=>store.dispatchExperimentalSectionHistory(
+      endLabSectionTurn(tokens.A,'event_fail_v2_path_001')),
+      /V2_REAL_EVENT_FAILED/);
+  }finally{db.exec('DROP TRIGGER reject_v2_section_event');}
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+  assert.equal(stageV2(store,tokens.A).code,
+    'SECTION_LAB_FOOT_PATH_V2_ALREADY_RECORDED');
+}));
