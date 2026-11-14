@@ -2524,3 +2524,30 @@ test('CCWB private foot stage: scenario drift and changed revision reject withou
     });
   assert.deepEqual(footStageSnapshot(db,matchId),before);
 }));
+
+test('CCWB private foot stage: null or malformed stored record cannot be silently overwritten',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),trustedOpenFootScenario()).code,
+    'SECTION_LAB_FOOT_STAGE_SAVED');
+  const base=JSON.parse(db.prepare(
+    'SELECT private_state FROM matches WHERE id=?'
+  ).get(matchId).private_state);
+  for(const invalid of [null,'damaged',[]]){
+    const altered=structuredClone(base);
+    altered.ancientsFootMovementJournalLab=invalid;
+    db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+      .run(JSON.stringify(altered),matchId);
+    const before=footStageSnapshot(db,matchId);
+    const response=store.stageExperimentalSectionFootJournal(
+      footStageRequest(tokens.A),trustedOpenFootScenario());
+    assert.deepEqual(response,{
+      status:409,code:'SECTION_LAB_FOOT_STAGE_REJECTED',
+      reason:'FOOT_LAB_PERSISTED_JOURNAL_DRIFT'
+    });
+    assert.deepEqual(footStageSnapshot(db,matchId),before);
+  }
+  assert.equal(db.isTransaction,false);
+}));
