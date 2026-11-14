@@ -2251,3 +2251,303 @@ test('CCWB foot transaction gate: corrupted CCWB replay rolls back and never ret
   assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
   assert.equal(db.isTransaction,false);
 }));
+
+const footStageRequest=(sessionToken,extra={})=>({
+  sessionToken,expectedRevision:2,
+  idempotencyKey:'private_foot_stage_001',actions:[sequenceUnit()],...extra
+});
+const footStageSnapshot=(db,matchId)=>({
+  match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+  events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+  commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+});
+
+test('CCWB private foot stage: one proposed movement is durable but never changes game revision',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  const playerA=store.view('A'),playerB=store.view('B');
+  const save=store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),trustedOpenFootScenario());
+  assert.deepEqual(save,{
+    status:200,code:'SECTION_LAB_FOOT_STAGE_SAVED',
+    provisionalRevision:3,privateDraftChanged:true,gameRevisionChanged:false,
+    boardChanged:false,movementAuthorized:false,
+    officialMovementAuthorized:false,canCommit:false
+  });
+  assert.equal(db.isTransaction,false);
+  const after=footStageSnapshot(db,matchId);
+  assert.equal(after.match.game_revision,before.match.game_revision);
+  assert.equal(after.match.lobby_revision,before.match.lobby_revision);
+  assert.notEqual(after.match.private_state,before.match.private_state);
+  assert.deepEqual(after.events,before.events);
+  assert.deepEqual(after.commands,before.commands);
+  const persisted=JSON.parse(after.match.private_state);
+  const journal=persisted.ancientsFootMovementJournalLab;
+  assert.equal(journal.matchId,matchId);
+  assert.equal(journal.entries.length,1);
+  assert.equal(journal.entries[0].idempotencyKey,'private_foot_stage_001');
+  assert.equal(journal.entries[0].command.actor,'A');
+  assert.equal(journal.state.revision,3);
+  assert.equal(journal.state.board.units[0].col,3);
+  assert.equal(persisted.ancientsSectionHistoryLab.state.board.units[0].col,2);
+  assert.deepEqual(store.view('A'),playerA);
+  assert.deepEqual(store.view('B'),playerB);
+  assert.equal(JSON.stringify(store.view('B')).includes('ancientsFootMovementJournalLab'),false);
+  assert.equal(JSON.stringify(store.publicEvents('A')).includes('FOOT_STEP_PUBLIC_EVENT_PROPOSAL'),false);
+  assert.equal(JSON.stringify(connect().getStore(matchId).view('A')).includes(
+    'private_foot_stage_001'),false);
+}));
+
+test('CCWB private foot stage: identical key and action survive restart with zero additional writes',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const request=footStageRequest(tokens.A);
+  assert.equal(store.stageExperimentalSectionFootJournal(
+    request,trustedOpenFootScenario()).code,'SECTION_LAB_FOOT_STAGE_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  const repeated=connect().getStore(matchId)
+    .stageExperimentalSectionFootJournal(request,trustedOpenFootScenario());
+  assert.deepEqual(repeated,{
+    status:200,code:'SECTION_LAB_FOOT_STAGE_ALREADY_RECORDED',
+    provisionalRevision:3,privateDraftChanged:false,gameRevisionChanged:false,
+    boardChanged:false,movementAuthorized:false,
+    officialMovementAuthorized:false,canCommit:false
+  });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB private foot stage: collision and second key never add another provisional move',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const request=footStageRequest(tokens.A);
+  assert.equal(store.stageExperimentalSectionFootJournal(
+    request,trustedOpenFootScenario()).code,'SECTION_LAB_FOOT_STAGE_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  const conflict=store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A,{actions:[
+      {kind:'UNIT',id:'unitA',path:[{col:2,row:5}]}
+    ]}),trustedOpenFootScenario());
+  assert.deepEqual(conflict,{
+    status:409,code:'SECTION_LAB_FOOT_STAGE_REJECTED',
+    reason:'FOOT_LAB_IDEMPOTENCY_CONFLICT'
+  });
+  const second=store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A,{idempotencyKey:'private_foot_stage_002'}),
+    trustedOpenFootScenario());
+  assert.deepEqual(second,{
+    status:409,code:'SECTION_LAB_FOOT_STAGE_REJECTED',
+    reason:'FOOT_LAB_ONE_STEP_ONLY'
+  });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB private foot stage: section commands own their keys, never register a foot retry',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  for(const key of ['private_preview_card_0001','private_preview_orders_0001']){
+    const collision=store.stageExperimentalSectionFootJournal(
+      footStageRequest(tokens.A,{idempotencyKey:key}),trustedOpenFootScenario());
+    assert.deepEqual(collision,{
+      status:409,code:'SECTION_LAB_FOOT_IDEMPOTENCY_KEY_IN_USE'
+    });
+  }
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB private foot stage: malformed request rejects before acquiring writer lock',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  let lookups=0;const original=app.identity.resolveSession;
+  try{
+    app.identity.resolveSession=token=>{lookups++;return original(token);};
+    for(const extra of [
+      {actor:'A'},{board:{}},{candidateEvidence:{}},
+      {expectedRevision:'2'},{idempotencyKey:'short'},{actions:[]},
+      {actions:[sequenceUnit(),sequenceUnit()]},
+      {actions:[{kind:'LEADER',id:'captain',path:[{col:2,row:5}]}]},
+      {actions:[{kind:'UNIT',id:'unitA',path:[{col:3,row:4},{col:4,row:4}]}]}
+    ]){
+      assert.deepEqual(store.stageExperimentalSectionFootJournal(
+        footStageRequest(tokens.A,extra),trustedOpenFootScenario()),{
+          status:400,code:'INVALID_SECTION_LAB_FOOT_STAGE_REQUEST'
+        });
+    }
+    const accessor=footStageRequest(tokens.A);
+    Object.defineProperty(accessor.actions[0].path[0],'col',{
+      enumerable:true,get(){throw Error('MALICIOUS_GETTER');}
+    });
+    assert.deepEqual(store.stageExperimentalSectionFootJournal(
+      accessor,trustedOpenFootScenario()),{
+        status:400,code:'INVALID_SECTION_LAB_FOOT_STAGE_REQUEST'
+      });
+    assert.equal(lookups,0);
+  }finally{app.identity.resolveSession=original;}
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB private foot stage: revoked session, outsider and rival cannot stage',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.stageExperimentalSectionFootJournal(
+    footStageRequest('expired'),trustedOpenFootScenario()),{
+      status:401,code:'UNAUTHENTICATED'
+    });
+  assert.deepEqual(store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.outsider),trustedOpenFootScenario()),{
+      status:404,code:'NOT_FOUND'
+    });
+  const rival=store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.B),trustedOpenFootScenario());
+  assert.deepEqual(rival,{
+    status:409,code:'SECTION_LAB_FOOT_STAGE_REJECTED',
+    reason:'NOT_ACTING_PLAYER'
+  });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  const other=connect();
+  other.identity.logOut(tokens.A);
+  assert.deepEqual(store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),trustedOpenFootScenario()),{
+      status:401,code:'UNAUTHENTICATED'
+    });
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB private foot stage: session-time mutation cannot change captured intent or key',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const request=footStageRequest(tokens.A),seen=[];
+  const proxy=new Proxy(request,{
+    get(){seen.push('GET');throw Error('FORBIDDEN_GET');}
+  });
+  const original=app.identity.resolveSession;
+  let count=0;
+  try{
+    app.identity.resolveSession=token=>{
+      assert.equal(db.isTransaction,true);
+      if(token===tokens.A){
+        count++;
+        request.sessionToken='revoked';
+        request.expectedRevision=55;
+        request.idempotencyKey='private_preview_card_0001';
+        request.actions[0].id='unitB';
+        request.actions[0].path[0].col=11;
+      }
+      return original(token);
+    };
+    const result=store.stageExperimentalSectionFootJournal(
+      proxy,trustedOpenFootScenario());
+    assert.equal(result.code,'SECTION_LAB_FOOT_STAGE_SAVED');
+  }finally{app.identity.resolveSession=original;}
+  assert.equal(count,1);
+  assert.deepEqual(seen,[]);
+  const stored=JSON.parse(db.prepare(
+    'SELECT private_state FROM matches WHERE id=?'
+  ).get(matchId).private_state).ancientsFootMovementJournalLab;
+  assert.equal(stored.entries[0].idempotencyKey,'private_foot_stage_001');
+  assert.equal(stored.entries[0].command.unitId,'unitA');
+  assert.equal(stored.entries[0].command.to.col,3);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB private foot stage: writer lock blocks a simultaneous writer then releases it',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const other=connect().unsafeTestDatabase();
+  other.exec('PRAGMA busy_timeout=25');
+  const original=app.identity.resolveSession;
+  let blocked=0;
+  try{
+    app.identity.resolveSession=token=>{
+      assert.equal(db.isTransaction,true);
+      assert.throws(()=>other.exec('BEGIN IMMEDIATE'),/SQLITE_BUSY|database is locked/i);
+      blocked++;
+      return original(token);
+    };
+    assert.equal(store.stageExperimentalSectionFootJournal(
+      footStageRequest(tokens.A),trustedOpenFootScenario()).code,
+      'SECTION_LAB_FOOT_STAGE_SAVED');
+  }finally{app.identity.resolveSession=original;}
+  assert.equal(blocked,1);
+  assert.equal(db.isTransaction,false);
+  other.exec('BEGIN IMMEDIATE');other.exec('ROLLBACK');
+}));
+
+test('CCWB private foot stage: tampered persisted foot journal cannot be retried or overwritten',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),trustedOpenFootScenario()).code,
+    'SECTION_LAB_FOOT_STAGE_SAVED');
+  const saved=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const persisted=JSON.parse(saved.private_state);
+  persisted.ancientsFootMovementJournalLab.entries[0].signature='TAMPERED';
+  db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(persisted),matchId);
+  const before=footStageSnapshot(db,matchId);
+  const retry=store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),trustedOpenFootScenario());
+  assert.deepEqual(retry,{
+    status:409,code:'SECTION_LAB_FOOT_STAGE_REJECTED',
+    reason:'FOOT_LAB_PERSISTED_JOURNAL_DRIFT'
+  });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB private foot stage: scenario drift and changed revision reject without partial write',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  const terrain=trustedOpenFootScenario();terrain.terrain=[{
+    col:10,row:8,kind:'HILL'
+  }];
+  const incompatible=store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),terrain);
+  assert.equal(incompatible.code,'SECTION_LAB_FOOT_STAGE_REJECTED');
+  assert.deepEqual(store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A,{expectedRevision:1}),trustedOpenFootScenario()),{
+      status:409,code:'STALE_REVISION'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB private foot stage: null or malformed stored record cannot be silently overwritten',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),trustedOpenFootScenario()).code,
+    'SECTION_LAB_FOOT_STAGE_SAVED');
+  const base=JSON.parse(db.prepare(
+    'SELECT private_state FROM matches WHERE id=?'
+  ).get(matchId).private_state);
+  for(const invalid of [null,'damaged',[]]){
+    const altered=structuredClone(base);
+    altered.ancientsFootMovementJournalLab=invalid;
+    db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+      .run(JSON.stringify(altered),matchId);
+    const before=footStageSnapshot(db,matchId);
+    const response=store.stageExperimentalSectionFootJournal(
+      footStageRequest(tokens.A),trustedOpenFootScenario());
+    assert.deepEqual(response,{
+      status:409,code:'SECTION_LAB_FOOT_STAGE_REJECTED',
+      reason:'FOOT_LAB_PERSISTED_JOURNAL_DRIFT'
+    });
+    assert.deepEqual(footStageSnapshot(db,matchId),before);
+  }
+  assert.equal(db.isTransaction,false);
+}));

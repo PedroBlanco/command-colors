@@ -517,6 +517,75 @@ export function openSqliteComposition({file, clock = Date.now,
           });
         });
       },
+      /**
+       * PRIVATE LAB ONLY: persist a ONE-STEP hypothetical foot movement
+       * JOURNAL, not a game movement. The replayed section card/order board
+       * and game_revision remain unchanged. No command/event is appended.
+       *
+       * Capture the untrusted request once before BEGIN IMMEDIATE. The
+       * actor, revision, idempotency namespace and full CCWB replay are
+       * checked within the writer lock. Only matches.private_state may
+       * change; key reservation is inside that private staged journal.
+       */
+      stageExperimentalSectionFootJournal(request = {},trustedScenario) {
+        const stable=snapshotFootTransactionProbeRequest(request);
+        if(stable===null)
+          return {status:400,code:'INVALID_SECTION_LAB_FOOT_STAGE_REQUEST'};
+        return atomic(() => {
+          const identity=resolveSectionLabActor(stable.sessionToken);
+          if(identity.error)return identity.error;
+          const row=rowOrThrow();
+          if(!hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          if(row.game_revision!==stable.expectedRevision)
+            return {status:409,code:'STALE_REVISION'};
+          // The same key cannot impersonate a previously confirmed card
+          // or order command. The stage itself is NOT a game_commands row.
+          const used=db.prepare(
+            'SELECT committed_revision FROM game_commands WHERE match_id=? AND actor=? AND idem_key=?'
+          ).get(matchId,identity.actor,stable.idempotencyKey);
+          if(used)
+            return {status:409,code:'SECTION_LAB_FOOT_IDEMPOTENCY_KEY_IN_USE'};
+
+          const persisted=decode(row.private_state);
+          const exists=Object.hasOwn(persisted,'ancientsFootMovementJournalLab');
+          const previous=exists ? persisted.ancientsFootMovementJournalLab : null;
+          // An existing but null/invalid-looking record is not equivalent
+          // to "no journal": do not replace a corrupted private history.
+          if(exists&&(previous===null||typeof previous!=='object'||
+             Array.isArray(previous)))
+            return {status:409,code:'SECTION_LAB_FOOT_STAGE_REJECTED',
+              reason:'FOOT_LAB_PERSISTED_JOURNAL_DRIFT'};
+          const plan=sectionHistory.proposeFootJournalStage(
+            identity.actor,stable,trustedScenario,previous);
+          if(plan.status==='PRIVATE_FOOT_STAGE_ALREADY_RECORDED')
+            return Object.freeze({
+              status:200,code:'SECTION_LAB_FOOT_STAGE_ALREADY_RECORDED',
+              provisionalRevision:plan.stagedRevision,
+              privateDraftChanged:false,gameRevisionChanged:false,
+              boardChanged:false,movementAuthorized:false,
+              officialMovementAuthorized:false,canCommit:false
+            });
+          if(plan.status!=='PRIVATE_FOOT_STAGE_APPEND_CANDIDATE')
+            return {status:409,code:'SECTION_LAB_FOOT_STAGE_REJECTED',
+              reason:plan.reason??'INVALID_PRIVATE_FOOT_STAGE'};
+          // The new staged journal is private and one-step only. No event,
+          // no public revision and no game_commands idempotency insertion.
+          const next={...persisted,ancientsFootMovementJournalLab:plan.journal};
+          const written=db.prepare(
+            'UPDATE matches SET private_state=? WHERE id=? AND game_revision=?'
+          ).run(JSON.stringify(next),matchId,row.game_revision);
+          if(written.changes!==1)
+            throw new Error('SECTION_LAB_FOOT_STAGE_CONCURRENT_UPDATE');
+          return Object.freeze({
+            status:200,code:'SECTION_LAB_FOOT_STAGE_SAVED',
+            provisionalRevision:plan.stagedRevision,
+            privateDraftChanged:true,gameRevisionChanged:false,
+            boardChanged:false,movementAuthorized:false,
+            officialMovementAuthorized:false,canCommit:false
+          });
+        });
+      },
       /** INTERNAL LAB ONLY: evidence of a hypothetical sequence. Session,
        *  match membership, private replay and candidate trace share one WAL
        *  snapshot. This cannot change game state or publish public events. */
