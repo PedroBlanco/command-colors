@@ -119,11 +119,16 @@ function verifyOccupiedRevisions(matchId,revision,commands,events){
  * A future implementation must repeat all checks inside BEGIN IMMEDIATE,
  * verify full historical event/command signatures, and only then write.
  */
-export function prepareFootAtomicCommitEnvelope({
-  journal,trustedMatchId,trustedInitialState,trustedPolicy,
-  currentGameRevision,recordedCommands,recordedEvents
-}={}){
+export function prepareFootAtomicCommitEnvelope(request={}){
   try{
+    // Capture ALL root fields once before processing them. Destructuring
+    // an untrusted Proxy/getter argument before try/catch would be unsafe.
+    const input=copiedData(request);
+    if(!exact(input,['journal','trustedMatchId','trustedInitialState',
+      'trustedPolicy','currentGameRevision','recordedCommands','recordedEvents']))
+      return deny('INVALID_FOOT_ATOMIC_SCOPE');
+    const {journal,trustedMatchId,trustedInitialState,trustedPolicy,
+      currentGameRevision,recordedCommands,recordedEvents}=input;
     if(typeof trustedMatchId!=='string'||!MATCH.test(trustedMatchId)||
        !safeRevision(currentGameRevision)||
        currentGameRevision>=Number.MAX_SAFE_INTEGER)
