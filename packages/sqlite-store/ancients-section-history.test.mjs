@@ -2683,3 +2683,24 @@ test('CCWB foot stage lifecycle: event insert failure rolls back section and ret
     'SELECT private_state FROM matches WHERE id=?').get(matchId).private_state),
     'ancientsFootMovementJournalLab'),false);
 }));
+
+test('CCWB foot stage lifecycle: replay of already committed card does not erase staged foot',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),trustedOpenFootScenario()).code,
+    'SECTION_LAB_FOOT_STAGE_SAVED');
+  const before=footStageSnapshot(db,matchId),persisted=JSON.parse(
+    before.match.private_state);
+  const {actor,idempotencyKey,...card}=
+    persisted.ancientsSectionHistoryLab.commands[0];
+  assert.equal(actor,'A');
+  assert.equal(idempotencyKey,'private_preview_card_0001');
+  const result=store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,...card,idempotencyKey
+  });
+  assert.equal(result.code,'ALREADY_APPLIED');
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
