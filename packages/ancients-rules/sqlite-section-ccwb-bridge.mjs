@@ -16,6 +16,10 @@ import {previewVerifiedSectionFootCore} from './verified-foot-core-preview.mjs';
 import {planPrivateFootSqliteStage} from './private-foot-sqlite-stage.mjs';
 import {inspectFootStageForSectionAdvance}
   from './private-foot-stage-lifecycle.mjs';
+import {planPrivateFootPathV2SqliteStage}
+  from './private-foot-path-v2-sqlite-stage.mjs';
+import {inspectFootPathV2StageForSectionAdvance}
+  from './private-foot-path-v2-lifecycle.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence,
@@ -167,6 +171,16 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
         return denied(409,'SECTION_LAB_FOOT_STAGE_INTEGRITY_FAILED');
       if(foot.status==='KEY_CONFLICT')
         return denied(409,'SECTION_LAB_FOOT_STAGE_KEY_IN_USE');
+      const pathV2=inspectFootPathV2StageForSectionAdvance({
+        persisted,matchId:row.id,gameRevision:row.game_revision,
+        actor:request.actor,idempotencyKey:request.idempotencyKey
+      });
+      if(pathV2.status==='CORRUPT')
+        return denied(409,'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED');
+      if(pathV2.status==='KEY_CONFLICT')
+        return denied(409,'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE');
+      if(foot.status!=='ABSENT'&&pathV2.status!=='ABSENT')
+        return denied(409,'SECTION_LAB_FOOT_STAGE_VERSION_CONFLICT');
       const next=result.nextState;
       const updated={...persisted,ancientsSectionHistoryLab:{
         initial:journal.initial,
@@ -178,6 +192,7 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       // Failed/retried commands return above without deleting anything.
       delete updated.ancientsSectionMovementDraft;
       delete updated.ancientsFootMovementJournalLab;
+      delete updated.ancientsFootPathJournalV2Lab;
       if(update.run(JSON.stringify(updated),next.revision,row.id,row.game_revision).changes!==1)
         throw new Error('SECTION_CCWB_CONCURRENT_UPDATE');
       eventInsert.run(row.id,next.revision,'public',JSON.stringify({...result.publicEvent,visibility:'public'}));
@@ -291,6 +306,19 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       idempotencyKey:request.idempotencyKey,trustedScenario,previousJournal
     });
   }
+  /** INTERNAL LAB ONLY. The caller holds BEGIN IMMEDIATE and has verified
+   * a live actor/membership; verify all CCWB SQL command/event history again
+   * before deriving a PRIVATE complete-path draft from server-owned data.
+   */
+  function proposeFootPathV2JournalStage(actor,request,trustedScenario,previousJournal){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    return planPrivateFootPathV2SqliteStage({
+      matchId,verifiedState:snapshot,actor,
+      expectedRevision:request.expectedRevision,actions:request.actions,
+      idempotencyKey:request.idempotencyKey,trustedScenario,previousJournal
+    });
+  }
   /** INTERNAL LAB ONLY. Replay verifies the private journal under the
    *  caller's WAL snapshot before building immutable audit evidence.
    *  Never persist or broadcast this trace as an executed movement. */
@@ -329,5 +357,6 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
   return Object.freeze({initialize,view,dispatch,previewMovement,
     previewLeaderMovement,previewMovementSequence,previewBoardProjection,
     previewOrderBudget,previewVerifiedFootCore,proposeFootJournalStage,
+    proposeFootPathV2JournalStage,
     previewMovementEvidence,previewOneHexIntent});
 }
