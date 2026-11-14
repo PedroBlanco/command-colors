@@ -253,12 +253,24 @@ test('foot atomic envelope: no Proxy property GET trap is executed on trusted-ro
 test('foot atomic envelope: no input can override authority or sneak an executable SQL plan',()=>{
   for(const key of ['actor','clientProof','canCommit','writeSql','sessionToken']){
     const input=args();input[key]=true;
-    // Unrecognized top-level options are not part of the returned envelope,
-    // but callers MUST NEVER use them as authority.
-    const result=prepare(input);
-    assert.equal(result.status,'PRIVATE_FOOT_ATOMIC_ENVELOPE_CANDIDATE');
-    assert.equal(result.canCommit,false);
-    assert.equal(result.dbChanged,false);
-    assert.equal(Object.hasOwn(result.envelope,key),false);
+    blocked(prepare(input),'INVALID_FOOT_ATOMIC_SCOPE');
   }
+});
+
+test('foot atomic envelope: root getter and absent fields fail closed before executing getter',()=>{
+  const input=args(),access=[];
+  Object.defineProperty(input,'currentGameRevision',{
+    enumerable:true,get(){access.push('GET');throw Error('ROOT_GETTER')}
+  });
+  blocked(prepare(input),'INVALID_FOOT_ATOMIC_INPUT');
+  assert.deepEqual(access,[]);
+  const missing=args();delete missing.recordedCommands;
+  blocked(prepare(missing),'INVALID_FOOT_ATOMIC_SCOPE');
+});
+
+test('foot atomic envelope: root Proxy never requires a property GET',()=>{
+  const input=new Proxy(args(),{
+    get(){throw Error('ROOT_PROXY_GET')}
+  });
+  assert.equal(prepare(input).status,'PRIVATE_FOOT_ATOMIC_ENVELOPE_CANDIDATE');
 });
