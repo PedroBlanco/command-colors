@@ -29,7 +29,7 @@ export const ANCIENTS_MOVEMENT_REGIMES=Object.freeze({
   HEAVY_CHARIOT:'CHARIOT'
 });
 
-const denied=(reason)=>Object.freeze({
+const denied=reason=>Object.freeze({
   status:'BLOCKED',reason,regime:null,
   movementAuthorized:false,canCommit:false,needsFullLegalityCheck:true
 });
@@ -37,14 +37,42 @@ const geometry=(status,reason)=>Object.freeze({
   status,reason,movementAuthorized:false,canCommit:false,
   needsFullLegalityCheck:true
 });
+const plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&
+  Object.getPrototypeOf(x)===Object.prototype;
+const field=(source,name)=>{
+  const d=Object.getOwnPropertyDescriptor(source,name);
+  return d&&d.enumerable&&Object.hasOwn(d,'value')?d.value:undefined;
+};
+const hasFields=(source,keys)=>plain(source)&&
+  Reflect.ownKeys(source).length===keys.length&&
+  keys.every(k=>Object.hasOwn(source,k)&&
+    Object.getOwnPropertyDescriptor(source,k)?.enumerable===true&&
+    Object.hasOwn(Object.getOwnPropertyDescriptor(source,k),'value'));
+const readCell=value=>{
+  if(!plain(value))return null;
+  const col=field(value,'col'),row=field(value,'row');
+  return Number.isSafeInteger(col)&&Number.isSafeInteger(row)&&
+    inBounds({col,row})?{col,row}:null;
+};
+const key=cell=>cell.col+','+cell.row;
 
 /**
  * Select a RULE REGIME without running a separate type-specific reducer.
  * Movement distances and battle allowances are read from the existing
  * BASE_MOVEMENT_PROFILES; they are not duplicated in this module.
  */
-export function assessAncientsMovementRegime({unitType,steps=1}={}){
+export function assessAncientsMovementRegime(input={}){
   try {
+    if(!plain(input))return denied('INVALID_MOVEMENT_REGIME_INPUT');
+    const keys=Reflect.ownKeys(input);
+    if(keys.length<1||keys.length>2||keys.some(k=>
+      k!=='unitType'&&k!=='steps')||
+      !Object.hasOwn(input,'unitType')||
+      !keys.every(k=>Object.getOwnPropertyDescriptor(input,k)?.enumerable&&
+        Object.hasOwn(Object.getOwnPropertyDescriptor(input,k),'value')))
+      return denied('INVALID_MOVEMENT_REGIME_INPUT');
+    const unitType=field(input,'unitType'),
+      steps=Object.hasOwn(input,'steps')?field(input,'steps'):1;
     if(typeof unitType!=='string'||
        !Object.hasOwn(BASE_MOVEMENT_PROFILES,unitType)||
        !Object.hasOwn(ANCIENTS_MOVEMENT_REGIMES,unitType))
@@ -68,24 +96,36 @@ export function assessAncientsMovementRegime({unitType,steps=1}={}){
   }catch{return denied('INVALID_MOVEMENT_REGIME_INPUT');}
 }
 
-const cell=value=>value!==null&&typeof value==='object'&&
-  !Array.isArray(value)&&Number.isSafeInteger(value.col)&&
-  Number.isSafeInteger(value.row)&&inBounds({col:value.col,row:value.row});
-const key=value=>value.col+','+value.row;
-
 /**
  * Type-agnostic candidate for ONE hex edge; unit-side and order constraints
  * are enforced elsewhere. Occupancy considers both friendly and enemy units.
  * No eligible result alone authorizes a movement or changes a board.
  */
-export function assessOpenHexStepGeometry({from,to,occupiedCells}={}){
+export function assessOpenHexStepGeometry(input={}){
   try{
-    if(!cell(from)||!cell(to)||!Array.isArray(occupiedCells)||
-       occupiedCells.length>117||!occupiedCells.every(cell))
+    if(!hasFields(input,['from','to','occupiedCells']))
       return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
+    const from=readCell(field(input,'from')),to=readCell(field(input,'to')),
+      occupied=field(input,'occupiedCells');
+    if(!from||!to||!Array.isArray(occupied)||
+       Object.getPrototypeOf(occupied)!==Array.prototype)
+      return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
+    const count=Object.getOwnPropertyDescriptor(occupied,'length')?.value;
+    if(!Number.isSafeInteger(count)||count<0||count>117||
+       Reflect.ownKeys(occupied).length!==count+1)
+      return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
+    const positions=[];
+    for(let i=0;i<count;i++){
+      const d=Object.getOwnPropertyDescriptor(occupied,String(i));
+      if(!d||!d.enumerable||!Object.hasOwn(d,'value'))
+        return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
+      const cell=readCell(d.value);
+      if(!cell)return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
+      positions.push(cell);
+    }
     if(distance(from,to)!==1)
       return geometry('BLOCKED','NOT_ONE_ADJACENT_HEX');
-    if(occupiedCells.some(unit=>key(unit)===key(to)))
+    if(positions.some(unit=>key(unit)===key(to)))
       return geometry('BLOCKED','OCCUPIED_DESTINATION');
     return geometry('CANDIDATE_GEOMETRY',null);
   }catch{return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');}
