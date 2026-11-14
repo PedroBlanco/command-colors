@@ -169,8 +169,8 @@ test('private foot stage: private hand, keys or internal metadata never enter re
 });
 
 const footLifecycle=(foot,changes={})=>lifecycle({
-  persisted:{schemaVersion:1,...foot===undefined?{}:
-    {ancientsFootMovementJournalLab:foot}},
+  persisted:{schemaVersion:1,...(foot===undefined?{}:
+    {ancientsFootMovementJournalLab:foot})},
   matchId:MATCH,gameRevision:2,actor:'A',
   idempotencyKey:'section_turn_end_001',...changes
 });
