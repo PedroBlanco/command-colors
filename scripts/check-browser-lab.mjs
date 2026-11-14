@@ -73,6 +73,7 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/movement-commit-intent-screen.test.mjs',
   'packages/ancients-rules/clear-lab-movement-reducer.test.mjs',
   'packages/ancients-rules/core-open-foot-movement.test.mjs',
+  'packages/ancients-rules/foot-movement-journal.test.mjs',
   'packages/ancients-rules/private-one-hex-intent-preview.test.mjs',
   'packages/ancients-rules/lab-command-signature.test.mjs',
   'packages/ancients-rules/lab-idempotency-binding.test.mjs',
