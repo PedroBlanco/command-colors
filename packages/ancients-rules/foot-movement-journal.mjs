@@ -19,6 +19,7 @@ export const FOOT_JOURNAL_SIGNATURE_PREFIX='CCW_FOOT_STEP_V1:';
 export const FOOT_EVENT_PROPOSAL='FOOT_STEP_PUBLIC_EVENT_PROPOSAL_V1';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
+const MATCH_ID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const ID=/^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const LABELS=new Set(['A','B']);
 const MAX_ENTRIES=117;
@@ -103,8 +104,8 @@ function normalizedCommand(command){
   };
 }
 const keyValid=key=>typeof key==='string'&&KEY.test(key);
-const signature=(command,key)=>FOOT_JOURNAL_SIGNATURE_PREFIX+JSON.stringify({
-  actor:command.actor,expectedRevision:command.expectedRevision,
+const signature=(command,key,matchId)=>FOOT_JOURNAL_SIGNATURE_PREFIX+JSON.stringify({
+  matchId,actor:command.actor,expectedRevision:command.expectedRevision,
   unitId:command.unitId,to:command.to,idempotencyKey:key
 });
 const publicEvent=transition=>({
@@ -114,8 +115,9 @@ const publicEvent=transition=>({
 });
 
 function rebuild(journal){
-  if(!exact(journal,['kind','schemaVersion','initialState','policy','entries','state'])||
+  if(!exact(journal,['kind','schemaVersion','matchId','initialState','policy','entries','state'])||
      journal.kind!==FOOT_JOURNAL_KIND||journal.schemaVersion!==1||
+     typeof journal.matchId!=='string'||!MATCH_ID.test(journal.matchId)||
      !Array.isArray(journal.entries)||journal.entries.length>MAX_ENTRIES)
     return {error:'INVALID_FOOT_JOURNAL'};
   const initial=replayCoreOpenFootSteps({
@@ -134,7 +136,7 @@ function rebuild(journal){
     const command=normalizedCommand(item.command);
     const scopedKey=command?.actor+':'+item.idempotencyKey;
     if(!command||seen.has(scopedKey)||
-       item.signature!==signature(command,item.idempotencyKey))
+       item.signature!==signature(command,item.idempotencyKey,journal.matchId))
       return {error:'INVALID_FOOT_JOURNAL_ENTRY',step:i};
     seen.add(scopedKey);
     const next=reduceCoreOpenFootStep({state:current,action:command,policy:journal.policy});
@@ -151,11 +153,13 @@ function rebuild(journal){
 
 /** Create an independent proposed persistence envelope from a trusted server
  * state + policy. No official rules authorization or database side effect. */
-export function initializeFootMovementJournal({initialState,policy}={}){
+export function initializeFootMovementJournal({matchId,initialState,policy}={}){
   try{
+    if(typeof matchId!=='string'||!MATCH_ID.test(matchId))
+      return reject('FOOT_JOURNAL_MATCH_REQUIRED');
     const cleanInitial=data(initialState),cleanPolicy=data(policy);
     const proposed={
-      kind:FOOT_JOURNAL_KIND,schemaVersion:1,initialState:cleanInitial,
+      kind:FOOT_JOURNAL_KIND,schemaVersion:1,matchId,initialState:cleanInitial,
       policy:cleanPolicy,entries:[],state:data(cleanInitial)
     };
     const rebuilt=rebuild(proposed);
@@ -192,17 +196,19 @@ export function replayFootMovementJournal(input){
  * authentication, cryptographic provenance or movement authorization.
  */
 export function checkFootJournalAnchor({
-  journal:input, trustedInitialState, trustedPolicy, rowRevision
+  journal:input, trustedMatchId, trustedInitialState, trustedPolicy, rowRevision
 }={}){
   try{
     if(!Number.isSafeInteger(rowRevision)||rowRevision<0||
-       trustedInitialState===undefined||trustedPolicy===undefined)
+       trustedInitialState===undefined||trustedPolicy===undefined||
+       typeof trustedMatchId!=='string'||!MATCH_ID.test(trustedMatchId))
       return reject('FOOT_JOURNAL_ANCHOR_REQUIRED');
     const journal=data(input),state=data(trustedInitialState),
       policy=data(trustedPolicy);
     const result=rebuild(journal);
     if(result.error)return reject(result.error,result.step??null);
-    if(!same(journal.initialState,state)||!same(journal.policy,policy))
+    if(journal.matchId!==trustedMatchId||
+       !same(journal.initialState,state)||!same(journal.policy,policy))
       return reject('FOOT_JOURNAL_PROVENANCE_DRIFT');
     if(result.state.revision!==rowRevision)
       return reject('FOOT_JOURNAL_ROW_REVISION_DRIFT');
@@ -229,7 +235,7 @@ export function proposeFootMovementJournalAppend({journal:source,command:untrust
     const prior=journal.entries.find(x=>
       x.command.actor===command.actor&&x.idempotencyKey===idempotencyKey);
     if(prior){
-      if(prior.signature!==signature(command,idempotencyKey))
+      if(prior.signature!==signature(command,idempotencyKey,journal.matchId))
         return reject('FOOT_IDEMPOTENCY_CONFLICT');
       return Object.freeze({
         status:'FOOT_JOURNAL_ALREADY_PROPOSED',reason:null,
@@ -247,12 +253,12 @@ export function proposeFootMovementJournalAppend({journal:source,command:untrust
       return reject(applied.reason);
     const entry={
       idempotencyKey,command,
-      signature:signature(command,idempotencyKey),
+      signature:signature(command,idempotencyKey,journal.matchId),
       transition:data(applied.transition),
       publicEventProposal:publicEvent(applied.transition)
     };
     const next={
-      kind:FOOT_JOURNAL_KIND,schemaVersion:1,
+      kind:FOOT_JOURNAL_KIND,schemaVersion:1,matchId:journal.matchId,
       initialState:journal.initialState,policy:journal.policy,
       entries:[...journal.entries,entry],state:data(applied.nextState)
     };
