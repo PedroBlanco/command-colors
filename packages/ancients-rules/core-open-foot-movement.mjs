@@ -11,16 +11,14 @@
  * V1 intentionally excludes all leaders, terrain, card/scenario exceptions,
  * combat, retreats, and anything other than one adjacent foot-unit hex.
  */
-import {distance,inBounds} from '../hex-grid/hex.mjs';
+import {inBounds} from '../hex-grid/hex.mjs';
 import {ANCIENTS_RULESET,BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
+import {assessAncientsMovementRegime,assessOpenHexStepGeometry}
+  from './movement-regimes.mjs';
 
 export const CORE_OPEN_FOOT_KIND='ANCIENTS_OPEN_FOOT_MOVEMENT_CORE_V1';
 export const CORE_OPEN_FOOT_POLICY='BASE_FOOT_OPEN_ONE_HEX_V1';
 
-const FOOT=new Set([
-  'LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY',
-  'AUXILIA_INFANTRY','MEDIUM_INFANTRY','HEAVY_INFANTRY'
-]);
 const ID=/^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES=new Set(['A','B']);
 const guard=Object.freeze({
@@ -120,12 +118,20 @@ export function reduceCoreOpenFootStep({state,action,policy}={}){
       return fail('UNIT_NOT_ORDERED');
     if(state.orderLedger.movedUnitIds.includes(piece.id))
       return fail('UNIT_ALREADY_MOVED');
-    if(!FOOT.has(policy.unitTypes[piece.id]))
+    // The ruleset profile chooses a regime; one shared geometry primitive
+    // handles ordinary adjacency/occupancy for every type. This restricted
+    // core preserves the original six-type policy while broader regimes
+    // remain explicitly unsupported until their rules are implemented.
+    const regime=assessAncientsMovementRegime({
+      unitType:policy.unitTypes[piece.id],steps:1
+    });
+    if(regime.status!=='SUBSET_ELIGIBLE')
       return fail('UNSUPPORTED_FOOT_UNIT');
-    if(distance(piece,action.to)!==1)
-      return fail('NOT_ONE_ADJACENT_HEX');
-    if(state.board.units.some(u=>xy(u)===xy(action.to)))
-      return fail('OCCUPIED_DESTINATION');
+    const geometry=assessOpenHexStepGeometry({
+      from:piece,to:action.to,occupiedCells:state.board.units
+    });
+    if(geometry.status!=='CANDIDATE_GEOMETRY')
+      return fail(geometry.reason);
     if(state.revision===Number.MAX_SAFE_INTEGER)
       return fail('REVISION_EXHAUSTED');
 
