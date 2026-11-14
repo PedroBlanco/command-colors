@@ -8,6 +8,8 @@ import {inBounds} from '../hex-grid/hex.mjs';
 
 const ID=/^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const ROOT=Object.freeze(['sessionToken','expectedRevision','actions']);
+const FOOT_PROBE_ROOT=Object.freeze(['sessionToken','expectedRevision',
+  'idempotencyKey','actions']);
 const DRAFT_ROOT=Object.freeze(['sessionToken','expectedRevision',
   'expectedDraftRevision','idempotencyKey','actions']);
 const DRAFT_KEY=/^[A-Za-z0-9_-]{8,80}$/;
@@ -100,6 +102,30 @@ export function snapshotStagedMovementDraftRequest(request){
     return Object.freeze({
       sessionToken:r.sessionToken,expectedRevision:r.expectedRevision,
       expectedDraftRevision:r.expectedDraftRevision,
+      idempotencyKey:r.idempotencyKey,actions
+    });
+  }catch{
+    return null;
+  }
+}
+
+/**
+ * INTERNAL future-commit admission probe: a strictly normalized, immutable
+ * intent. Input is not authorization. No browser-supplied actor, terrain,
+ * card, proof, board, signatures or result is admitted.
+ */
+export function snapshotFootTransactionProbeRequest(request){
+  try{
+    const r=record(request,FOOT_PROBE_ROOT);
+    if(!r||typeof r.sessionToken!=='string'||
+       !Number.isSafeInteger(r.expectedRevision)||r.expectedRevision<0||
+       typeof r.idempotencyKey!=='string'||!DRAFT_KEY.test(r.idempotencyKey))
+      return null;
+    const actions=dense(r.actions,1,1,action);
+    if(actions===null||actions[0].kind!=='UNIT'||actions[0].path.length!==1)
+      return null;
+    return Object.freeze({
+      sessionToken:r.sessionToken,expectedRevision:r.expectedRevision,
       idempotencyKey:r.idempotencyKey,actions
     });
   }catch{
