@@ -40,7 +40,7 @@ Se exige:
 - Una entrada de cada clase por revisión histórica entre 1 y `currentGameRevision`, sin repeticiones, saltos, revisiones fuera de rango, partidas ajenas ni claves duplicadas dentro de un mismo actor. Las consultas deben estar limitadas por `match_id`. Se admite diferente orden de filas, pero no contenido contradictorio.
 - La clave nueva `(actor,idem_key)` no debe existir ya en `game_commands`. **No se reconoce automáticamente un reintento previo**: una consulta de ocupación no equivale a comprobar firma y estado confirmado.
 
-Se realiza **copia estricta por descriptores** de los datos de entrada: objetos de datos sin propiedades especiales, arrays densos y acotados, sin getters ejecutados, símbolos, ciclos, prototipos ajenos o cantidades desmedidas. La propuesta de salida se congela profundamente.
+Se realiza **copia estricta por descriptores** de todos los datos de entrada, incluida la raíz de la petición con sus siete campos exactos (se rechazan extras como `canCommit`, `actor` o `sessionToken`): objetos de datos sin propiedades especiales, arrays densos y acotados, sin getters ejecutados, símbolos, ciclos, prototipos ajenos o cantidades desmedidas. La propuesta de salida se congela profundamente.
 
 La verificación de `recordedCommands` y `recordedEvents` aquí es **solo una comprobación de ocupación/secuencia de revisiones**, no una verificación criptográfica ni de los payloads históricos. El replay íntegro de comandos y eventos oficiales deberá implementarse aparte, dentro de la futura autoridad.
 
@@ -60,14 +60,14 @@ En particular, `commandRowProposal` y `publicEventRowProposal` **no deben pasars
 
 ## Pruebas
 
-Nueva suite `packages/ancients-rules/foot-atomic-commit-envelope.test.mjs` como número **84** del manifiesto fail-closed. **18 casos** de:
+Nueva suite `packages/ancients-rules/foot-atomic-commit-envelope.test.mjs` como número **84** del manifiesto fail-closed. **20 casos** de:
 
 - Separación de estado, comando y evento, ausencia de datos privados en payload público y congelación profunda.
 - Replay reproducible desde JSON y equivalencia independiente del orden de filas SQL.
 - Revisión duplicada, ausente o fuera de rango; evento privado; partida ajena; claves de comando repetidas y colisión de la nueva clave con un comando confirmado.
 - Conflicto de revisión, política o tablero de origen; diario manipulado o con entradas adicionales.
-- Rechazo de getters, arrays dispersos, símbolos y evitación de trampas `get` de `Proxy`.
+- Rechazo de getters en raíz o datos anidados, arrays dispersos, símbolos, campos adicionales de autoridad y evitación de trampas `get` de `Proxy`.
 
-**Verificación realizada: 18/18 pruebas en V8 estricto, con el código real del repositorio y un simulador de `node:test`; `structuredClone` sustituido por clonación JSON.** No son pruebas Node nativas ni validan SQLite real. El último resultado completo de Windows aportado por el usuario (1045/1045, 80 suites) corresponde solamente a #108. Las PR #111–#117 añaden 131 tests y esta PR 18: **1194 pruebas previstas en 84 suites**, sin ejecución nativa de estas ramas.
+**Verificación realizada: 20/20 pruebas en V8 estricto, con el código real del repositorio y un simulador de `node:test`; `structuredClone` sustituido por clonación JSON.** No son pruebas Node nativas ni validan SQLite real. El último resultado completo de Windows aportado por el usuario (1045/1045, 80 suites) corresponde solamente a #108. Las PR #111–#117 añaden 131 tests y esta PR 20: **1196 pruebas previstas en 84 suites**, sin ejecución nativa de estas ramas.
 
 Mantener la nueva PR **draft**, sin fusionar `main`, desplegar ni abrir endpoints. El usuario no puede realizar pruebas locales por ahora y no es necesario solicitarlas.
