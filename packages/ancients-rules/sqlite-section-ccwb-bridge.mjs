@@ -179,6 +179,8 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
         return denied(409,'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED');
       if(pathV2.status==='KEY_CONFLICT')
         return denied(409,'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE');
+      if(foot.status!=='ABSENT'&&pathV2.status!=='ABSENT')
+        return denied(409,'SECTION_LAB_FOOT_STAGE_VERSION_CONFLICT');
       const next=result.nextState;
       const updated={...persisted,ancientsSectionHistoryLab:{
         initial:journal.initial,
