@@ -368,11 +368,11 @@ test('foot journal: explicitly occupied adjacent destination is refused',()=>{
 
 test('foot journal: Proxy get traps on arrays or nested command fields never run',()=>{
   const journal=structuredClone(first().journal),access=[];
-  journal.entries=new Proxy(journal.entries,{
-    get(){access.push('entries.GET');throw Error('MALICIOUS_ARRAY_GET')}
-  });
   journal.entries[0].command.to=new Proxy(journal.entries[0].command.to,{
     get(){access.push('coordinate.GET');throw Error('MALICIOUS_CELL_GET')}
+  });
+  journal.entries=new Proxy(journal.entries,{
+    get(){access.push('entries.GET');throw Error('MALICIOUS_ARRAY_GET')}
   });
   const result=replay(journal);
   assert.equal(result.status,'PRIVATE_FOOT_JOURNAL_REPLAY_CANDIDATE');
