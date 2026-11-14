@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ANCIENTS_RULESET} from './movement-profile.mjs';
+import {snapshotFootTransactionProbeRequest}
+  from './staged-sequence-request-snapshot.mjs';
 import {initializeSectionHistoryLab,applySectionHistoryLabCommand}
   from './section-history-journal.mjs';
 import {previewVerifiedSectionFootCore} from './verified-foot-core-preview.mjs';
@@ -468,4 +470,74 @@ test('verified section adapter rejects invalid trusted state without partial pro
   const state=stagedFootHistory();state.orderSnapshot.pieces.push(
     {...state.orderSnapshot.pieces[0]});
   deniedPreview(footPreview({verifiedState:state}),'UNSUPPORTED_VERIFIED_ORDERS');
+});
+
+const probeRequest=()=>({
+  sessionToken:'opaque-probe-token',expectedRevision:2,
+  idempotencyKey:'probe_foot_idem_001',
+  actions:[{kind:'UNIT',id:'unitA',path:[cell(3,4)]}]
+});
+test('foot transactional probe snapshot retains one fully immutable intent',()=>{
+  const raw=probeRequest(),before=structuredClone(raw);
+  const captured=snapshotFootTransactionProbeRequest(raw);
+  assert.deepEqual(captured,before);
+  for(const value of [captured,captured.actions,captured.actions[0],
+    captured.actions[0].path,captured.actions[0].path[0]])
+    assert.equal(Object.isFrozen(value),true);
+  raw.sessionToken='changed';
+  raw.expectedRevision=900;
+  raw.idempotencyKey='another_probe_idem';
+  raw.actions[0].id='enemy';
+  raw.actions[0].path[0].col=8;
+  assert.deepEqual(captured,before);
+});
+test('foot transactional probe snapshot rejects forged authority or invalid key',()=>{
+  const inputs=[
+    {...probeRequest(),actor:'A'},
+    {...probeRequest(),board:{}},
+    {...probeRequest(),candidateEvidence:{}},
+    {...probeRequest(),trustedScenario:{}},
+    {...probeRequest(),idempotencyKey:'short'},
+    {...probeRequest(),idempotencyKey:'!invalid'},
+    {...probeRequest(),idempotencyKey:'a'.repeat(81)},
+    {...probeRequest(),expectedRevision:-1},
+    {...probeRequest(),expectedRevision:'2'},
+    {...probeRequest(),actions:[]},
+    {...probeRequest(),actions:[...probeRequest().actions,...probeRequest().actions]},
+    {...probeRequest(),actions:[{kind:'LEADER',id:'unitA',path:[cell(3,4)]}]},
+    {...probeRequest(),actions:[{kind:'UNIT',id:'unitA',path:[cell(3,4),cell(4,4)]}]},
+    {...probeRequest(),actions:[{kind:'UNIT',id:'unitA',path:[{col:3,row:4,actor:'A'}]}]}
+  ];
+  for(const input of inputs)
+    assert.equal(snapshotFootTransactionProbeRequest(input),null);
+  const missing=Object.create(probeRequest());
+  assert.equal(snapshotFootTransactionProbeRequest(missing),null);
+  const sparse=probeRequest();
+  sparse.actions=new Array(1);
+  assert.equal(snapshotFootTransactionProbeRequest(sparse),null);
+});
+test('foot transactional probe snapshot rejects accessors without executing getters',()=>{
+  const attempts=[
+    request=>{
+      Object.defineProperty(request,'idempotencyKey',{
+        enumerable:true,get(){throw Error('UNTRUSTED_GETTER');}
+      });
+    },
+    request=>{
+      Object.defineProperty(request.actions[0].path[0],'col',{
+        enumerable:true,get(){throw Error('UNTRUSTED_GETTER');}
+      });
+    }
+  ];
+  for(const change of attempts){
+    const request=probeRequest();change(request);
+    assert.equal(snapshotFootTransactionProbeRequest(request),null);
+  }
+});
+test('foot transactional probe snapshot uses descriptors, never Proxy property reads',()=>{
+  const raw=probeRequest(),calls=[];
+  const input=new Proxy(raw,{get(){calls.push('GET');throw Error('PROXY_GET');}});
+  const captured=snapshotFootTransactionProbeRequest(input);
+  assert.deepEqual(captured,raw);
+  assert.deepEqual(calls,[]);
 });

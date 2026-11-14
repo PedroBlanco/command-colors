@@ -2028,3 +2028,226 @@ test('CCWB verified foot core: tampered persisted journal is detected before pro
     /SECTION_CCWB_SNAPSHOT_DRIFT/);
   assert.equal(db.isTransaction,false);
 }));
+
+const footCommitProbe=(sessionToken,changes={})=>({
+  sessionToken,expectedRevision:2,idempotencyKey:'foot_probe_new_0001',
+  actions:[sequenceUnit()],...changes
+});
+
+test('CCWB foot transaction gate: valid first step is DISABLED under writer lock, never written',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const capture=()=>({
+    match:db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),
+    events:db.prepare('SELECT * FROM game_events WHERE match_id=? ORDER BY sequence').all(matchId),
+    commands:db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision').all(matchId)
+  });
+  const before=capture(),request=footCommitProbe(tokens.A);
+  const result=store.probeExperimentalSectionFootCommit(request,trustedOpenFootScenario());
+  assert.deepEqual(result,{
+    status:409,code:'SECTION_LAB_FOOT_COMMIT_DISABLED',
+    checkedRevision:2,ruleSubset:'BASE_FOOT_OPEN_ONE_HEX_V1',
+    movementAuthorized:false,officialMovementAuthorized:false,
+    canCommit:false,boardChanged:false,dbChanged:false
+  });
+  assert.equal(Object.isFrozen(result),true);
+  assert.deepEqual(capture(),before);
+  assert.deepEqual(connect().getStore(matchId)
+    .probeExperimentalSectionFootCommit(request,trustedOpenFootScenario()),result);
+  assert.deepEqual(capture(),before);
+  assert.equal(db.isTransaction,false);
+  const serialized=JSON.stringify(result);
+  for(const secret of [tokens.A,request.idempotencyKey,'unitA',
+    'private_state','handAtPlay','ANCIENTS_MOVEMENT_COMMITTED_V1'])
+    assert.equal(serialized.includes(secret),false);
+}));
+
+test('CCWB foot transaction gate: existing card/order idempotency keys never imply applied move',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForMovement(store,tokens.A);
+  for(const key of ['private_preview_card_0001','private_preview_orders_0001']){
+    const result=store.probeExperimentalSectionFootCommit(
+      footCommitProbe(tokens.A,{idempotencyKey:key}),trustedOpenFootScenario());
+    assert.deepEqual(result,{
+      status:409,code:'SECTION_LAB_FOOT_IDEMPOTENCY_KEY_IN_USE'
+    });
+  }
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB foot transaction gate: forged input, malformed key and second action are rejected before BEGIN',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  let calls=0;
+  const original=app.identity.resolveSession;
+  try{
+    app.identity.resolveSession=token=>{calls++;return original(token);};
+    for(const patch of [
+      {actor:'A'},{board:{}},{terrain:[]},{trustedScenario:{}},
+      {candidateEvidence:{}},{expectedRevision:'2'},{idempotencyKey:'tiny'},
+      {idempotencyKey:'bad key'},{actions:[]},
+      {actions:[sequenceUnit(),sequenceUnit()]},
+      {actions:[{kind:'LEADER',id:'leaderA',path:[{col:2,row:5}]}]},
+      {actions:[{kind:'UNIT',id:'unitA',path:[{col:3,row:4},{col:4,row:4}]}]}
+    ]){
+      assert.deepEqual(store.probeExperimentalSectionFootCommit(
+        footCommitProbe(tokens.A,patch),trustedOpenFootScenario()),{
+          status:400,code:'INVALID_SECTION_LAB_FOOT_PROBE_REQUEST'
+        });
+    }
+    const getter=footCommitProbe(tokens.A);
+    Object.defineProperty(getter,'idempotencyKey',{
+      enumerable:true,get(){throw Error('UNTRUSTED_GETTER');}
+    });
+    assert.deepEqual(store.probeExperimentalSectionFootCommit(
+      getter,trustedOpenFootScenario()),{
+        status:400,code:'INVALID_SECTION_LAB_FOOT_PROBE_REQUEST'
+      });
+    assert.equal(calls,0);
+  }finally{app.identity.resolveSession=original;}
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB foot transaction gate: stale revision and nonacting player denied under write transaction',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForMovement(store,tokens.A);
+  const stale=store.probeExperimentalSectionFootCommit(
+    footCommitProbe(tokens.A,{expectedRevision:1}),trustedOpenFootScenario());
+  assert.deepEqual(stale,{status:409,code:'STALE_REVISION'});
+  const rival=store.probeExperimentalSectionFootCommit(
+    footCommitProbe(tokens.B),trustedOpenFootScenario());
+  assert.deepEqual(rival,{
+    status:409,code:'SECTION_LAB_FOOT_PROBE_REJECTED',
+    reason:'NOT_ACTING_PLAYER'
+  });
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB foot transaction gate: revoked session and lost membership block before replay',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId);
+  stageForMovement(store,tokens.A);
+  assert.deepEqual(store.probeExperimentalSectionFootCommit(
+    footCommitProbe(tokens.outsider),trustedOpenFootScenario()),
+    {status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.probeExperimentalSectionFootCommit(
+    footCommitProbe('absent_token'),trustedOpenFootScenario()),
+    {status:401,code:'UNAUTHENTICATED'});
+  const second=connect();
+  second.identity.logOut(tokens.A);
+  assert.deepEqual(store.probeExperimentalSectionFootCommit(
+    footCommitProbe(tokens.A),trustedOpenFootScenario()),
+    {status:401,code:'UNAUTHENTICATED'});
+  second.unsafeTestDatabase().prepare('UPDATE matches SET guest_id=NULL WHERE id=?')
+    .run(matchId);
+  assert.deepEqual(store.probeExperimentalSectionFootCommit(
+    footCommitProbe(tokens.B),trustedOpenFootScenario()),
+    {status:404,code:'NOT_FOUND'});
+  assert.equal(app.unsafeTestDatabase().isTransaction,false);
+}));
+
+test('CCWB foot transaction gate: exception or unsupported scenario does not allocate a key',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=db.prepare('SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision')
+    .all(matchId);
+  for(const change of [
+    p=>p.scope='OFFICIAL_SCENARIO_NOT_VERIFIED',
+    p=>p.terrain.push({col:10,row:8,kind:'HILL'}),
+    p=>p.scenarioExceptions.push('SPECIAL_MOVEMENT'),
+    p=>p.unitTypes.unitA='ELEPHANT'
+  ]){
+    const scenario=trustedOpenFootScenario();change(scenario);
+    const result=store.probeExperimentalSectionFootCommit(
+      footCommitProbe(tokens.A),scenario);
+    assert.equal(result.status,409);
+    assert.equal(result.code,'SECTION_LAB_FOOT_PROBE_REJECTED');
+    assert.equal(typeof result.reason,'string');
+  }
+  assert.deepEqual(db.prepare(
+    'SELECT * FROM game_commands WHERE match_id=? ORDER BY committed_revision'
+  ).all(matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB foot transaction gate: original request mutation during session lookup changes nothing',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const original=app.identity.resolveSession;
+  const raw=footCommitProbe(tokens.A),getCalls=[];
+  const wrapped=new Proxy(raw,{get(){getCalls.push('GET');throw Error('GET_NOT_ALLOWED')}});
+  let lookups=0;
+  try{
+    app.identity.resolveSession=token=>{
+      if(token===tokens.A){
+        lookups++;
+        assert.equal(db.isTransaction,true);
+        raw.sessionToken='tampered';
+        raw.expectedRevision=99;
+        raw.idempotencyKey='private_preview_card_0001';
+        raw.actions[0].id='unitB';
+        raw.actions[0].path[0].col=10;
+      }
+      return original(token);
+    };
+    const result=store.probeExperimentalSectionFootCommit(
+      wrapped,trustedOpenFootScenario());
+    assert.equal(result.code,'SECTION_LAB_FOOT_COMMIT_DISABLED');
+    assert.equal(result.checkedRevision,2);
+    assert.equal(lookups,1);
+    assert.deepEqual(getCalls,[]);
+  } finally {app.identity.resolveSession=original;}
+  assert.equal(db.isTransaction,false);
+  assert.equal(db.prepare(
+    'SELECT COUNT(*) AS n FROM game_commands WHERE match_id=? AND idem_key=?'
+  ).get(matchId,'foot_probe_new_0001').n,0);
+}));
+
+test('CCWB foot transaction gate: BEGIN IMMEDIATE prevents concurrent revocation writer',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const other=connect(),otherDb=other.unsafeTestDatabase();
+  otherDb.exec('PRAGMA busy_timeout=25');
+  const original=app.identity.resolveSession;
+  let blocked=0;
+  try{
+    app.identity.resolveSession=token=>{
+      assert.equal(db.isTransaction,true);
+      assert.throws(()=>otherDb.exec('BEGIN IMMEDIATE'),/SQLITE_BUSY|database is locked/i);
+      blocked++;
+      return original(token);
+    };
+    const result=store.probeExperimentalSectionFootCommit(
+      footCommitProbe(tokens.A),trustedOpenFootScenario());
+    assert.equal(result.code,'SECTION_LAB_FOOT_COMMIT_DISABLED');
+  }finally{app.identity.resolveSession=original;}
+  assert.equal(blocked,1);
+  assert.equal(db.isTransaction,false);
+  // A writer can acquire a lock after the read-only gate releases it.
+  otherDb.exec('BEGIN IMMEDIATE');
+  otherDb.exec('ROLLBACK');
+}));
+
+test('CCWB foot transaction gate: corrupted CCWB replay rolls back and never returns admission',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const row=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const changed=JSON.parse(row.private_state);
+  changed.ancientsSectionHistoryLab.state.board.units[0].col=8;
+  db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(changed),matchId);
+  const before=db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  assert.throws(()=>store.probeExperimentalSectionFootCommit(
+    footCommitProbe(tokens.A),trustedOpenFootScenario()),
+    /SECTION_CCWB_SNAPSHOT_DRIFT/);
+  assert.deepEqual(db.prepare('SELECT * FROM matches WHERE id=?').get(matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
