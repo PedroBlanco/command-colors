@@ -171,7 +171,7 @@ test('nonadjacent, identical and out-of-bounds cells do not produce a state',()=
   }
 });
 
-test('cavalry, elephants, warriors and war machines require separate rule engines',()=>{
+test('cavalry, elephants, warriors and war machines require additional rule regimes',()=>{
   for(const type of ['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY',
     'ELEPHANT','HEAVY_CHARIOT','WARRIOR_INFANTRY','HEAVY_WAR_MACHINE']){
     const p=policy();p.unitTypes.unitA=type;
