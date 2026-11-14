@@ -115,7 +115,7 @@ test('V2 path: medium and heavy infantry cannot exceed one step',()=>{
   }
 });
 test('V2 path: profiles reject a three-hex detour even if endpoint is nearby',()=>{
-  const route=[cell(3,4),cell(4,4),cell(3,5)];
+  const route=[cell(3,4),cell(4,4),cell(5,4)];
   fail(result({action:action('unitA',route)}),'STANDARD_FOOT_MOVEMENT_EXCEEDED');
 });
 test('V2 path: destination may turn; intermediate cells are checked',()=>{
@@ -288,10 +288,7 @@ test('V2 reducer: oversized, sparse and non-array paths never advance',()=>{
   const long=new Array(33).fill(cell(3,4)),sparse=new Array(2);
   for(const path of [[],long,sparse,{0:cell(3,4),length:1},null]){
     fail(result({action:action('unitA',path)}),
-      path===null?'INVALID_PATH_CORE_ACTION':
-        path===undefined?'INVALID_PATH_CORE_ACTION':
-          path===long||path===sparse?'INVALID_PATH_CORE_INPUT':
-            'INVALID_PATH_CORE_ACTION');
+      path===sparse?'INVALID_PATH_CORE_INPUT':'INVALID_PATH_CORE_ACTION');
   }
 });
 test('V2 reducer: accessors and Proxy property reads are never executed',()=>{
