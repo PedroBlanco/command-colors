@@ -173,13 +173,13 @@ export function assessOpenHexPathGeometry(input={}){
     const visited=new Set([key(from)]);
     for(let i=0;i<path.length;i++){
       const target=path[i];
+      if(visited.has(key(target)))
+        return pathVerdict('BLOCKED','REPEATED_HEX',i);
       const edge=assessOpenHexStepGeometry({
         from:previous,to:target,occupiedCells:occupied
       });
       if(edge.status!=='CANDIDATE_GEOMETRY')
         return pathVerdict('BLOCKED',edge.reason,i);
-      if(visited.has(key(target)))
-        return pathVerdict('BLOCKED','REPEATED_HEX',i);
       visited.add(key(target));
       previous=target;
     }
