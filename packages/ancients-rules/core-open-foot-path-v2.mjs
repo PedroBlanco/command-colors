@@ -167,7 +167,8 @@ export function reduceCoreOpenFootPath(request={}){
     });
     if(result.status!=='OPEN_FOOT_PATH_CANDIDATE')
       return denied(result.reason,result.step);
-    const next=first.nextState;
+    // V1 deliberately freezes candidates; detach before V2 enrichment.
+    const next=safeData(first.nextState);
     next.kind=OPEN_FOOT_PATH_CORE_KIND;
     next.schemaVersion=2;
     const moved=next.board.units.find(u=>u.id===action.unitId);
