@@ -2704,3 +2704,225 @@ test('CCWB foot stage lifecycle: replay of already committed card does not erase
   assert.deepEqual(footStageSnapshot(db,matchId),before);
   assert.equal(db.isTransaction,false);
 }));
+
+const v2FootPathStageRequest=(sessionToken,changes={})=>({
+  sessionToken,expectedRevision:2,idempotencyKey:'private_v2_path_stage_001',
+  actions:[{kind:'UNIT',id:'unitA',path:[
+    {col:3,row:4},{col:4,row:4}
+  ]}],...changes
+});
+const stageV2=(store,token)=>store.stageExperimentalSectionFootPathV2Journal(
+  v2FootPathStageRequest(token),trustedOpenFootScenario()
+);
+
+test('CCWB V2 private path: two-hex draft saved privately without public revision or command',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  const playerA=store.view('A'),playerB=store.view('B');
+  assert.deepEqual(stageV2(store,tokens.A),{
+    status:200,code:'SECTION_LAB_FOOT_PATH_V2_SAVED',
+    provisionalRevision:3,privateDraftChanged:true,gameRevisionChanged:false,
+    boardChanged:false,movementAuthorized:false,
+    officialMovementAuthorized:false,canCommit:false
+  });
+  const after=footStageSnapshot(db,matchId);
+  assert.equal(after.match.game_revision,before.match.game_revision);
+  assert.equal(after.match.lobby_revision,before.match.lobby_revision);
+  assert.deepEqual(after.events,before.events);
+  assert.deepEqual(after.commands,before.commands);
+  const persisted=JSON.parse(after.match.private_state);
+  const journal=persisted.ancientsFootPathJournalV2Lab;
+  assert.equal(journal.schemaVersion,2);
+  assert.equal(journal.entries.length,1);
+  assert.equal(journal.state.revision,3);
+  assert.equal(journal.state.board.units[0].col,4);
+  assert.deepEqual(journal.entries[0].transition.path,[
+    {col:3,row:4},{col:4,row:4}
+  ]);
+  assert.equal(persisted.ancientsSectionHistoryLab.state.board.units[0].col,2);
+  assert.equal(Object.hasOwn(persisted,'ancientsFootMovementJournalLab'),false);
+  assert.deepEqual(store.view('A'),playerA);
+  assert.deepEqual(store.view('B'),playerB);
+  assert.equal(JSON.stringify(connect().getStore(matchId).view('A'))
+    .includes('private_v2_path_stage_001'),false);
+  assert.equal(JSON.stringify(store.publicEvents('B'))
+    .includes('FOOT_PATH_PUBLIC_EVENT_PROPOSAL_V2'),false);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB V2 private path: one-hex draft and cross-process exact retry cause no extra writes',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const request=v2FootPathStageRequest(tokens.A,{actions:[{
+    kind:'UNIT',id:'unitA',path:[{col:3,row:4}]
+  }]});
+  assert.equal(store.stageExperimentalSectionFootPathV2Journal(
+    request,trustedOpenFootScenario()).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  const retry=connect().getStore(matchId).stageExperimentalSectionFootPathV2Journal(
+    request,trustedOpenFootScenario());
+  assert.deepEqual(retry,{
+    status:200,code:'SECTION_LAB_FOOT_PATH_V2_ALREADY_RECORDED',
+    provisionalRevision:3,privateDraftChanged:false,gameRevisionChanged:false,
+    boardChanged:false,movementAuthorized:false,
+    officialMovementAuthorized:false,canCommit:false
+  });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 private path: alternative route with identical key is a conflict',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  const conflict=store.stageExperimentalSectionFootPathV2Journal(
+    v2FootPathStageRequest(tokens.A,{actions:[{
+      kind:'UNIT',id:'unitA',path:[{col:3,row:3},{col:4,row:4}]
+    }]}),trustedOpenFootScenario());
+  assert.deepEqual(conflict,{
+    status:409,code:'SECTION_LAB_FOOT_PATH_V2_REJECTED',
+    reason:'FOOT_PATH_LAB_IDEMPOTENCY_CONFLICT'
+  });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 private path: second key, stale game revision, unauthorized user and malformed request reject',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.stageExperimentalSectionFootPathV2Journal(
+    v2FootPathStageRequest(tokens.A,{idempotencyKey:'different_v2_stage_001'}),
+    trustedOpenFootScenario()),{
+      status:409,code:'SECTION_LAB_FOOT_PATH_V2_REJECTED',
+      reason:'FOOT_PATH_LAB_ONLY_ONE_ACTION'
+    });
+  assert.deepEqual(store.stageExperimentalSectionFootPathV2Journal(
+    v2FootPathStageRequest(tokens.A,{expectedRevision:1}),
+    trustedOpenFootScenario()),{status:409,code:'STALE_REVISION'});
+  assert.deepEqual(store.stageExperimentalSectionFootPathV2Journal(
+    v2FootPathStageRequest(tokens.outsider),
+    trustedOpenFootScenario()),{status:404,code:'NOT_FOUND'});
+  assert.deepEqual(store.stageExperimentalSectionFootPathV2Journal(
+    v2FootPathStageRequest(tokens.A,{actor:'A'}),
+    trustedOpenFootScenario()),{
+      status:400,code:'INVALID_SECTION_LAB_FOOT_PATH_V2_REQUEST'
+    });
+  assert.equal(store.stageExperimentalSectionFootPathV2Journal(
+    v2FootPathStageRequest(tokens.B),trustedOpenFootScenario()).code,
+    'SECTION_LAB_FOOT_PATH_V2_REJECTED');
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 private path: rejected scenario never writes, and V1/V2 cannot coexist',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  const hill=trustedOpenFootScenario();
+  hill.terrain=[{kind:'HILL',col:11,row:8}];
+  assert.equal(store.stageExperimentalSectionFootPathV2Journal(
+    v2FootPathStageRequest(tokens.A),hill).code,'SECTION_LAB_FOOT_PATH_V2_REJECTED');
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  assert.deepEqual(store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),trustedOpenFootScenario()),{
+      status:409,code:'SECTION_LAB_FOOT_STAGE_VERSION_CONFLICT'
+    });
+  assert.equal(JSON.parse(db.prepare(
+    'SELECT private_state FROM matches WHERE id=?'
+  ).get(matchId).private_state).ancientsFootMovementJournalLab,undefined);
+}));
+
+test('CCWB V2 private path: V1 saved first blocks V2 with no mutation',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(store.stageExperimentalSectionFootJournal(
+    footStageRequest(tokens.A),trustedOpenFootScenario()).code,
+    'SECTION_LAB_FOOT_STAGE_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(stageV2(store,tokens.A),{
+    status:409,code:'SECTION_LAB_FOOT_STAGE_VERSION_CONFLICT'
+  });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 private path: successful real turn expires private draft atomically',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  const committed=store.dispatchExperimentalSectionHistory(
+    endLabSectionTurn(tokens.A,'finish_v2_path_001'));
+  assert.equal(committed.code,'SECTION_LAB_APPLIED');
+  const after=footStageSnapshot(db,matchId);
+  assert.equal(after.match.game_revision,3);
+  assert.equal(after.events.length,before.events.length+1);
+  assert.equal(after.commands.length,before.commands.length+1);
+  const persisted=JSON.parse(after.match.private_state);
+  assert.equal(Object.hasOwn(persisted,'ancientsFootPathJournalV2Lab'),false);
+  assert.equal(persisted.ancientsSectionHistoryLab.state.board.units[0].col,2);
+  assert.equal(JSON.stringify(connect().getStore(matchId).view('B'))
+    .includes('private_v2_path_stage_001'),false);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB V2 private path: key conflict and invalid turn leave private draft intact',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.dispatchExperimentalSectionHistory(
+    endLabSectionTurn(tokens.A,'private_v2_path_stage_001')),{
+      status:409,code:'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE'
+    });
+  assert.deepEqual(store.dispatchExperimentalSectionHistory(
+    endLabSectionTurn(tokens.A,'stale_v2_turn_001',1)),{
+      status:409,code:'STALE_REVISION'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 private path: corrupted saved journal blocks both retry and section advancement',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const saved=db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId);
+  const persisted=JSON.parse(saved.private_state);
+  persisted.ancientsFootPathJournalV2Lab.entries[0].signature='TAMPERED';
+  db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(persisted),matchId);
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(stageV2(store,tokens.A),{
+    status:409,code:'SECTION_LAB_FOOT_PATH_V2_REJECTED',
+    reason:'FOOT_PATH_LAB_PERSISTED_JOURNAL_DRIFT'
+  });
+  assert.deepEqual(store.dispatchExperimentalSectionHistory(
+    endLabSectionTurn(tokens.A,'valid_v2_end_key_001')),{
+      status:409,code:'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 private path: failed private_state update rolls back with no committed event',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  db.exec(`CREATE TEMP TRIGGER no_private_v2_stage BEFORE UPDATE OF private_state
+    ON matches BEGIN SELECT RAISE(FAIL,'V2_STAGE_WRITE_FAILED'); END;`);
+  try{
+    assert.throws(()=>stageV2(store,tokens.A),/V2_STAGE_WRITE_FAILED/);
+  }finally{db.exec('DROP TRIGGER no_private_v2_stage');}
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
