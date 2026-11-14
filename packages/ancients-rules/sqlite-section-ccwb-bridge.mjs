@@ -14,6 +14,8 @@ import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
 import {previewStagedAncientsOrderBudget} from './staged-order-budget.mjs';
 import {previewVerifiedSectionFootCore} from './verified-foot-core-preview.mjs';
 import {planPrivateFootSqliteStage} from './private-foot-sqlite-stage.mjs';
+import {inspectFootStageForSectionAdvance}
+  from './private-foot-stage-lifecycle.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence,
@@ -153,6 +155,18 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       if(row.game_revision!==request.expectedRevision)return denied(409,'STALE_REVISION');
       const result=applySectionHistoryLabCommand(snapshot,command);
       if(!result.accepted)return denied(result.code==='NOT_YOUR_TURN'?403:409,result.code);
+      // A provisional foot step must not survive a real section revision
+      // advancement. First audit the private staged record and reject key
+      // reuse across these different operations; do not silently overwrite
+      // a corrupt or stale foot journal.
+      const foot=inspectFootStageForSectionAdvance({
+        persisted,matchId:row.id,gameRevision:row.game_revision,
+        actor:request.actor,idempotencyKey:request.idempotencyKey
+      });
+      if(foot.status==='CORRUPT')
+        return denied(409,'SECTION_LAB_FOOT_STAGE_INTEGRITY_FAILED');
+      if(foot.status==='KEY_CONFLICT')
+        return denied(409,'SECTION_LAB_FOOT_STAGE_KEY_IN_USE');
       const next=result.nextState;
       const updated={...persisted,ancientsSectionHistoryLab:{
         initial:journal.initial,
@@ -163,6 +177,7 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       // stale private data, even though the public log never exposes them.
       // Failed/retried commands return above without deleting anything.
       delete updated.ancientsSectionMovementDraft;
+      delete updated.ancientsFootMovementJournalLab;
       if(update.run(JSON.stringify(updated),next.revision,row.id,row.game_revision).changes!==1)
         throw new Error('SECTION_CCWB_CONCURRENT_UPDATE');
       eventInsert.run(row.id,next.revision,'public',JSON.stringify({...result.publicEvent,visibility:'public'}));
