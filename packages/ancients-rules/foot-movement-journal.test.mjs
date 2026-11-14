@@ -31,8 +31,10 @@ const rules=()=>({
 const command=(unitId='unitA',expectedRevision=2,to=at(3,4))=>({
   actor:'A',expectedRevision,unitId,to
 });
+const MATCH_ID='11111111-2222-4333-8444-555555555555';
+const OTHER_MATCH='99999999-8888-4777-8666-555555555555';
 const KEY_A='foot_commit_id_001',KEY_B='foot_commit_id_002';
-const ready=()=>initialize({initialState:game(),policy:rules()}).journal;
+const ready=()=>initialize({matchId:MATCH_ID,initialState:game(),policy:rules()}).journal;
 const first=()=>append({journal:ready(),command:command(),idempotencyKey:KEY_A});
 const rejected=(result,reason)=>{
   assert.equal(result.status,'BLOCKED');
@@ -46,7 +48,7 @@ const rejected=(result,reason)=>{
 test('foot journal: trusted initial state is a deeply frozen detached proposal',()=>{
   const initialState=game(),policy=rules();
   const before=structuredClone(initialState);
-  const result=initialize({initialState,policy});
+  const result=initialize({matchId:MATCH_ID,initialState,policy});
   assert.equal(result.status,'PRIVATE_FOOT_JOURNAL_INITIAL_CANDIDATE');
   assert.equal(result.journal.kind,FOOT_JOURNAL_KIND);
   assert.deepEqual(result.journal.initialState,before);
@@ -66,13 +68,13 @@ test('foot journal: trusted initial state is a deeply frozen detached proposal',
 
 test('foot journal: no initial moved units, invalid rules or unsupported scope',()=>{
   const moved=game();moved.orderLedger.movedUnitIds=['unitA'];
-  rejected(initialize({initialState:moved,policy:rules()}),
+  rejected(initialize({matchId:MATCH_ID,initialState:moved,policy:rules()}),
     'INVALID_FOOT_JOURNAL_INITIAL');
   const unsupported=rules();unsupported.terrain=[{col:10,row:8,kind:'HILL'}];
-  rejected(initialize({initialState:game(),policy:unsupported}),
+  rejected(initialize({matchId:MATCH_ID,initialState:game(),policy:unsupported}),
     'INVALID_FOOT_JOURNAL_INITIAL');
   const bad=game();bad.phase='COMBAT';
-  rejected(initialize({initialState:bad,policy:rules()}),
+  rejected(initialize({matchId:MATCH_ID,initialState:bad,policy:rules()}),
     'INVALID_FOOT_JOURNAL_INITIAL');
 });
 
@@ -300,7 +302,7 @@ test('foot journal: full journal cannot be published as an official event',()=>{
 test('foot journal: anchored replay agrees with independent server initial state and policy',()=>{
   const journal=first().journal;
   const result=anchored({
-    journal, trustedInitialState:game(),trustedPolicy:rules(),rowRevision:3
+    journal,trustedMatchId:MATCH_ID, trustedInitialState:game(),trustedPolicy:rules(),rowRevision:3
   });
   assert.equal(result.status,'PRIVATE_FOOT_JOURNAL_ANCHORED_CANDIDATE');
   assert.equal(result.rowRevision,3);
@@ -314,18 +316,18 @@ test('foot journal: anchored replay agrees with independent server initial state
 test('foot journal: policy or initial board provenance drift prevents an anchored replay',()=>{
   const journal=first().journal;
   const policy=rules();policy.unitTypes.unitA='HEAVY_INFANTRY';
-  rejected(anchored({journal,trustedInitialState:game(),
+  rejected(anchored({journal,trustedMatchId:MATCH_ID,trustedInitialState:game(),
     trustedPolicy:policy,rowRevision:3}),'FOOT_JOURNAL_PROVENANCE_DRIFT');
   const initial=game();initial.board.units[0].col=4;
-  rejected(anchored({journal,trustedInitialState:initial,
+  rejected(anchored({journal,trustedMatchId:MATCH_ID,trustedInitialState:initial,
     trustedPolicy:rules(),rowRevision:3}),'FOOT_JOURNAL_PROVENANCE_DRIFT');
 });
 
 test('foot journal: database revision must match the replayed revision',()=>{
   const journal=first().journal;
-  rejected(anchored({journal,trustedInitialState:game(),
+  rejected(anchored({journal,trustedMatchId:MATCH_ID,trustedInitialState:game(),
     trustedPolicy:rules(),rowRevision:2}),'FOOT_JOURNAL_ROW_REVISION_DRIFT');
-  rejected(anchored({journal,trustedInitialState:game(),
+  rejected(anchored({journal,trustedMatchId:MATCH_ID,trustedInitialState:game(),
     trustedPolicy:rules(),rowRevision:4}),'FOOT_JOURNAL_ROW_REVISION_DRIFT');
 });
 
@@ -333,10 +335,10 @@ test('foot journal: no anchor or invalid revision cannot be used as provenance',
   const journal=first().journal;
   for(const params of [
     {journal},
-    {journal,trustedInitialState:game(),rowRevision:3},
-    {journal,trustedPolicy:rules(),rowRevision:3},
-    {journal,trustedInitialState:game(),trustedPolicy:rules(),rowRevision:'3'},
-    {journal,trustedInitialState:game(),trustedPolicy:rules(),rowRevision:-1}
+    {journal,trustedMatchId:MATCH_ID,trustedInitialState:game(),rowRevision:3},
+    {journal,trustedMatchId:MATCH_ID,trustedPolicy:rules(),rowRevision:3},
+    {journal,trustedMatchId:MATCH_ID,trustedInitialState:game(),trustedPolicy:rules(),rowRevision:'3'},
+    {journal,trustedMatchId:MATCH_ID,trustedInitialState:game(),trustedPolicy:rules(),rowRevision:-1}
   ])rejected(anchored(params),'FOOT_JOURNAL_ANCHOR_REQUIRED');
 });
 
@@ -344,21 +346,21 @@ test('foot journal: anchored consistency is semantic, not dependent on JSON key 
   const journal=JSON.parse(JSON.stringify(first().journal));
   const initial=Object.fromEntries(Object.entries(game()).reverse());
   const policy=Object.fromEntries(Object.entries(rules()).reverse());
-  assert.equal(anchored({journal,trustedInitialState:initial,trustedPolicy:policy,
+  assert.equal(anchored({journal,trustedMatchId:MATCH_ID,trustedInitialState:initial,trustedPolicy:policy,
     rowRevision:3}).status,'PRIVATE_FOOT_JOURNAL_ANCHORED_CANDIDATE');
 });
 
 test('foot journal: even a trusted anchor never accepts a corrupted persisted step',()=>{
   const journal=structuredClone(first().journal);
   journal.entries[0].transition.to.col=9;
-  rejected(anchored({journal,trustedInitialState:game(),
+  rejected(anchored({journal,trustedMatchId:MATCH_ID,trustedInitialState:game(),
     trustedPolicy:rules(),rowRevision:3}),'INVALID_FOOT_JOURNAL_REPLAY');
 });
 
 test('foot journal: explicitly occupied adjacent destination is refused',()=>{
   const initial=game();
   initial.board.units[1].col=3;initial.board.units[1].row=4;
-  const firstRecord=initialize({initialState:initial,policy:rules()});
+  const firstRecord=initialize({matchId:MATCH_ID,initialState:initial,policy:rules()});
   assert.equal(firstRecord.status,'PRIVATE_FOOT_JOURNAL_INITIAL_CANDIDATE');
   const result=append({
     journal:firstRecord.journal,command:command(),idempotencyKey:KEY_A
@@ -386,4 +388,26 @@ test('foot journal: oversized or sparse persisted histories never replay',()=>{
   const sparse=structuredClone(first().journal);
   sparse.entries[2]=sparse.entries[0];
   rejected(replay(sparse),'INVALID_FOOT_JOURNAL');
+});
+
+test('foot journal: a match UUID is mandatory for every proposed persistence envelope',()=>{
+  for(const matchId of [undefined,null,'match-1','__proto__',
+    '00000000-0000-0000-0000-000000000000']){
+    rejected(initialize({matchId,initialState:game(),policy:rules()}),
+      'FOOT_JOURNAL_MATCH_REQUIRED');
+  }
+});
+
+test('foot journal: independent match provenance prevents cross-match transplant',()=>{
+  const original=first().journal;
+  rejected(anchored({
+    journal:original,trustedMatchId:OTHER_MATCH,
+    trustedInitialState:game(),trustedPolicy:rules(),rowRevision:3
+  }),'FOOT_JOURNAL_PROVENANCE_DRIFT');
+});
+
+test('foot journal: the stored step signature is bound to matchId',()=>{
+  const altered=structuredClone(first().journal);
+  altered.matchId=OTHER_MATCH;
+  rejected(replay(altered),'INVALID_FOOT_JOURNAL_ENTRY');
 });
