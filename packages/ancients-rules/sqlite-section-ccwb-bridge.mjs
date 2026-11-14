@@ -13,6 +13,7 @@ import {previewPrivateOneHexAncientsIntent} from './private-one-hex-intent-previ
 import {projectStagedAncientsBoard} from './staged-board-projection.mjs';
 import {previewStagedAncientsOrderBudget} from './staged-order-budget.mjs';
 import {previewVerifiedSectionFootCore} from './verified-foot-core-preview.mjs';
+import {planPrivateFootSqliteStage} from './private-foot-sqlite-stage.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence,
@@ -260,6 +261,21 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       attackAuthorized:false,boardChanged:false,canCommit:false
     });
   }
+  /**
+   * INTERNAL LAB ONLY: replay-check the complete CCWB card/order history
+   * before forming a private one-step journal stage. The caller holds
+   * BEGIN IMMEDIATE after authenticating a live session and membership.
+   * This never commits a movement or exposes the journal to HTTP/SSE.
+   */
+  function proposeFootJournalStage(actor,request,trustedScenario,previousJournal){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    return planPrivateFootSqliteStage({
+      matchId,verifiedState:snapshot,actor,
+      expectedRevision:request.expectedRevision,actions:request.actions,
+      idempotencyKey:request.idempotencyKey,trustedScenario,previousJournal
+    });
+  }
   /** INTERNAL LAB ONLY. Replay verifies the private journal under the
    *  caller's WAL snapshot before building immutable audit evidence.
    *  Never persist or broadcast this trace as an executed movement. */
@@ -297,6 +313,6 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
   }
   return Object.freeze({initialize,view,dispatch,previewMovement,
     previewLeaderMovement,previewMovementSequence,previewBoardProjection,
-    previewOrderBudget,previewVerifiedFootCore,
+    previewOrderBudget,previewVerifiedFootCore,proposeFootJournalStage,
     previewMovementEvidence,previewOneHexIntent});
 }
