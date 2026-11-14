@@ -45,6 +45,7 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/movement-regimes.test.mjs',
   'packages/ancients-rules/open-foot-path-preview.test.mjs',
   'packages/ancients-rules/core-open-foot-path-v2.test.mjs',
+  'packages/ancients-rules/foot-path-v2-replay-audit.test.mjs',
   'packages/ancients-rules/movement-path-precheck.test.mjs',
   'packages/ancients-rules/terrain-movement.test.mjs',
   'packages/ancients-rules/terrain-integration.test.mjs',
