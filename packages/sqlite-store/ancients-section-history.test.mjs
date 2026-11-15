@@ -3122,3 +3122,191 @@ test('CCWB V2 read audit: staged key cannot collide with a confirmed card comman
     });
   assert.deepEqual(footStageSnapshot(db,matchId),before);
 }));
+
+const lockedV2Preflight=(token,patch={})=>({
+  sessionToken:token,expectedRevision:2,
+  idempotencyKey:'private_v2_path_stage_001',...patch
+});
+
+test('CCWB V2 locked preflight: one verified draft is non-executable and durable across connections',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  const response=connect().getStore(matchId)
+    .precheckExperimentalSectionFootPathV2Locked(
+      lockedV2Preflight(tokens.A),trustedOpenFootScenario());
+  assert.deepEqual(response,{
+    status:200,code:'SECTION_LAB_FOOT_V2_LOCKED_PREFLIGHT_ONLY',
+    proposedRevision:3,steps:2,
+    movementAuthorized:false,officialMovementAuthorized:false,
+    canCommit:false,dbChanged:false,gameRevisionChanged:false,
+    publicEventWritten:false,needsOfficialScenario:true,
+    needsOfficialReplay:true,needsCommittedIdempotency:true
+  });
+  for(const token of ['private_v2_path_stage_001','unitA',
+    'LIGHT_INFANTRY','handAtPlay','sessionToken','signature','path'])
+    assert.equal(JSON.stringify(response).includes(token),false,token);
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB V2 locked preflight: absent draft never creates an implicit movement',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.A),trustedOpenFootScenario()),{
+      status:409,code:'SECTION_LAB_FOOT_V2_LOCKED_PREFLIGHT_REJECTED',
+      movementAuthorized:false,officialMovementAuthorized:false,
+      canCommit:false,dbChanged:false
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 locked preflight: wrong key never becomes a fresh command or reservation',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.A,{
+      idempotencyKey:'new_v2_private_key_999'
+    }),trustedOpenFootScenario()),{
+      status:409,code:'SECTION_LAB_FOOT_V2_LOCKED_PREFLIGHT_REJECTED',
+      movementAuthorized:false,officialMovementAuthorized:false,
+      canCommit:false,dbChanged:false
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 locked preflight: untrusted actor, path and rule fields are rejected before lock',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  for(const injected of [{actor:'A'},{board:{}},
+    {unitId:'unitA'},{path:[{col:3,row:4}]},
+    {trustedScenario:trustedOpenFootScenario()},{canCommit:true}]){
+    assert.deepEqual(store.precheckExperimentalSectionFootPathV2Locked(
+      lockedV2Preflight(tokens.A,injected),trustedOpenFootScenario()),{
+        status:400,code:'INVALID_SECTION_LAB_FOOT_V2_LOCKED_REQUEST'
+      });
+  }
+}));
+
+test('CCWB V2 locked preflight: rival, outsider and logged out user cannot receive a candidate',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  assert.equal(store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.B),trustedOpenFootScenario()).code,
+    'SECTION_LAB_FOOT_V2_LOCKED_PREFLIGHT_REJECTED');
+  assert.deepEqual(store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.outsider),trustedOpenFootScenario()),{
+      status:404,code:'NOT_FOUND'
+    });
+  connect().identity.logOut(tokens.A);
+  assert.deepEqual(store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.A),trustedOpenFootScenario()),{
+      status:401,code:'UNAUTHENTICATED'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 locked preflight: mismatched rule source and stale game revision fail closed',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  const modified=trustedOpenFootScenario();
+  modified.unitTypes.unitA='MEDIUM_INFANTRY';
+  assert.deepEqual(store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.A),modified),{
+      status:409,code:'SECTION_LAB_FOOT_V2_LOCKED_PREFLIGHT_REJECTED',
+      movementAuthorized:false,officialMovementAuthorized:false,
+      canCommit:false,dbChanged:false
+    });
+  assert.deepEqual(store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.A,{expectedRevision:1}),
+    trustedOpenFootScenario()),{
+      status:409,code:'STALE_REVISION'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 locked preflight: committed idempotency collision is rejected even if draft re-signed',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const saved=db.prepare('SELECT private_state FROM matches WHERE id=?')
+    .get(matchId);
+  const persisted=JSON.parse(saved.private_state);
+  const entry=persisted.ancientsFootPathJournalV2Lab.entries[0];
+  const occupied='private_preview_card_0001';
+  entry.idempotencyKey=occupied;
+  entry.signature='CCW_FOOT_PATH_V2:'+JSON.stringify({
+    matchId,actor:entry.command.actor,
+    expectedRevision:entry.command.expectedRevision,
+    unitId:entry.command.unitId,
+    path:entry.command.path,idempotencyKey:occupied
+  });
+  db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(persisted),matchId);
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.A,{idempotencyKey:occupied}),
+    trustedOpenFootScenario()),{
+      status:409,code:'SECTION_LAB_FOOT_V2_LOCKED_PREFLIGHT_REJECTED',
+      movementAuthorized:false,officialMovementAuthorized:false,
+      canCommit:false,dbChanged:false
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 locked preflight: corrupted SQL public event aborts with no transaction left open',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  db.prepare('UPDATE game_events SET payload=? WHERE match_id=? AND sequence=1')
+    .run(JSON.stringify({type:'FORGED',visibility:'public'}),matchId);
+  const before=footStageSnapshot(db,matchId);
+  assert.throws(()=>store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.A),trustedOpenFootScenario()),
+    /SECTION_CCWB_HISTORY_TAMPERED/);
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB V2 locked preflight: live session is read while holding BEGIN IMMEDIATE',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const other=connect().unsafeTestDatabase();
+  other.exec('PRAGMA busy_timeout=25');
+  const original=app.identity.resolveSession;
+  let checked=0;
+  try{
+    app.identity.resolveSession=token=>{
+      assert.equal(db.isTransaction,true);
+      assert.throws(()=>other.exec('BEGIN IMMEDIATE'),
+        /SQLITE_BUSY|database is locked/i);
+      checked++;
+      return original(token);
+    };
+    assert.equal(store.precheckExperimentalSectionFootPathV2Locked(
+      lockedV2Preflight(tokens.A),trustedOpenFootScenario()).code,
+      'SECTION_LAB_FOOT_V2_LOCKED_PREFLIGHT_ONLY');
+  }finally{app.identity.resolveSession=original;}
+  assert.equal(checked,1);
+  assert.equal(db.isTransaction,false);
+  other.exec('BEGIN IMMEDIATE');other.exec('ROLLBACK');
+}));
