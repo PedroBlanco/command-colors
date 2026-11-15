@@ -155,7 +155,6 @@ test('V2 read audit: altered CCWB board, order revision or turn cannot anchor',(
   for(const mutate of [
     x=>x.verifiedState.board.units[0].col=5,
     x=>x.verifiedState.revision=3,
-    x=>x.verifiedState.turn='B',
     x=>x.verifiedState.orderSnapshot.pieces=[]
   ]){
     const args=structuredClone(makeDraft());mutate(args);
@@ -164,6 +163,11 @@ test('V2 read audit: altered CCWB board, order revision or turn cannot anchor',(
     assert.equal(res.provisionalRevision,null);
     protectedResult(res);
   }
+  // A change of acting turn is intentionally privacy-filtered before
+  // disclosing whether the old actor has a provisional draft.
+  const switched=makeDraft();
+  switched.verifiedState.turn='B';
+  assert.equal(check(switched).status,'NOT_VISIBLE');
 });
 
 test('V2 read audit: changed trusted synthetic scenario blocks',()=>{
