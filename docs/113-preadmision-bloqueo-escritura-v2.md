@@ -28,7 +28,7 @@ La función `snapshotFootPathV2LockedPreflightRequest` copia la petición por **
 1. Resolver sesión **viva** y pertenencia actual a la partida, obteniendo `actor` del servidor; jamás de una cabecera o campo de la petición.
 2. Comprobar que la partida tiene el historial CCWB privado y que `matches.game_revision` sigue siendo exactamente la revisión esperada.
 3. `preflightFootPathV2UnderWriterLock` ejecuta nuevamente `verify(row)` del puente CCWB: reconstruye el **historial completo** de cartas, órdenes y fin de turno, verifica cada comando, cada firma, su clave y revisión contra `game_commands`, y cada evento/visibilidad/payload contra `game_events`. No confía en que exista un borrador V2 bien formado.
-4. Recuperar desde SQL el **espacio de claves ya confirmadas** para `(actor, idem_key)`. El comprobador puro valida los registros y rechaza cualquier intento de usar una clave ya presente en `game_commands`. Que el rival haya usado la misma cadena no crea, por sí solo, una colisión: el ámbito es actor + partida.
+4. Recuperar desde SQL el **espacio de claves ya confirmadas** para `(actor, idem_key)`. El comprobador puro exige tantas filas como revisiones oficiales, sin huecos, duplicados de revisión ni pares actor/clave repetidos. Rechaza cualquier intento de usar una clave ya presente en `game_commands`. Que el rival haya usado la misma cadena no crea, por sí solo, una colisión: el ámbito es actor + partida. Esta comprobación de ocupación es defensa adicional: `verify(row)` es quien verifica además los **contenidos y firmas** de las filas históricas.
 5. `assessFootPathV2LockedPreflight` verifica la revisión y el diario V2 con la auditoría de #125, vinculándolo a la **política sintética del servidor**, estado inicial, órdenes y camino, y exige que la clave de la petición sea exactamente la clave del borrador que se está comprobando. Una clave distinta nunca genera un comando nuevo ni reserva la clave.
 6. Devuelve exclusivamente un resultado **no ejecutable**, con número de hexágonos y revisión hipotética, o un rechazo **sin detalles privados**. No altera ninguna fila, ni siquiera para guardar resultados de idempotencia.
 
@@ -62,13 +62,13 @@ La puerta de entrada del almacén siempre oculta los detalles de bloqueo/integri
 
 ## Pruebas
 
-Se incorpora `packages/ancients-rules/private-foot-path-v2-locked-preflight.test.mjs` como **suite 92**, con **18 pruebas** de petición estricta, interposición de getters/Proxy, anclaje independiente, un/dos hexágonos, colisiones en el espacio real de claves, clave idéntica usada por otro actor, clave inventada, revisión, escenario, firma/ruta/evento falsos, listas SQL malformadas, respuesta sin secretos y todas las banderas de no autorización.
+Se incorpora `packages/ancients-rules/private-foot-path-v2-locked-preflight.test.mjs` como **suite 92**, con **20 pruebas** de petición estricta, interposición de getters/Proxy, anclaje independiente, un/dos hexágonos, colisiones en el espacio real de claves, clave idéntica usada por otro actor, clave inventada, revisión, escenario, firma/ruta/evento falsos, listas SQL malformadas, respuesta sin secretos y todas las banderas de no autorización.
 
 En `packages/sqlite-store/ancients-section-history.test.mjs` se añaden **10 pruebas de integración SQLite** para durabilidad entre conexiones, ausencia de borrador, clave discordante, datos no autorizados, rival y usuario externo, sesión revocada, escenario/revisión obsoletos, clave confirmada con firma provisional reconstruida, tampering de `game_events` y de `game_commands`, y comprobación de sesión **dentro** del bloqueo `BEGIN IMMEDIATE` frente a otro escritor.
 
-**Ejecución aislada V8:** **18/18** pruebas nuevas más **19/19** de la auditoría de lectura V2 y **20/20** de la etapa SQLite anterior: **57/57 correctas** con código y tests reales de GitHub, emulación de `node:test` y clonación JSON. **No equivale a ejecución nativa Node ni SQLite**.
+**Ejecución aislada V8:** **20/20** pruebas nuevas más **19/19** de la auditoría de lectura V2 y **20/20** de la etapa SQLite anterior: **59/59 correctas** con código y tests reales de GitHub, emulación de `node:test` y clonación JSON. **No equivale a ejecución nativa Node ni SQLite**.
 
-La última regresión Windows acreditada por el usuario corresponde a PR #108 (**1045/1045 en 80 suites**). El manifiesto alcanza **92 suites** y la regresión completa acumulada se estima en **1404 pruebas**, que permanecen pendientes de ejecución nativa en la cadena experimental. No solicitar pruebas locales ahora.
+La última regresión Windows acreditada por el usuario corresponde a PR #108 (**1045/1045 en 80 suites**). El manifiesto alcanza **92 suites** y la regresión completa acumulada se estima en **1406 pruebas**, que permanecen pendientes de ejecución nativa en la cadena experimental. No solicitar pruebas locales ahora.
 
 ## Bloqueos para una implementación de juego real
 
