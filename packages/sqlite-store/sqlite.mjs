@@ -20,6 +20,8 @@ import {snapshotFootPathV2StageRequest}
   from '../ancients-rules/private-foot-path-v2-sqlite-stage.mjs';
 import {snapshotFootPathV2ReadAuditRequest}
   from '../ancients-rules/private-foot-path-v2-read-audit.mjs';
+import {snapshotFootPathV2LockedPreflightRequest}
+  from '../ancients-rules/private-foot-path-v2-locked-preflight.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -689,6 +691,45 @@ export function openSqliteComposition({file, clock = Date.now,
             movementAuthorized:false,officialMovementAuthorized:false,
             canCommit:false,dbChanged:false,boardChanged:false,
             publicEventWritten:false
+          });
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY: non-executable V2 admission probe under writer
+       * lock. An eventual official game command MUST use a DIFFERENT, fully
+       * authorized implementation; this method cannot reserve a key, mark
+       * a unit as moved, publish an event or advance game_revision.
+       * NEVER expose through HTTP or SSE.
+       */
+      precheckExperimentalSectionFootPathV2Locked(request={},trustedScenario) {
+        const stable=snapshotFootPathV2LockedPreflightRequest(request);
+        if(stable===null)
+          return {status:400,code:'INVALID_SECTION_LAB_FOOT_V2_LOCKED_REQUEST'};
+        return atomic(()=>{
+          const identity=resolveSectionLabActor(stable.sessionToken);
+          if(identity.error)return identity.error;
+          const row=rowOrThrow();
+          if(!hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          if(row.game_revision!==stable.expectedRevision)
+            return {status:409,code:'STALE_REVISION'};
+          const result=sectionHistory.preflightFootPathV2UnderWriterLock(
+            identity.actor,stable.expectedRevision,
+            stable.idempotencyKey,trustedScenario
+          );
+          if(result.status!=='PRIVATE_V2_LOCKED_PREFLIGHT_CANDIDATE')
+            return Object.freeze({
+              status:409,code:'SECTION_LAB_FOOT_V2_LOCKED_PREFLIGHT_REJECTED',
+              movementAuthorized:false,officialMovementAuthorized:false,
+              canCommit:false,dbChanged:false
+            });
+          return Object.freeze({
+            status:200,code:'SECTION_LAB_FOOT_V2_LOCKED_PREFLIGHT_ONLY',
+            proposedRevision:result.proposedRevision,steps:result.steps,
+            movementAuthorized:false,officialMovementAuthorized:false,
+            canCommit:false,dbChanged:false,gameRevisionChanged:false,
+            publicEventWritten:false,needsOfficialScenario:true,
+            needsOfficialReplay:true,needsCommittedIdempotency:true
           });
         });
       },

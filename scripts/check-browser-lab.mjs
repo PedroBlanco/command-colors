@@ -49,6 +49,7 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/foot-path-v2-journal.test.mjs',
   'packages/ancients-rules/private-foot-path-v2-sqlite-stage.test.mjs',
   'packages/ancients-rules/private-foot-path-v2-read-audit.test.mjs',
+  'packages/ancients-rules/private-foot-path-v2-locked-preflight.test.mjs',
   'packages/ancients-rules/movement-path-precheck.test.mjs',
   'packages/ancients-rules/terrain-movement.test.mjs',
   'packages/ancients-rules/terrain-integration.test.mjs',
