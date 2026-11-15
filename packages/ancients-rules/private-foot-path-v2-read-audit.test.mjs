@@ -135,6 +135,17 @@ test('V2 read audit: other participant cannot see stored draft or metadata',()=>
   protectedResult(res);
 });
 
+test('V2 read audit: the other player cannot distinguish absent from present',()=>{
+  const withDraft=makeDraft(),withoutDraft=makeDraft();
+  delete withoutDraft.persisted.ancientsFootPathJournalV2Lab;
+  withDraft.actor='B';withoutDraft.actor='B';
+  const first=check(withDraft),second=check(withoutDraft);
+  assert.deepEqual(first,second);
+  assert.equal(first.status,'NOT_VISIBLE');
+  assert.equal(JSON.stringify(first).includes(KEY),false);
+  protectedResult(first);
+});
+
 test('V2 read audit: wrong match ID cannot re-anchor valid stage',()=>{
   const args=makeDraft();args.matchId=SECOND;
   deny(check(args),'FOOT_PATH_V2_STAGE_ANCHOR_DRIFT');
