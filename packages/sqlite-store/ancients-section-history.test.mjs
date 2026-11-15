@@ -3310,3 +3310,18 @@ test('CCWB V2 locked preflight: live session is read while holding BEGIN IMMEDIA
   assert.equal(db.isTransaction,false);
   other.exec('BEGIN IMMEDIATE');other.exec('ROLLBACK');
 }));
+
+test('CCWB V2 locked preflight: corrupted committed command signature fails full SQL replay',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  db.prepare('UPDATE game_commands SET signature=? WHERE match_id=? AND committed_revision=2')
+    .run('FORGED_SECTION_SIGNATURE',matchId);
+  const before=footStageSnapshot(db,matchId);
+  assert.throws(()=>store.precheckExperimentalSectionFootPathV2Locked(
+    lockedV2Preflight(tokens.A),trustedOpenFootScenario()),
+    /SECTION_CCWB_HISTORY_TAMPERED/);
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
