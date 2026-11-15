@@ -3015,12 +3015,15 @@ test('CCWB V2 read audit: rival and outsider receive no path metadata',
   ()=>fixture(async({app,matchId,tokens})=>{
   const store=app.getStore(matchId),db=app.unsafeTestDatabase();
   stageForMovement(store,tokens.A);
+  const beforeDraft=store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.B},trustedOpenFootScenario());
   assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
   const before=footStageSnapshot(db,matchId);
   assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
     {sessionToken:tokens.B},trustedOpenFootScenario()),{
       status:404,code:'NOT_FOUND'
     });
+  assert.deepEqual(beforeDraft,{status:404,code:'NOT_FOUND'});
   assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
     {sessionToken:tokens.outsider},trustedOpenFootScenario()),{
       status:404,code:'NOT_FOUND'
