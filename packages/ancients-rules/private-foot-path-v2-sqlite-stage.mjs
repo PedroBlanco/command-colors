@@ -38,15 +38,21 @@ const cell=c=>exact(c,['col','row'])&&
   Number.isSafeInteger(field(c,'row'))&&
   field(c,'col')>=0&&field(c,'col')<13&&
   field(c,'row')>=0&&field(c,'row')<9;
-const dense=(xs,min,max)=>Array.isArray(xs)&&
-  Object.getPrototypeOf(xs)===Array.prototype&&
-  Number.isSafeInteger(Object.getOwnPropertyDescriptor(xs,'length')?.value)&&
-  xs.length>=min&&xs.length<=max&&
-  Reflect.ownKeys(xs).length===xs.length+1&&
-  Array.from({length:xs.length},(_,i)=>{
+// No xs.length or xs[i] reads on untrusted arrays: both can invoke a
+// Proxy.get trap. Only own DATA descriptors are allowed, including length.
+const dense=(xs,min,max)=>{
+  if(!Array.isArray(xs)||Object.getPrototypeOf(xs)!==Array.prototype)
+    return false;
+  const count=Object.getOwnPropertyDescriptor(xs,'length')?.value;
+  if(!Number.isSafeInteger(count)||count<min||count>max||
+     Reflect.ownKeys(xs).length!==count+1)return false;
+  for(let i=0;i<count;i++){
     const d=Object.getOwnPropertyDescriptor(xs,String(i));
-    return d?.enumerable===true&&Object.hasOwn(d,'value');
-  }).every(Boolean);
+    if(!d?.enumerable||!Object.hasOwn(d,'value'))return false;
+  }
+  return true;
+};
+const length=xs=>Object.getOwnPropertyDescriptor(xs,'length').value;
 /**
  * Snapshot the entire untrusted request BEFORE acquiring BEGIN IMMEDIATE.
  * No browser-selected actor, scenario, card, policy, signature or game state.
@@ -73,7 +79,7 @@ export function snapshotFootPathV2StageRequest(request){
     const path=field(action,'path');
     if(!dense(path,1,2))return null;
     const cells=[];
-    for(let i=0;i<path.length;i++){
+    for(let i=0;i<length(path);i++){
       const source=field(path,String(i));
       if(!cell(source))return null;
       cells.push(Object.freeze({

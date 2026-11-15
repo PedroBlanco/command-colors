@@ -18,6 +18,8 @@ import {snapshotStagedSequenceRequest,
   snapshotFootTransactionProbeRequest} from '../ancients-rules/staged-sequence-request-snapshot.mjs';
 import {snapshotFootPathV2StageRequest}
   from '../ancients-rules/private-foot-path-v2-sqlite-stage.mjs';
+import {snapshotFootPathV2ReadAuditRequest}
+  from '../ancients-rules/private-foot-path-v2-read-audit.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -649,6 +651,44 @@ export function openSqliteComposition({file, clock = Date.now,
             privateDraftChanged:true,gameRevisionChanged:false,
             boardChanged:false,movementAuthorized:false,
             officialMovementAuthorized:false,canCommit:false
+          });
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY — read-only private V2 stage integrity check.
+       * Session, membership, row revision, SQL commands and SQL public
+       * events share the SAME WAL snapshot. Never expose in HTTP/SSE.
+       */
+      inspectExperimentalSectionFootPathV2Stage(request={},trustedScenario) {
+        const stable=snapshotFootPathV2ReadAuditRequest(request);
+        if(stable===null)
+          return {status:400,code:'INVALID_SECTION_LAB_FOOT_PATH_V2_AUDIT_REQUEST'};
+        return readSnapshot(()=>{
+          const identity=resolveSectionLabActor(stable.sessionToken);
+          if(identity.error)return identity.error;
+          const row=rowOrThrow();
+          if(!hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          const inspected=sectionHistory.inspectFootPathV2JournalStage(
+            identity.actor,trustedScenario
+          );
+          if(inspected.status==='NOT_VISIBLE')
+            return {status:404,code:'NOT_FOUND'};
+          if(inspected.status==='ABSENT')
+            return Object.freeze({
+              status:200,code:'SECTION_LAB_FOOT_PATH_V2_ABSENT',
+              movementAuthorized:false,officialMovementAuthorized:false,
+              canCommit:false,dbChanged:false
+            });
+          if(inspected.status!=='PRIVATE_FOOT_PATH_V2_STAGE_VERIFIED')
+            return {status:409,code:'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED'};
+          return Object.freeze({
+            status:200,code:'SECTION_LAB_FOOT_PATH_V2_VERIFIED',
+            provisionalRevision:inspected.provisionalRevision,
+            steps:inspected.steps,
+            movementAuthorized:false,officialMovementAuthorized:false,
+            canCommit:false,dbChanged:false,boardChanged:false,
+            publicEventWritten:false
           });
         });
       },
