@@ -118,6 +118,7 @@ export function auditPrivateFootPathV2Stage({
     if(result.status!=='PRIVATE_FOOT_PATH_STAGE_ALREADY_RECORDED')
       return verdict('BLOCKED','FOOT_PATH_V2_STAGE_ANCHOR_DRIFT');
     return verdict('PRIVATE_FOOT_PATH_V2_STAGE_VERIFIED',
-      null,result.provisionalRevision,path.value.length);
+      null,result.provisionalRevision,
+      Object.getOwnPropertyDescriptor(path.value,'length')?.value??null);
   }catch{return verdict('BLOCKED','INVALID_V2_STAGE_AUDIT_CONTEXT');}
 }
