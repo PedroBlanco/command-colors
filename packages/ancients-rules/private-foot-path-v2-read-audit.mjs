@@ -109,10 +109,34 @@ export function auditPrivateFootPathV2Stage({
        !path?.enumerable||!Object.hasOwn(path,'value'))
       return verdict('BLOCKED','FOOT_PATH_V2_STAGE_INTEGRITY_FAILED');
 
+    // Although the journal replayed successfully, do NOT forward a
+    // potentially proxied nested path to the planner: its array methods
+    // would otherwise invoke Proxy.get on raw persisted objects.
+    const sourcePath=path.value;
+    if(!Array.isArray(sourcePath)||
+       Object.getPrototypeOf(sourcePath)!==Array.prototype)
+      return verdict('BLOCKED','FOOT_PATH_V2_STAGE_INTEGRITY_FAILED');
+    const count=Object.getOwnPropertyDescriptor(sourcePath,'length')?.value;
+    if(!Number.isSafeInteger(count)||count<1||count>2||
+       Reflect.ownKeys(sourcePath).length!==count+1)
+      return verdict('BLOCKED','FOOT_PATH_V2_STAGE_INTEGRITY_FAILED');
+    const cleanPath=[];
+    for(let i=0;i<count;i++){
+      const d=Object.getOwnPropertyDescriptor(sourcePath,String(i));
+      if(!d?.enumerable||!Object.hasOwn(d,'value')||!plain(d.value))
+        return verdict('BLOCKED','FOOT_PATH_V2_STAGE_INTEGRITY_FAILED');
+      const col=Object.getOwnPropertyDescriptor(d.value,'col'),
+        row=Object.getOwnPropertyDescriptor(d.value,'row');
+      if(!col?.enumerable||!Object.hasOwn(col,'value')||
+         !row?.enumerable||!Object.hasOwn(row,'value')||
+         !Number.isSafeInteger(col.value)||!Number.isSafeInteger(row.value))
+        return verdict('BLOCKED','FOOT_PATH_V2_STAGE_INTEGRITY_FAILED');
+      cleanPath.push({col:col.value,row:row.value});
+    }
     const result=planPrivateFootPathV2SqliteStage({
       matchId,verifiedState,actor,
       expectedRevision:verifiedState.revision,
-      actions:[{kind:'UNIT',id:unit.value,path:path.value}],
+      actions:[{kind:'UNIT',id:unit.value,path:cleanPath}],
       idempotencyKey:key.value,trustedScenario,previousJournal:journal
     });
     if(result.status!=='PRIVATE_FOOT_PATH_STAGE_ALREADY_RECORDED')
