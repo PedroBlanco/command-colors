@@ -60,6 +60,11 @@ export function auditPrivateFootPathV2Stage({
        verifiedState.revision<0||!['A','B'].includes(actor))
       return verdict('BLOCKED','INVALID_V2_STAGE_AUDIT_CONTEXT');
 
+    // The non-acting participant must receive the SAME verdict whether a
+    // private draft exists or not. Otherwise ABSENT vs NOT_VISIBLE would
+    // reveal the presence of the acting player's provisional movement.
+    if(verifiedState.turn!==actor)return verdict('NOT_VISIBLE');
+
     const hasV1=Object.hasOwn(persisted,'ancientsFootMovementJournalLab'),
       hasV2=Object.hasOwn(persisted,'ancientsFootPathJournalV2Lab');
     if(hasV1&&hasV2)
