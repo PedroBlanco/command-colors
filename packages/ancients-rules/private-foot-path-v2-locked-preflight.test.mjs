@@ -170,18 +170,39 @@ test('V2 writer preflight: forged stored command or event proposal blocks',()=>{
 });
 
 test('V2 writer preflight: malformed and sparse SQL key rows reject',()=>{
+  const original=fixture().committedKeys[1];
   const fixtures=[
-    [{actor:'A',idem_key:'valid_key_001',committed_revision:0}],
-    [{actor:'A',idem_key:'valid_key_001',committed_revision:3}],
-    [{actor:'A',idem_key:'bad key',committed_revision:1}],
-    [{actor:'C',idem_key:'valid_key_001',committed_revision:1}],
-    [{actor:'A',idem_key:'valid_key_001',committed_revision:1,signature:'EXTRA'}],
-    new Array(1)
+    [{actor:'A',idem_key:'valid_key_001',committed_revision:0},original],
+    [{actor:'A',idem_key:'valid_key_001',committed_revision:3},original],
+    [{actor:'A',idem_key:'bad key',committed_revision:1},original],
+    [{actor:'C',idem_key:'valid_key_001',committed_revision:1},original],
+    [{actor:'A',idem_key:'valid_key_001',committed_revision:1,signature:'EXTRA'},original],
+    new Array(2)
   ];
   for(const committedKeys of fixtures){
     const args=fixture();args.committedKeys=committedKeys;
     deny(assess(args),'INVALID_V2_LOCKED_PREFLIGHT_KEYS');
   }
+});
+
+test('V2 writer preflight: committed history count must equal the verified public revision',()=>{
+  const missing=fixture();
+  missing.committedKeys.pop();
+  deny(assess(missing),'V2_LOCKED_PREFLIGHT_HISTORY_KEYS_DRIFT');
+  const excess=fixture();
+  excess.committedKeys.push({
+    actor:'B',idem_key:'extra_0003',committed_revision:3
+  });
+  deny(assess(excess),'V2_LOCKED_PREFLIGHT_HISTORY_KEYS_DRIFT');
+});
+
+test('V2 writer preflight: repeated revision or duplicate SQL key is rejected',()=>{
+  const duplicateRevision=fixture();
+  duplicateRevision.committedKeys[1].committed_revision=1;
+  deny(assess(duplicateRevision),'INVALID_V2_LOCKED_PREFLIGHT_KEYS');
+  const duplicateKey=fixture();
+  duplicateKey.committedKeys[1].idem_key='section_card_0001';
+  deny(assess(duplicateKey),'INVALID_V2_LOCKED_PREFLIGHT_KEYS');
 });
 
 test('V2 writer preflight: malformed root and missing authoritative inputs fail closed',()=>{
