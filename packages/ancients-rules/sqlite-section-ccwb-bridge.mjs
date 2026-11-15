@@ -20,6 +20,8 @@ import {planPrivateFootPathV2SqliteStage}
   from './private-foot-path-v2-sqlite-stage.mjs';
 import {inspectFootPathV2StageForSectionAdvance}
   from './private-foot-path-v2-lifecycle.mjs';
+import {auditPrivateFootPathV2Stage}
+  from './private-foot-path-v2-read-audit.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence,
@@ -319,6 +321,31 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       idempotencyKey:request.idempotencyKey,trustedScenario,previousJournal
     });
   }
+  /**
+   * INTERNAL LAB ONLY. The caller holds a WAL read transaction with a fresh
+   * authenticated session. verify() independently replays ALL CCWB commands,
+   * signatures and public game_events rows before checking the draft.
+   * Nothing from the private V2 journal is written or exposed as a game event.
+   */
+  function inspectFootPathV2JournalStage(actor,trustedScenario){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {persisted,snapshot}=verify(resultRow());
+    const audit=auditPrivateFootPathV2Stage({
+      persisted,matchId,verifiedState:snapshot,actor,trustedScenario
+    });
+    if(audit.status==='PRIVATE_FOOT_PATH_V2_STAGE_VERIFIED'){
+      // The provisional key must also be absent from the complete committed
+      // command namespace, not merely self-consistent inside the draft.
+      const stage=persisted.ancientsFootPathJournalV2Lab.entries[0];
+      if(getKey.get(matchId,actor,stage.idempotencyKey))
+        return Object.freeze({
+          status:'BLOCKED',reason:'FOOT_PATH_V2_COMMITTED_KEY_DRIFT',
+          movementAuthorized:false,officialMovementAuthorized:false,
+          canCommit:false,dbChanged:false
+        });
+    }
+    return audit;
+  }
   /** INTERNAL LAB ONLY. Replay verifies the private journal under the
    *  caller's WAL snapshot before building immutable audit evidence.
    *  Never persist or broadcast this trace as an executed movement. */
@@ -357,6 +384,6 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
   return Object.freeze({initialize,view,dispatch,previewMovement,
     previewLeaderMovement,previewMovementSequence,previewBoardProjection,
     previewOrderBudget,previewVerifiedFootCore,proposeFootJournalStage,
-    proposeFootPathV2JournalStage,
+    proposeFootPathV2JournalStage,inspectFootPathV2JournalStage,
     previewMovementEvidence,previewOneHexIntent});
 }
