@@ -83,6 +83,11 @@ export function assessFootPathV2LockedPreflight({
     if(!Number.isSafeInteger(count)||count<0||count>4096||
        Reflect.ownKeys(committedKeys).length!==count+1)
       return reject('INVALID_V2_LOCKED_PREFLIGHT_KEYS');
+    // One committed CCWB command per public revision, no gaps and no
+    // ambiguous retry keys. verify(row) MUST also check the full payloads.
+    if(count!==expectedRevision)
+      return reject('V2_LOCKED_PREFLIGHT_HISTORY_KEYS_DRIFT');
+    const revisions=new Set(),usedKeys=new Set();
     for(let i=0;i<count;i++){
       const row=field(committedKeys,String(i));
       if(!row?.enumerable||!Object.hasOwn(row,'value')||
@@ -92,8 +97,11 @@ export function assessFootPathV2LockedPreflight({
         revision=safe(row.value,'committed_revision');
       if(!['A','B'].includes(owner)||typeof key!=='string'||
          !KEY.test(key)||!Number.isSafeInteger(revision)||
-         revision<1||revision>expectedRevision)
+         revision<1||revision>expectedRevision||
+         revisions.has(revision)||usedKeys.has(owner+':'+key))
         return reject('INVALID_V2_LOCKED_PREFLIGHT_KEYS');
+      revisions.add(revision);
+      usedKeys.add(owner+':'+key);
       if(owner===actor&&key===idempotencyKey)
         return reject('V2_LOCKED_PREFLIGHT_KEY_COMMITTED');
     }
