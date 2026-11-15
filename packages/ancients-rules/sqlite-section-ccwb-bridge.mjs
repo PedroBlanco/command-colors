@@ -22,6 +22,8 @@ import {inspectFootPathV2StageForSectionAdvance}
   from './private-foot-path-v2-lifecycle.mjs';
 import {auditPrivateFootPathV2Stage}
   from './private-foot-path-v2-read-audit.mjs';
+import {assessFootPathV2LockedPreflight}
+  from './private-foot-path-v2-locked-preflight.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence,
@@ -346,6 +348,26 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     }
     return audit;
   }
+  /**
+   * PRIVATE WRITER-LOCK PROBE ONLY. The store MUST have authenticated actor
+   * and acquired BEGIN IMMEDIATE BEFORE this call. Replays all committed
+   * section card/order events, command signatures and revisions, then
+   * consults the committed idempotency key namespace. NEVER writes rows.
+   */
+  function preflightFootPathV2UnderWriterLock(
+    actor,expectedRevision,idempotencyKey,trustedScenario
+  ){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const row=resultRow(),{persisted,snapshot}=verify(row);
+    const committedKeys=keys.all(row.id).map(c=>({
+      actor:c.actor,idem_key:c.idem_key,
+      committed_revision:c.committed_revision
+    }));
+    return assessFootPathV2LockedPreflight({
+      persisted,matchId,verifiedState:snapshot,actor,
+      expectedRevision,idempotencyKey,trustedScenario,committedKeys
+    });
+  }
   /** INTERNAL LAB ONLY. Replay verifies the private journal under the
    *  caller's WAL snapshot before building immutable audit evidence.
    *  Never persist or broadcast this trace as an executed movement. */
@@ -385,5 +407,6 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     previewLeaderMovement,previewMovementSequence,previewBoardProjection,
     previewOrderBudget,previewVerifiedFootCore,proposeFootJournalStage,
     proposeFootPathV2JournalStage,inspectFootPathV2JournalStage,
+    preflightFootPathV2UnderWriterLock,
     previewMovementEvidence,previewOneHexIntent});
 }
