@@ -2970,3 +2970,152 @@ test('CCWB V2 private path: failed real event insertion rolls back draft expiry 
   assert.equal(stageV2(store,tokens.A).code,
     'SECTION_LAB_FOOT_PATH_V2_ALREADY_RECORDED');
 }));
+
+test('CCWB V2 read audit: absent journal returns only a read-only private status',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.A},trustedOpenFootScenario()),{
+      status:200,code:'SECTION_LAB_FOOT_PATH_V2_ABSENT',
+      movementAuthorized:false,officialMovementAuthorized:false,
+      canCommit:false,dbChanged:false
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB V2 read audit: saved path validates across WAL connections without revealing draft',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  const result=connect().getStore(matchId)
+    .inspectExperimentalSectionFootPathV2Stage(
+      {sessionToken:tokens.A},trustedOpenFootScenario());
+  assert.deepEqual(result,{
+    status:200,code:'SECTION_LAB_FOOT_PATH_V2_VERIFIED',
+    provisionalRevision:3,steps:2,
+    movementAuthorized:false,officialMovementAuthorized:false,
+    canCommit:false,dbChanged:false,
+    boardChanged:false,publicEventWritten:false
+  });
+  const encoded=JSON.stringify(result);
+  for(const secret of ['private_v2_path_stage_001','unitA',
+    'LIGHT_INFANTRY','handAtPlay','drawPile','sessionToken',
+    'FOOT_PATH_PUBLIC_EVENT_PROPOSAL_V2'])
+    assert.equal(encoded.includes(secret),false,secret);
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB V2 read audit: rival and outsider receive no path metadata',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.B},trustedOpenFootScenario()),{
+      status:404,code:'NOT_FOUND'
+    });
+  assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.outsider},trustedOpenFootScenario()),{
+      status:404,code:'NOT_FOUND'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
+
+test('CCWB V2 read audit: invalid request and a revoked session are denied',
+  ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  for(const extra of [
+    {actor:'A'},{canCommit:true},{board:{}},
+    {trustedScenario:trustedOpenFootScenario()}
+  ])assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.A,...extra},trustedOpenFootScenario()),{
+      status:400,code:'INVALID_SECTION_LAB_FOOT_PATH_V2_AUDIT_REQUEST'
+    });
+  const other=connect();other.identity.logOut(tokens.A);
+  assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.A},trustedOpenFootScenario()),{
+      status:401,code:'UNAUTHENTICATED'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB V2 read audit: scenario drift and stored signature tampering fail without writes',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  const modified=trustedOpenFootScenario();
+  modified.unitTypes.unitA='MEDIUM_INFANTRY';
+  assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.A},modified),{
+      status:409,code:'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  const saved=db.prepare('SELECT private_state FROM matches WHERE id=?')
+    .get(matchId);
+  const persisted=JSON.parse(saved.private_state);
+  persisted.ancientsFootPathJournalV2Lab.entries[0].signature='BAD';
+  db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(persisted),matchId);
+  const corruptBefore=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.A},trustedOpenFootScenario()),{
+      status:409,code:'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),corruptBefore);
+}));
+
+test('CCWB V2 read audit: SQL public-event tampering fails independent history replay',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  db.prepare('UPDATE game_events SET payload=? WHERE match_id=? AND sequence=?')
+    .run(JSON.stringify({type:'FORGED_CARD_EVENT',visibility:'public'}),
+      matchId,1);
+  const before=footStageSnapshot(db,matchId);
+  assert.throws(()=>store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.A},trustedOpenFootScenario()),
+    /SECTION_CCWB_HISTORY_TAMPERED/);
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+  assert.equal(db.isTransaction,false);
+}));
+
+test('CCWB V2 read audit: staged key cannot collide with a confirmed card command',
+  ()=>fixture(async({app,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  stageForMovement(store,tokens.A);
+  assert.equal(stageV2(store,tokens.A).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const saved=db.prepare('SELECT private_state FROM matches WHERE id=?')
+    .get(matchId);
+  const persisted=JSON.parse(saved.private_state);
+  const entry=persisted.ancientsFootPathJournalV2Lab.entries[0];
+  const confirmedKey='private_preview_card_0001';
+  entry.idempotencyKey=confirmedKey;
+  entry.signature='CCW_FOOT_PATH_V2:'+JSON.stringify({
+    matchId,actor:entry.command.actor,
+    expectedRevision:entry.command.expectedRevision,
+    unitId:entry.command.unitId,
+    path:entry.command.path,idempotencyKey:confirmedKey
+  });
+  db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(persisted),matchId);
+  const before=footStageSnapshot(db,matchId);
+  assert.deepEqual(store.inspectExperimentalSectionFootPathV2Stage(
+    {sessionToken:tokens.A},trustedOpenFootScenario()),{
+      status:409,code:'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED'
+    });
+  assert.deepEqual(footStageSnapshot(db,matchId),before);
+}));
