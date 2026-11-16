@@ -151,6 +151,21 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   if (typeof onConfirm!=='function') throw new TypeError('MISSING_MOVEMENT_SENDER');
   let view=null, draft=null, keyForRetry=null, pending=false, autoRoute=false;
   const message=value=>{if(status)status.textContent=value;};
+  // Local geometry failures belong beside the board, not only in the
+  // application's general message area. Never echo private server payloads.
+  const localErrors=Object.freeze({
+    HEX_OCUPADO:'El hexágono de destino está ocupado.',
+    HEX_REPETIDO:'Ese hexágono ya forma parte del recorrido.',
+    HEX_INVALIDO:'El hexágono elegido no es válido.',
+    RUTA_INACCESIBLE:'No existe un recorrido geométrico libre hasta el destino.',
+    RUTA_DEMASIADO_LARGA:'El recorrido supera los 32 pasos del laboratorio.',
+    BORRADOR_DESACTUALIZADO:'La partida ha cambiado. Vuelve a elegir la unidad.',
+    SELECCIONA_UNIDAD_PROPIA:'Selecciona primero una unidad propia.'
+  });
+  const reportError=error=>{
+    if (Object.hasOwn(localErrors,error?.message)) message(localErrors[error.message]);
+    onError(error);
+  };
   function repaint() {
     if (!svg?.ownerDocument?.createElementNS) return; // stub DOM in legacy tests
     const editable = !!view && deckActions(view).includes('move_synthetic_unit');
@@ -194,7 +209,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
         autoRoute=draft.path.length-before>1;
       } else throw Error('SELECCIONA_UNIDAD_PROPIA');
       keyForRetry=null;repaint();
-    } catch(error){onError(error);}
+    } catch(error){reportError(error);}
   }
   async function confirm() {
     if(pending)return;
@@ -204,11 +219,11 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       pending=true;repaint();
       await onConfirm(fields,keyForRetry);
       draft=null;keyForRetry=null;autoRoute=false;
-    } catch(error){onError(error);} finally {pending=false;repaint();}
+    } catch(error){reportError(error);} finally {pending=false;repaint();}
   }
   function undo() {
     if(pending)return;
-    try {draft=undoMovementHex(view,draft);keyForRetry=null;autoRoute=false;repaint();}catch(error){onError(error);}
+    try {draft=undoMovementHex(view,draft);keyForRetry=null;autoRoute=false;repaint();}catch(error){reportError(error);}
   }
   function cancel() {if(pending)return;draft=null;keyForRetry=null;autoRoute=false;repaint();}
   undoButton?.addEventListener('click',undo);

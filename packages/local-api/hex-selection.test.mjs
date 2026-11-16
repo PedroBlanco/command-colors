@@ -100,6 +100,7 @@ test('a 32-step route is the maximum; duplicate/corrupted view fails closed',()=
   for(const step of snake.slice(0,32)) d=appendMovementHex(v,d,step);
   assert.equal(d.path.length,32);
   fail(()=>appendMovementHex(v,d,snake[32]),'RUTA_DEMASIADO_LARGA');
+  fail(()=>extendMovementDraftTo(v,d,snake[32]),'RUTA_DEMASIADO_LARGA');
   const duplicate={...v,board:[...v.board,{id:'synthetic-a',side:'B',col:11,row:2}]};
   fail(()=>starts(duplicate),'VISTA_TABLERO_INVALIDA');
   const collision={...v,board:[...v.board,{id:'another',side:'A',col:0,row:0}]};

@@ -71,6 +71,7 @@ test('distant clicks build candidate routes, occupied destinations stay blocked'
  const oldPath=controller.getDraft().path;
  cell(svg,5,4).dispatch('click');
  assert.equal(errors.at(-1),'HEX_OCUPADO');
+ assert.match(status.textContent,/está ocupado/);
  assert.deepEqual(controller.getDraft().path,oldPath);
  assert.equal(requests.length,0);
 });
