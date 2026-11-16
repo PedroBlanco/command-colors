@@ -30,6 +30,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .hex-target:nth-child(even) .hex-shape{fill:#e0e6df}
 .hex-target.hex-selectable .hex-shape{stroke:#237b95;stroke-width:2.5}
 .hex-target.hex-next .hex-shape{fill:#d8ebd1;stroke:#267951;stroke-width:2.8}
+.hex-target.hex-orderable .hex-shape{stroke:#3975a0;stroke-width:2.5}
+.hex-target.hex-order-selected .hex-shape{fill:#93c8ef;stroke:#23577e;stroke-width:4}
 .hex-target.hex-combat-selectable .hex-shape{stroke:#a34d43;stroke-width:2.8}
 .hex-target.hex-combat-selected .hex-shape{fill:#f3bbb2;stroke:#853026;stroke-width:4}
 .hex-next-marker{fill:#267951;opacity:.8}
@@ -87,13 +89,14 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section id="movement-section" aria-labelledby="movement-title">
 <details id="movement-details"><summary id="movement-title">Tablero hexagonal de laboratorio (13 × 9)</summary>
 <p>Selecciona una unidad propia y toca los hexágonos vecinos para trazar el movimiento.
-Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; no es un ataque reglamentario de Ancients.</p>
+Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; no es un ataque reglamentario de Ancients.</p>
 <div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
   role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
 <p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>
 <button type="button" id="board-undo" disabled>Deshacer último paso</button>
 <button type="button" id="board-cancel" disabled>Cancelar ruta</button>
 <button type="button" id="board-confirm" disabled>Confirmar movimiento</button>
+<button type="button" id="board-assign-orders" disabled>Asignar órdenes a las seleccionadas</button>
 <button type="button" id="board-ask-defense" disabled>Solicitar defensa del objetivo</button>
 <p class="notice">Sin reglas oficiales: el servidor valida unidades ordenadas, recorrido y límites de la partida.</p>
 </details></section>

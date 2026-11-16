@@ -18,8 +18,8 @@ class Node {
 function fixture(){const doc={activeElement:null,createElementNS:(_ns,tag)=>new Node(doc,tag)};
   const svg=new Node(doc,'svg'),status=new Node(doc,'p'),undoButton=new Node(doc,'button'),
    cancelButton=new Node(doc,'button'),confirmButton=new Node(doc,'button'),
-   attackButton=new Node(doc,'button');
-  return {svg,status,undoButton,cancelButton,confirmButton,attackButton};}
+   attackButton=new Node(doc,'button'),orderButton=new Node(doc,'button');
+  return {svg,status,undoButton,cancelButton,confirmButton,attackButton,orderButton};}
 const view=()=>({matchId:'123e4567-e89b-42d3-a456-426614174000',you:'A',turn:'A',actingSide:'A',
   phase:'MOVEMENT',revision:5,yourHand:[],movedUnitIds:[],pendingDecision:null,
   board:[{id:'synthetic-a',side:'A',col:3,row:4},{id:'synthetic-a2',side:'A',col:7,row:4},
@@ -286,4 +286,43 @@ test('synthetic defense retry keeps the same idempotency key until success',asyn
  await c.requestDefense();
  assert.deepEqual(keys,['defense_retry_01','defense_retry_01']);
  assert.equal(ui.attackButton.disabled,true);
+});
+
+test('board assigns orders through the existing shared selection only on confirmation',async()=>{
+ const ui=fixture(),selected=new Set(),sent=[];
+ const c=createMovementBoard({...ui,onConfirm:async()=>{},
+   getOrderSelection:()=>[...selected],
+   onToggleOrderUnit:id=>selected.has(id)?selected.delete(id):selected.add(id),
+   onAssignOrders:async key=>{sent.push({ids:[...selected],key});return true},
+   makeIdempotencyKey:()=> 'orders_confirm_01'});
+ c.setView({...view(),phase:'ASSIGN_ORDERS'});
+ assert.equal(ui.orderButton.disabled,true);
+ assert.equal(cell(ui.svg,3,4).classes.has('hex-orderable'),true);
+ c.select({col:3,row:4});
+ c.select({col:7,row:4});
+ assert.deepEqual([...selected],['synthetic-a','synthetic-a2']);
+ assert.equal(ui.orderButton.disabled,false);
+ assert.equal(cell(ui.svg,3,4).attrs['aria-pressed'],'true');
+ assert.equal(sent.length,0);
+ c.select({col:3,row:4});
+ assert.deepEqual([...selected],['synthetic-a2']);
+ await c.assignOrders();
+ assert.deepEqual(sent,[{ids:['synthetic-a2'],key:'orders_confirm_01'}]);
+});
+
+test('board orders reject rivals and block stale submissions',async()=>{
+ const ui=fixture(),selected=new Set(),sent=[];
+ const c=createMovementBoard({...ui,onConfirm:async()=>{},
+   getOrderSelection:()=>[...selected],
+   onToggleOrderUnit:id=>selected.add(id),
+   onAssignOrders:async key=>sent.push(key)});
+ c.setView({...view(),phase:'ASSIGN_ORDERS'});
+ c.select({col:5,row:4});
+ assert.deepEqual([...selected],[]);
+ assert.equal(ui.orderButton.disabled,true);
+ selected.add('synthetic-a');
+ c.setView({...view(),phase:'COMBAT',revision:6});
+ await c.assignOrders();
+ assert.equal(sent.length,0);
+ assert.equal(ui.orderButton.disabled,true);
 });
