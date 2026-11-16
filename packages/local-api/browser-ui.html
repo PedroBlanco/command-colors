@@ -41,6 +41,9 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .hex-target.hex-profile-battle .hex-shape{fill:#cde4d0;stroke:#36764c;stroke-width:2}
 .hex-target.hex-profile-move .hex-shape{fill:#d9e9f8;stroke:#3973a2;stroke-width:2}
 .hex-target.hex-profile-charge .hex-shape{fill:#ffe0ab;stroke:#a9671e;stroke-width:3}
+.hex-target.hex-profile-los-open-unverified .hex-shape{stroke:#b33e43;stroke-width:4}
+.hex-target.hex-profile-los-blocked .hex-shape{stroke:#b33e43;stroke-width:3;stroke-dasharray:5 4}
+.hex-target.hex-profile-target-focus .hex-shape{stroke:#692877;stroke-width:5}
 .hex-target.hex-inspected .hex-shape{fill:#ffe2a8;stroke:#a45f17;stroke-width:4}
 .hex-target.hex-already-moved .unit-a,.hex-target.hex-already-moved .unit-b{opacity:.65}
 .unit-moved-dot{fill:#1a573f;stroke:white;stroke-width:1}
@@ -105,7 +108,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section id="movement-section" aria-labelledby="movement-title">
 <details id="movement-details"><summary id="movement-title">Tablero hexagonal de laboratorio (13 × 9)</summary>
 <p>Selecciona una unidad propia y toca los hexágonos vecinos para trazar el movimiento.
-Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. También puedes jugar una carta de tu propia mano, terminar movimiento, combate o turno según la fase. Usa «Inspeccionar tablero» para consultar unidades, movimientos realizados y distancias hexagonales y probar perfiles de tropa de Ancients como referencia hipotética sin alterar la partida. No son reglas oficiales de Ancients.</p>
+Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. También puedes jugar una carta de tu propia mano, terminar movimiento, combate o turno según la fase. Usa «Inspeccionar tablero» para consultar unidades, movimientos realizados y distancias hexagonales. Al seleccionar una unidad propia podrás probar su tipo hipotético de Ancients y después tocar un rival para inspeccionar el alcance y la línea de visión considerando únicamente las unidades visibles. No se conoce el terreno ni los líderes y ninguna marca autoriza un ataque. No son reglas oficiales de Ancients.</p>
 <div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
   role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
 <p id="board-overview" aria-live="polite">Sin tablero cargado</p>
