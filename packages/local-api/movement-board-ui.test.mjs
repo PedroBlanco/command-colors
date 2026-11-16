@@ -17,8 +17,9 @@ class Node {
 }
 function fixture(){const doc={activeElement:null,createElementNS:(_ns,tag)=>new Node(doc,tag)};
   const svg=new Node(doc,'svg'),status=new Node(doc,'p'),undoButton=new Node(doc,'button'),
-   cancelButton=new Node(doc,'button'),confirmButton=new Node(doc,'button');
-  return {svg,status,undoButton,cancelButton,confirmButton};}
+   cancelButton=new Node(doc,'button'),confirmButton=new Node(doc,'button'),
+   attackButton=new Node(doc,'button');
+  return {svg,status,undoButton,cancelButton,confirmButton,attackButton};}
 const view=()=>({matchId:'123e4567-e89b-42d3-a456-426614174000',you:'A',turn:'A',actingSide:'A',
   phase:'MOVEMENT',revision:5,yourHand:[],movedUnitIds:[],pendingDecision:null,
   board:[{id:'synthetic-a',side:'A',col:3,row:4},{id:'synthetic-a2',side:'A',col:7,row:4},
@@ -241,4 +242,48 @@ test('suggested routes need confirmation and expire after an updated revision',a
  assert.equal(requests.length,1);
  assert.deepEqual(requests[0].fields.path.at(-1),{col:8,row:6});
  assert.equal(Object.hasOwn(requests[0].fields,'actor'),false);
+});
+
+test('clicking a rival in synthetic combat selects a target but never sends automatically',async()=>{
+ const ui=fixture(),sent=[];
+ const c=createMovementBoard({...ui,onConfirm:async()=>{},
+   onRequestDefense:async(id,key)=>{sent.push({id,key});},
+   makeIdempotencyKey:()=> 'defense_key_001'});
+ c.setView({...view(),phase:'COMBAT'});
+ assert.equal(cell(ui.svg,5,4).classes.has('hex-combat-selectable'),true);
+ c.select({col:5,row:4});
+ assert.equal(sent.length,0);
+ assert.equal(ui.attackButton.disabled,false);
+ assert.equal(cell(ui.svg,5,4).classes.has('hex-combat-selected'),true);
+ await ui.attackButton.dispatch('click');
+ assert.deepEqual(sent,[{id:'synthetic-b',key:'defense_key_001'}]);
+ assert.equal(ui.attackButton.disabled,true);
+});
+
+test('wrong targets and stale combat selection cannot be submitted',async()=>{
+ const ui=fixture(),sent=[],errors=[];
+ const c=createMovementBoard({...ui,onConfirm:async()=>{},
+   onRequestDefense:async id=>sent.push(id),onError:e=>errors.push(e.message)});
+ c.setView({...view(),phase:'COMBAT'});
+ c.select({col:3,row:4});
+ assert.deepEqual(errors,['OBJETIVO_RIVAL_REQUERIDO']);
+ c.select({col:5,row:4});
+ c.setView({...view(),phase:'COMBAT',revision:6});
+ await c.requestDefense();
+ assert.equal(sent.length,0);
+ assert.equal(ui.attackButton.disabled,true);
+});
+
+test('synthetic defense retry keeps the same idempotency key until success',async()=>{
+ const ui=fixture(),keys=[];let fail=true;
+ const c=createMovementBoard({...ui,onConfirm:async()=>{},
+   onRequestDefense:async(_,key)=>{keys.push(key);if(fail)throw Error('NETWORK_FAILED')},
+   makeIdempotencyKey:()=> 'defense_retry_01'});
+ c.setView({...view(),phase:'COMBAT'});
+ c.select({col:5,row:4});
+ await c.requestDefense();
+ fail=false;
+ await c.requestDefense();
+ assert.deepEqual(keys,['defense_retry_01','defense_retry_01']);
+ assert.equal(ui.attackButton.disabled,true);
 });
