@@ -484,3 +484,33 @@ test('Ancients base reference draws a hypothetical movement overlay only while i
  assert.equal(group.hidden,true);
  assert.equal(cell(ui.svg,4,4).classes.has('hex-profile-battle'),false);
 });
+
+test('ranged inspection marks public blockers but never authorizes a shot',async()=>{
+ const ui=fixture(),doc=ui.svg.ownerDocument;
+ const selector=new Node(doc,'select'),info=new Node(doc,'p'),
+   toggle=new Node(doc,'button'),sent=[];
+ selector.value='LIGHT_BOW_INFANTRY';
+ const c=createMovementBoard({...ui,profileSelect:selector,profileStatus:info,
+   inspectButton:toggle,onConfirm:async()=>sent.push('move'),
+   onRequestDefense:async()=>sent.push('attack')});
+ const visibleBoard=[
+   {id:'own',side:'A',col:3,row:4},
+   {id:'blocker',side:'A',col:3,row:5},
+   {id:'target',side:'B',col:3,row:7},
+   {id:'clear',side:'B',col:5,row:4}
+ ];
+ c.setView({...view(),board:visibleBoard,movedUnitIds:[]});
+ toggle.dispatch('click');c.select({col:3,row:4});
+ assert.equal(cell(ui.svg,3,7).classes.has('hex-profile-los-blocked'),true);
+ assert.equal(cell(ui.svg,5,4).classes.has('hex-profile-los-open-unverified'),true);
+ c.select({col:3,row:7});
+ assert.equal(cell(ui.svg,3,7).classes.has('hex-profile-target-focus'),true);
+ assert.match(info.textContent,/unidades visibles interpuestas/);
+ assert.match(info.textContent,/NO autoriza/);
+ await c.confirm();await c.requestDefense();
+ assert.deepEqual(sent,[]);
+ c.setView({...view(),revision:6,board:visibleBoard,movedUnitIds:['own']});
+ toggle.dispatch('click');c.select({col:3,row:4});
+ assert.match(info.textContent,/se desconoce el número de pasos/);
+ assert.equal(cell(ui.svg,5,4).classes.has('hex-profile-los-open-unverified'),false);
+});
