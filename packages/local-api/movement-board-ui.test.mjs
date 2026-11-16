@@ -464,3 +464,23 @@ test('inspection reads public geometry and does not send a gameplay command',asy
  assert.equal(toggle.attrs['aria-pressed'],'false');
  assert.equal(inspector.textContent,'');
 });
+
+test('Ancients base reference draws a hypothetical movement overlay only while inspecting',()=>{
+ const ui=fixture(),group=new Node(ui.svg.ownerDocument,'div'),
+   profileSelect=new Node(ui.svg.ownerDocument,'select'),
+   profileStatus=new Node(ui.svg.ownerDocument,'p'),
+   toggle=new Node(ui.svg.ownerDocument,'button');
+ profileSelect.value='LIGHT_INFANTRY';
+ const c=createMovementBoard({...ui,profileGroup:group,profileSelect,profileStatus,
+   inspectButton:toggle,onConfirm:async()=>{throw Error('MUST_NOT_SEND')}});
+ c.setView(view());toggle.dispatch('click');c.select({col:3,row:4});
+ assert.match(profileStatus.textContent,/NO autoriza/);
+ assert.equal(cell(ui.svg,4,4).classes.has('hex-profile-battle'),true);
+ assert.equal(cell(ui.svg,5,4).classes.has('hex-profile-battle'),false);
+ profileSelect.value='HEAVY_INFANTRY';profileSelect.dispatch('change');
+ assert.equal(cell(ui.svg,5,5).classes.has('hex-profile-battle'),false);
+ assert.equal(profileStatus.textContent.includes('1 pasos'),true);
+ toggle.dispatch('click');
+ assert.equal(group.hidden,true);
+ assert.equal(cell(ui.svg,4,4).classes.has('hex-profile-battle'),false);
+});

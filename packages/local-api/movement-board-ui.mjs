@@ -5,6 +5,7 @@
  */
 import {allCells, pixelCenter, polygonPoints, distance} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
+import {previewBaseMovementOnBoard} from './ancients-base-reference.mjs';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
   nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
 
@@ -32,7 +33,7 @@ function svgNode(doc, name, attrs = {}) {
 export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
     orderableUnitIds=[], selectedOrderUnitIds=[],
-    inspectionCell=null, movedUnitIds=[]}={}) {
+    inspectionCell=null, movedUnitIds=[], profileCells=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -80,6 +81,15 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       movedUnitIds.some(id=>typeof id!=='string' ||
         !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id)))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if(!Array.isArray(profileCells)||profileCells.length>117||
+      profileCells.some(c=>!c||!Number.isSafeInteger(c.col)||
+        !Number.isSafeInteger(c.row)||c.col<0||c.col>12||c.row<0||c.row>8||
+        !Number.isSafeInteger(c.steps)||c.steps<1||c.steps>4||
+        !['POSSIBLE','UNAVAILABLE','MANDATORY_CLOSE_COMBAT'].includes(c.battle)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const previewByCell=new Map(profileCells.map(c=>[key(c),c]));
+  if(previewByCell.size!==profileCells.length)
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
   const moved=new Set(movedUnitIds);
   const orderable=new Set(orderableUnitIds);
   const ordered=new Set(selectedOrderUnitIds);
@@ -107,10 +117,11 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const alreadyMoved=!!unit && unit.side===viewer && moved.has(unit.id);
     const inspected=inspectionCell && key(inspectionCell)===key(cell);
     const range=inspectionCell ? distance(cell,inspectionCell):null;
+    const profilePreview=previewByCell.get(key(cell));
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}`,
       'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -123,6 +134,10 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     if (alreadyMoved) hex.classList.add('hex-already-moved');
     if (inspected) hex.classList.add('hex-inspected');
     else if (range!==null && range>=1 && range<=3)hex.classList.add(`hex-range-${range}`);
+    if (profilePreview)hex.classList.add(
+      profilePreview.battle==='MANDATORY_CLOSE_COMBAT'?'hex-profile-charge':
+      profilePreview.battle==='POSSIBLE'?'hex-profile-battle':'hex-profile-move'
+    );
     if (next) hex.classList.add('hex-next');
     if (origin) hex.classList.add('hex-origin');
     if (step) hex.classList.add('hex-route');
@@ -205,7 +220,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   attackButton,onRequestDefense,orderButton,onAssignOrders,onToggleOrderUnit,
   getOrderSelection=()=>[],phaseButtons={},onPhaseCommand,
   cardGroup,cardSelect,cardButton,onPlayCard,
-  inspectButton,inspectPanel,overviewPanel,
+  inspectButton,inspectPanel,overviewPanel,profileSelect,profileStatus,profileGroup,
   onConfirm,onError=()=>{},
   makeIdempotencyKey=()=>crypto.randomUUID().replaceAll('-','')}={}) {
   if (typeof onConfirm!=='function') throw new TypeError('MISSING_MOVEMENT_SENDER');
@@ -270,6 +285,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       actions.includes('play_synthetic_card') && Array.isArray(view?.yourHand);
     let renderError = false, nextCells = [], selectableUnitIds = [], combatTargetIds = [];
     let orderableUnitIds=[],selectedOrderUnitIds=[];
+    let profileCells=[];
     const boardValid=Array.isArray(view?.board);
     const movedPublic=Array.isArray(view?.movedUnitIds)?view.movedUnitIds:[];
     if (inspectButton) {
@@ -284,6 +300,29 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       const used=own.filter(unit=>movedPublic.includes(unit.id)).length;
       overviewPanel.textContent=!boardValid?'Sin tablero cargado':
         `Bando ${view.you} · Turno ${view.turn} · Debe actuar ${view.actingSide} · Fase ${view.phase} · Revisión ${view.revision}. ${own.length} unidades propias (${used} movidas), ${enemy.length} rivales.`;
+    }
+    if(profileGroup)profileGroup.hidden=!inspecting||!boardValid;
+    if(profileSelect)profileSelect.disabled=!inspecting||!boardValid;
+    if(profileStatus){
+      if(!inspecting||!boardValid)profileStatus.textContent='';
+      else {
+        const own=inspectedCell && view.board.find(u=>u.side===view.you &&
+          key(u)===key(inspectedCell));
+        if(!own)profileStatus.textContent='Elige una unidad propia para ver un perfil base hipotético.';
+        else try {
+          const result=previewBaseMovementOnBoard({
+            unitType:profileSelect?.value,
+            origin:inspectedCell,
+            occupiedCells:view.board.map(u=>({col:u.col,row:u.row}))
+          });
+          profileCells=result.reachable;
+          const ranged=result.rangedReach===null?'sin disparo a distancia base':
+            'alcance de disparo de perfil '+result.rangedReach+' hex.';
+          profileStatus.textContent=`Referencia Ancients base para ${result.unitType.replaceAll('_',' ').toLowerCase()}: hasta ${result.maxSteps} pasos; ${profileCells.length} destinos geométricos libres; ${ranged}. Verde: perfil permite combatir; azul: solo movimiento; naranja: carga condicionada. No verifica terreno, carta, líder ni escenario. NO autoriza movimientos ni ataques.`;
+        } catch {
+          profileStatus.textContent='Selecciona un tipo de tropa válido del juego base.';
+        }
+      }
     }
     if (inspectPanel) {
       inspectPanel.hidden=!inspecting||!boardValid;
@@ -327,7 +366,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           orderableUnitIds:inspecting?[]:orderableUnitIds,
           selectedOrderUnitIds:inspecting?[]:selectedOrderUnitIds,
           inspectionCell:inspecting?inspectedCell:null,
-          movedUnitIds:boardValid?movedPublic:[]});
+          movedUnitIds:boardValid?movedPublic:[],profileCells:inspecting?profileCells:[]});
     } catch(err) {
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
@@ -533,6 +572,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     repaint();
   }
   inspectButton?.addEventListener('click',toggleInspect);
+  profileSelect?.addEventListener('change',repaint);
   undoButton?.addEventListener('click',undo);
   cancelButton?.addEventListener('click',cancel);
   confirmButton?.addEventListener('click',confirm);
