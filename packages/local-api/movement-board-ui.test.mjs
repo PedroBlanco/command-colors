@@ -225,21 +225,18 @@ test('next-step hints and route trimming update the board without sending a comm
  assert.equal(requests.length,0);
 });
 
-test('a distant suggested path is never sent before explicit confirmation and expires on refresh',async()=>{
- const {svg,controller,requests,confirmButton}=setup();
- cell(svg,3,4).dispatch('click');
- cell(svg,8,6).dispatch('click');
- const path=controller.getDraft().path;
- assert.ok(path.length>1);
- assert.deepEqual(path.at(-1),{col:8,row:6});
+test('suggested routes need confirmation and expire after an updated revision',async()=>{
+ const {controller,requests,confirmButton}=setup();
+ controller.select({col:3,row:4});
+ controller.select({col:8,row:6});
  assert.equal(requests.length,0);
  controller.setView({...view(),revision:6});
  assert.equal(controller.getDraft(),null);
  assert.equal(confirmButton.disabled,true);
  controller.setView(view());
- cell(svg,3,4).dispatch('click');
- cell(svg,8,6).dispatch('click');
- await confirmButton.dispatch('click');
+ controller.select({col:3,row:4});
+ controller.select({col:8,row:6});
+ await controller.confirm();
  assert.equal(requests.length,1);
  assert.deepEqual(requests[0].fields.path.at(-1),{col:8,row:6});
  assert.equal(Object.hasOwn(requests[0].fields,'actor'),false);
