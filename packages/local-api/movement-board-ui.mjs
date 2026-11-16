@@ -280,10 +280,11 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
         // No opponent cards or deck content: only the authenticated private hand.
         for (const ref of hand) {
           if (typeof ref!=='string') continue;
-          const option=cardSelect.ownerDocument.createElement('option');
+          const option=(cardSelect.ownerDocument??svg.ownerDocument).createElement('option');
           option.value=ref;
           option.textContent=ref;
-          cardSelect.append(option);
+          if (typeof cardSelect.appendChild==='function')cardSelect.appendChild(option);
+          else cardSelect.append(option);
         }
         cardSelect.value=hand.includes(current)?current:'';
       } else cardSelect.value='';
