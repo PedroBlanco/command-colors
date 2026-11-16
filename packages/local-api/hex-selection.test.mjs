@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields} from './hex-selection.mjs';
+import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
+  nextMovementHexes, truncateMovementDraft} from './hex-selection.mjs';
 import {deckCommand} from './deck-controls.mjs';
 
 const view = () => ({you:'A',turn:'A',actingSide:'A',phase:'MOVEMENT',revision:5,
@@ -114,4 +115,18 @@ test('draft serialization strips prototype-adjacent fields and does not alias ar
   assert.deepEqual(result,{unitId:'synthetic-a',path:[hex(4,4)]});
   result.path[0].col=0;
   assert.deepEqual(next.path,[hex(4,4)]);
+});
+
+test('neighbor hints remain geometric; tapping earlier route steps truncates only locally',()=>{
+  const v=view(), start=starts(v);
+  assert.equal(nextMovementHexes(v,start).length,6);
+  const first=appendMovementHex(v,start,hex(4,4));
+  const next=nextMovementHexes(v,first);
+  assert.equal(next.some(c=>c.col===3&&c.row===4),false);
+  assert.equal(next.some(c=>c.col===5&&c.row===4),false);
+  const second=appendMovementHex(v,first,hex(4,5));
+  assert.deepEqual(truncateMovementDraft(v,second,hex(4,4)).path,[hex(4,4)]);
+  assert.deepEqual(truncateMovementDraft(v,second,hex(3,4)).path,[]);
+  fail(()=>truncateMovementDraft(v,second,hex(8,6)),'HEX_FUERA_DE_RUTA');
+  assert.deepEqual(second.path,[hex(4,4),hex(4,5)]);
 });

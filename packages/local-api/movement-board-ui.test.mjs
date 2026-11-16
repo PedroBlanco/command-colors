@@ -206,3 +206,18 @@ test('B viewer keyboard directions follow rotated display rather than stored hex
  svg.ownerDocument.activeElement.dispatch('keydown',{key:'ArrowDown'});
  assert.equal(svg.ownerDocument.activeElement,cell(svg,4,3));
 });
+
+test('next-step hints and route trimming update the board without sending a command',()=>{
+ const {svg,controller,requests}=setup();
+ assert.equal(cell(svg,3,4).classes.has('hex-selectable'),true);
+ cell(svg,3,4).dispatch('click');
+ assert.equal(cell(svg,4,4).classes.has('hex-next'),true);
+ assert.match(cell(svg,4,4).attrs['aria-label'],/candidato geométrico/);
+ cell(svg,4,4).dispatch('click');
+ cell(svg,4,5).dispatch('click');
+ cell(svg,4,4).dispatch('click');
+ assert.deepEqual(controller.getDraft().path,[{col:4,row:4}]);
+ cell(svg,3,4).dispatch('click');
+ assert.deepEqual(controller.getDraft().path,[]);
+ assert.equal(requests.length,0);
+});
