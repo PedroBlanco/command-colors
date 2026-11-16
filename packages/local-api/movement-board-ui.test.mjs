@@ -326,3 +326,18 @@ test('board orders reject rivals and block stale submissions',async()=>{
  assert.equal(sent.length,0);
  assert.equal(ui.orderButton.disabled,true);
 });
+
+test('assigning orders reuses a retry key until the local selection changes',async()=>{
+ const ui=fixture(),selected=new Set(['synthetic-a']),keys=[];let serial=0;
+ const c=createMovementBoard({...ui,onConfirm:async()=>{},
+   getOrderSelection:()=>[...selected],
+   onToggleOrderUnit:id=>selected.has(id)?selected.delete(id):selected.add(id),
+   onAssignOrders:async key=>{keys.push(key);throw Error('NETWORK_FAILED')},
+   onError:()=>{},makeIdempotencyKey:()=>`order_key_${++serial}`});
+ c.setView({...view(),phase:'ASSIGN_ORDERS'});
+ await c.assignOrders();await c.assignOrders();
+ assert.deepEqual(keys,['order_key_1','order_key_1']);
+ c.select({col:7,row:4});
+ await c.assignOrders();
+ assert.equal(keys[2],'order_key_2');
+});
