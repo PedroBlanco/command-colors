@@ -38,6 +38,10 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .hex-target.hex-range-2 .hex-shape{stroke:#79a3c6;stroke-width:1.7}
 .hex-target.hex-range-3 .hex-shape{stroke:#a5bcd0;stroke-width:1.5}
 .hex-target.hex-inspected .hex-shape{fill:#ffe2a8;stroke:#a45f17;stroke-width:4}
+.hex-target.hex-profile-battle .hex-shape{fill:#cde4d0;stroke:#36764c;stroke-width:2}
+.hex-target.hex-profile-move .hex-shape{fill:#d9e9f8;stroke:#3973a2;stroke-width:2}
+.hex-target.hex-profile-charge .hex-shape{fill:#ffe0ab;stroke:#a9671e;stroke-width:3}
+.hex-target.hex-inspected .hex-shape{fill:#ffe2a8;stroke:#a45f17;stroke-width:4}
 .hex-target.hex-already-moved .unit-a,.hex-target.hex-already-moved .unit-b{opacity:.65}
 .unit-moved-dot{fill:#1a573f;stroke:white;stroke-width:1}
 .unit-moved-tick{fill:white;font:bold 10px system-ui}
@@ -53,6 +57,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 #movement-status{min-height:2em}
 #board-overview{font-size:.93rem;font-weight:600;margin:8px 0}
 #board-inspect-info{padding:10px;border-left:3px solid #547b73;background:#eff5f2;border-radius:4px;overflow-wrap:anywhere}
+#board-profile-status{padding:10px 0;font-size:.93rem;line-height:1.5}
 #board-inspect-toggle[aria-pressed="true"]{background:#d8e9f4;border-color:#2d607b}
 @media(max-width:580px){#board-overview{line-height:1.5}}
 @media(max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
@@ -100,12 +105,31 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section id="movement-section" aria-labelledby="movement-title">
 <details id="movement-details"><summary id="movement-title">Tablero hexagonal de laboratorio (13 × 9)</summary>
 <p>Selecciona una unidad propia y toca los hexágonos vecinos para trazar el movimiento.
-Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. También puedes jugar una carta de tu propia mano, terminar movimiento, combate o turno según la fase. Usa «Inspeccionar tablero» para consultar unidades, movimientos realizados y distancias hexagonales sin alterar la partida. No son reglas oficiales de Ancients.</p>
+Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. También puedes jugar una carta de tu propia mano, terminar movimiento, combate o turno según la fase. Usa «Inspeccionar tablero» para consultar unidades, movimientos realizados y distancias hexagonales y probar perfiles de tropa de Ancients como referencia hipotética sin alterar la partida. No son reglas oficiales de Ancients.</p>
 <div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
   role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
 <p id="board-overview" aria-live="polite">Sin tablero cargado</p>
 <button type="button" id="board-inspect-toggle" aria-pressed="false" disabled>Inspeccionar tablero</button>
 <p id="board-inspect-info" role="status" aria-live="polite" hidden></p>
+<div id="board-profile-group" hidden>
+<label>Tipo hipotético de tropa (Ancients, juego base)
+<select id="board-profile-type">
+<option value="LIGHT_INFANTRY">Infantería ligera</option>
+<option value="LIGHT_SLING_INFANTRY">Infantería ligera con honda</option>
+<option value="LIGHT_BOW_INFANTRY">Infantería ligera con arco</option>
+<option value="AUXILIA_INFANTRY">Auxiliares</option>
+<option value="WARRIOR_INFANTRY">Guerreros</option>
+<option value="MEDIUM_INFANTRY">Infantería media</option>
+<option value="HEAVY_INFANTRY">Infantería pesada</option>
+<option value="HEAVY_WAR_MACHINE">Máquina de guerra pesada</option>
+<option value="LIGHT_CAVALRY">Caballería ligera</option>
+<option value="MEDIUM_CAVALRY">Caballería media</option>
+<option value="HEAVY_CAVALRY">Caballería pesada</option>
+<option value="ELEPHANT">Elefante</option>
+<option value="HEAVY_CHARIOT">Carro pesado</option>
+</select></label>
+<p id="board-profile-status" role="status" aria-live="polite"></p>
+</div>
 <p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>
 <div id="board-card-controls" hidden>
 <label>Carta de mando de tu mano
