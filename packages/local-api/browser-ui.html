@@ -89,10 +89,15 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section id="movement-section" aria-labelledby="movement-title">
 <details id="movement-details"><summary id="movement-title">Tablero hexagonal de laboratorio (13 × 9)</summary>
 <p>Selecciona una unidad propia y toca los hexágonos vecinos para trazar el movimiento.
-Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. Aquí también puedes terminar movimiento, combate o turno cuando corresponda. No son ataques reglamentarios de Ancients.</p>
+Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. También puedes jugar una carta de tu propia mano, terminar movimiento, combate o turno según la fase. No son reglas oficiales de Ancients.</p>
 <div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
   role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
 <p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>
+<div id="board-card-controls" hidden>
+<label>Carta de mando de tu mano
+<select id="board-card-select" aria-label="Selecciona una carta de tu mano"></select></label>
+<button type="button" id="board-card-play" disabled>Jugar carta de mando</button>
+</div>
 <button type="button" id="board-undo" disabled>Deshacer último paso</button>
 <button type="button" id="board-cancel" disabled>Cancelar ruta</button>
 <button type="button" id="board-confirm" disabled>Confirmar movimiento</button>

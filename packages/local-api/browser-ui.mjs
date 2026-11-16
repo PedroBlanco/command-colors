@@ -530,6 +530,10 @@ movementBoard = createMovementBoard({
     acknowledge_synthetic_draw:el('board-draw')
   },
   onPhaseCommand: (type,fields,key)=>sendDeck(type,fields,key),
+  cardGroup:el('board-card-controls'),
+  cardSelect:el('board-card-select'),
+  cardButton:el('board-card-play'),
+  onPlayCard:(cardRef,key)=>sendDeck('play_synthetic_card',{cardRef},key),
   onRequestDefense: async (unitId,idempotencyKey) => {
     const confirmed=await sendDeck('ask_synthetic_defense',
       {targetUnit:unitId},idempotencyKey);

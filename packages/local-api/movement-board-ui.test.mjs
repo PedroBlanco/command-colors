@@ -399,3 +399,47 @@ test('phase retries reuse command keys only within the same revision',async()=>{
  await c.sendPhaseAction('finish_synthetic_movement');
  assert.deepEqual(keys,['retry_phase_1','retry_phase_1','retry_phase_2']);
 });
+
+test('board card selector exposes only the authorized hand and confirms explicitly',async()=>{
+ const ui=fixture(),sent=[],doc=ui.svg.ownerDocument;
+ doc.createElement=tag=>new Node(doc,tag);
+ const cardGroup=new Node(doc,'div'),cardSelect=new Node(doc,'select'),
+   cardButton=new Node(doc,'button');
+ cardSelect.value='';
+ const c=createMovementBoard({...ui,cardGroup,cardSelect,cardButton,
+   onConfirm:async()=>{},
+   onPlayCard:async(ref,key)=>{sent.push({ref,key});return true},
+   makeIdempotencyKey:()=> 'own_card_001'});
+ c.setView({...view(),phase:'AWAIT_CARD',yourHand:['private-one','private-two']});
+ assert.equal(cardGroup.hidden,false);
+ assert.deepEqual(cardSelect.children.map(o=>o.value),['private-one','private-two']);
+ assert.equal(cardButton.disabled,true);
+ cardSelect.value='private-two';cardSelect.dispatch('change');
+ assert.equal(cardButton.disabled,false);
+ assert.equal(sent.length,0);
+ await cardButton.dispatch('click');
+ assert.deepEqual(sent,[{ref:'private-two',key:'own_card_001'}]);
+ c.setView({...view(),phase:'ASSIGN_ORDERS',revision:6,yourHand:['private-one']});
+ assert.equal(cardGroup.hidden,true);
+ assert.equal(cardSelect.children.length,0);
+});
+
+test('board card retry key changes on selection or private view change',async()=>{
+ const ui=fixture(),keys=[],doc=ui.svg.ownerDocument;
+ doc.createElement=tag=>new Node(doc,tag);
+ const cardSelect=new Node(doc,'select'),cardButton=new Node(doc,'button');
+ cardSelect.value='';
+ let number=0;
+ const c=createMovementBoard({...ui,cardSelect,cardButton,onConfirm:async()=>{},
+   onPlayCard:async(ref,key)=>{keys.push({ref,key});throw Error('NETWORK_FAILED')},
+   onError:()=>{},makeIdempotencyKey:()=>`card_retry_${++number}`});
+ c.setView({...view(),phase:'AWAIT_CARD',yourHand:['a','b']});
+ cardSelect.value='a';cardSelect.dispatch('change');
+ await c.playCard();await c.playCard();
+ cardSelect.value='b';cardSelect.dispatch('change');
+ await c.playCard();
+ c.setView({...view(),phase:'AWAIT_CARD',revision:6,yourHand:['a','b']});
+ cardSelect.value='b';cardSelect.dispatch('change');
+ await c.playCard();
+ assert.deepEqual(keys.map(x=>x.key),['card_retry_1','card_retry_1','card_retry_2','card_retry_3']);
+});

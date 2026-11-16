@@ -173,6 +173,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
 export function createMovementBoard({svg,status,undoButton,cancelButton,confirmButton,
   attackButton,onRequestDefense,orderButton,onAssignOrders,onToggleOrderUnit,
   getOrderSelection=()=>[],phaseButtons={},onPhaseCommand,
+  cardGroup,cardSelect,cardButton,onPlayCard,
   onConfirm,onError=()=>{},
   makeIdempotencyKey=()=>crypto.randomUUID().replaceAll('-','')}={}) {
   if (typeof onConfirm!=='function') throw new TypeError('MISSING_MOVEMENT_SENDER');
@@ -181,6 +182,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   let orderRetryKey=null, orderSelectionFingerprint=null;
   const phaseRetries=new Map();
   let phaseContext=null;
+  let cardRetryKey=null,cardContext=null;
   const PHASE_COMMANDS=Object.freeze({
     'finish_synthetic_movement':null,
     'finish_synthetic_combat':null,
@@ -215,7 +217,9 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     SELECCIONA_UNIDAD_PROPIA:'Selecciona primero una unidad propia.',
     OBJETIVO_RIVAL_REQUERIDO:'Selecciona una unidad rival durante el combate sintético.',
     UNIDAD_NO_PROPIA:'Selecciona una unidad propia para darle una orden.',
-    ORDENES_INVALIDAS:'Debes seleccionar al menos una unidad propia.'
+    ORDENES_INVALIDAS:'Debes seleccionar al menos una unidad propia.',
+    CARTA_NO_PROPIA:'Selecciona una carta de tu mano.',
+    ACCION_NO_DISPONIBLE:'Esta acción no está disponible en la fase actual.'
   });
   const reportError=error=>{
     if (Object.hasOwn(localErrors,error?.message)) message(localErrors[error.message]);
@@ -229,6 +233,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       actions.includes('ask_synthetic_defense');
     const ordersReady=typeof onToggleOrderUnit==='function' &&
       typeof onAssignOrders==='function' && actions.includes('assign_synthetic_orders');
+    const cardsReady=typeof onPlayCard==='function' &&
+      actions.includes('play_synthetic_card') && Array.isArray(view?.yourHand);
     let renderError = false, nextCells = [], selectableUnitIds = [], combatTargetIds = [];
     let orderableUnitIds=[],selectedOrderUnitIds=[];
     try {
@@ -265,6 +271,27 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if (confirmButton)confirmButton.disabled=pending||renderError||!editable||!draft?.path.length;
     if (attackButton)attackButton.disabled=pending||renderError||!defenseReady||!selectedTargetId;
     if (orderButton)orderButton.disabled=pending||renderError||!ordersReady||!selectedOrderUnitIds.length;
+    if (cardGroup) cardGroup.hidden=!cardsReady||renderError;
+    if (cardSelect) {
+      const current=cardSelect.value;
+      cardSelect.replaceChildren();
+      if (cardsReady && !renderError) {
+        const hand=view.yourHand;
+        // No opponent cards or deck content: only the authenticated private hand.
+        for (const ref of hand) {
+          if (typeof ref!=='string') continue;
+          const option=cardSelect.ownerDocument.createElement('option');
+          option.value=ref;
+          option.textContent=ref;
+          cardSelect.appendChild(option);
+        }
+        cardSelect.value=hand.includes(current)?current:'';
+      } else cardSelect.value='';
+      if (cardSelect.value!==current)cardRetryKey=null;
+      cardSelect.disabled=pending||!cardsReady||renderError;
+    }
+    if (cardButton)cardButton.disabled=pending||!cardsReady||renderError||
+      !view.yourHand.includes(cardSelect?.value);
     for (const [action,button] of Object.entries(phaseButtons)) {
       if (!button) continue;
       const allowed=!renderError && permittedPhaseCommand(action,actions);
@@ -272,6 +299,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       button.disabled=pending||!allowed;
     }
     message(renderError ? 'El tablero recibido no es válido.' :
+      cardsReady ? 'Selecciona una carta de tu mano y pulsa Jugar carta de mando para continuar.' :
       ordersReady ? `Asignación de órdenes: ${selectedOrderUnitIds.length} unidades seleccionadas. Toca unidades propias para añadirlas o quitarlas y confirma para enviar al servidor.` :
       actions.includes('answer_synthetic_defense') ? 'Decisión defensiva sintética pendiente: elige Mantener posición o Evadir. No se envía nada hasta pulsar un botón.' :
       actions.includes('acknowledge_synthetic_draw') ? 'Fin del turno sintético: puedes robar una carta y pasar al rival.' :
@@ -365,6 +393,25 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       if (accepted!==false) orderRetryKey=null;
     } catch(error){reportError(error);} finally {pending=false;repaint();}
   }
+  /** Playing a selected private card requires explicit confirmation and the
+   * same authenticated command path as the existing deck panel. */
+  async function playCard() {
+    if (pending) return false;
+    try {
+      if (typeof onPlayCard!=='function' ||
+          !deckActions(view).includes('play_synthetic_card'))
+        throw Error('ACCION_NO_DISPONIBLE');
+      const ref=cardSelect?.value;
+      if (!ref || !Array.isArray(view.yourHand) || !view.yourHand.includes(ref))
+        throw Error('CARTA_NO_PROPIA');
+      if (!cardRetryKey) cardRetryKey=makeIdempotencyKey();
+      pending=true;repaint();
+      const accepted=await onPlayCard(ref,cardRetryKey);
+      if (accepted!==false)cardRetryKey=null;
+      return accepted;
+    } catch(error){reportError(error);return false;}
+    finally {pending=false;repaint();}
+  }
   /** Buttons send only the already-supported synthetic commands; retries
    * reuse keys for the same view, phase and defensive choice. */
   async function sendPhaseAction(action) {
@@ -392,6 +439,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   confirmButton?.addEventListener('click',confirm);
   attackButton?.addEventListener('click',requestDefense);
   orderButton?.addEventListener('click',assignOrders);
+  cardSelect?.addEventListener('change',()=>{cardRetryKey=null;repaint();});
+  cardButton?.addEventListener('click',playCard);
   for (const [action,button] of Object.entries(phaseButtons)) {
     if (button && Object.hasOwn(PHASE_COMMANDS,action))
       button.addEventListener('click',()=>sendPhaseAction(action));
@@ -406,6 +455,14 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if (context!==phaseContext) {
       phaseRetries.clear();
       phaseContext=context;
+    }
+    const nextCardContext=next?JSON.stringify([
+      next.matchId,next.you,next.revision,next.phase,next.actingSide
+    ]):null;
+    if (nextCardContext!==cardContext) {
+      cardRetryKey=null;
+      cardContext=nextCardContext;
+      if (cardSelect)cardSelect.value='';
     }
     // Also accept an SSE/HTTP refresh while a submission is in flight.
     if(!next||!view || next.matchId!==view.matchId || next.you!==view.you
@@ -438,5 +495,5 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   }
   repaint();
   return Object.freeze({setView,select,undo,cancel,confirm,requestDefense,assignOrders,
-    sendPhaseAction,getDraft:()=>draft ? structuredClone(draft):null});
+    sendPhaseAction,playCard,getDraft:()=>draft ? structuredClone(draft):null});
 }
