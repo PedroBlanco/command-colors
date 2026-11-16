@@ -6,7 +6,7 @@
 import {allCells, pixelCenter, polygonPoints} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
-  nextMovementHexes, truncateMovementDraft} from './hex-selection.mjs';
+  nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const RADIUS = 24, OX = 35, OY = 34;
@@ -149,7 +149,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
 export function createMovementBoard({svg,status,undoButton,cancelButton,confirmButton,
   onConfirm,onError=()=>{},makeIdempotencyKey=()=>crypto.randomUUID().replaceAll('-','')}={}) {
   if (typeof onConfirm!=='function') throw new TypeError('MISSING_MOVEMENT_SENDER');
-  let view=null, draft=null, keyForRetry=null, pending=false;
+  let view=null, draft=null, keyForRetry=null, pending=false, autoRoute=false;
   const message=value=>{if(status)status.textContent=value;};
   function repaint() {
     if (!svg?.ownerDocument?.createElementNS) return; // stub DOM in legacy tests
@@ -165,14 +165,14 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       renderMovementBoard(svg,view?.board??[],editable?draft:null,select,view?.you??'A',
         {nextCells,selectableUnitIds});
     } catch(err) {
-      draft=null;keyForRetry=null;renderError=true;onError(err);
+      draft=null;keyForRetry=null;autoRoute=false;renderError=true;onError(err);
       svg.replaceChildren();
     }
     if (undoButton)undoButton.disabled=pending||renderError||!editable||!draft?.path.length;
     if (cancelButton)cancelButton.disabled=pending||renderError||!draft;
     if (confirmButton)confirmButton.disabled=pending||renderError||!editable||!draft?.path.length;
     message(renderError ? 'El tablero recibido no es válido.' : !editable?'Tablero de consulta. No puedes mover ahora.':
-      draft?`Unidad ${draft.unitId}: ${draft.path.length} pasos seleccionados. ${nextCells.length} vecinos geométricos marcados. Toca un paso anterior para recortar la ruta o confirma para enviar al servidor.`:
+      draft?`Unidad ${draft.unitId}: ${draft.path.length} pasos seleccionados. ${nextCells.length} vecinos geométricos marcados.${autoRoute ? ' Ruta geométrica automática sugerida (sin validar reglas).' : ''} Toca un paso anterior para recortar la ruta o confirma para enviar al servidor.`:
         `${selectableUnitIds.length} unidades propias sin mover destacadas. Selecciona una para trazar la ruta.`);
   }
   function select(cell) {
@@ -181,11 +181,18 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       if (!view||!deckActions(view).includes('move_synthetic_unit'))throw Error('MOVIMIENTO_NO_DISPONIBLE');
       const occupied = view.board.find(unit=>key(unit)===key(cell));
       if (draft && (key(draft.origin)===key(cell) ||
-          draft.path.some(step=>key(step)===key(cell))))
+          draft.path.some(step=>key(step)===key(cell)))) {
         draft=truncateMovementDraft(view,draft,cell);
-      else if (occupied?.side===view.you) draft=beginMovementDraft(view,occupied.id);
-      else if(draft)draft=appendMovementHex(view,draft,cell);
-      else throw Error('SELECCIONA_UNIDAD_PROPIA');
+        autoRoute=false;
+      } else if (occupied?.side===view.you) {
+        draft=beginMovementDraft(view,occupied.id);
+        autoRoute=false;
+      } else if(draft) {
+        const before=draft.path.length;
+        // This only builds a candidate route locally, never an authorized move.
+        draft=extendMovementDraftTo(view,draft,cell);
+        autoRoute=draft.path.length-before>1;
+      } else throw Error('SELECCIONA_UNIDAD_PROPIA');
       keyForRetry=null;repaint();
     } catch(error){onError(error);}
   }
@@ -196,14 +203,14 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       if(!keyForRetry)keyForRetry=makeIdempotencyKey();
       pending=true;repaint();
       await onConfirm(fields,keyForRetry);
-      draft=null;keyForRetry=null;
+      draft=null;keyForRetry=null;autoRoute=false;
     } catch(error){onError(error);} finally {pending=false;repaint();}
   }
   function undo() {
     if(pending)return;
-    try {draft=undoMovementHex(view,draft);keyForRetry=null;repaint();}catch(error){onError(error);}
+    try {draft=undoMovementHex(view,draft);keyForRetry=null;autoRoute=false;repaint();}catch(error){onError(error);}
   }
-  function cancel() {if(pending)return;draft=null;keyForRetry=null;repaint();}
+  function cancel() {if(pending)return;draft=null;keyForRetry=null;autoRoute=false;repaint();}
   undoButton?.addEventListener('click',undo);
   cancelButton?.addEventListener('click',cancel);
   confirmButton?.addEventListener('click',confirm);
@@ -211,7 +218,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     // Also accept an SSE/HTTP refresh while a submission is in flight.
     if(!next||!view || next.matchId!==view.matchId || next.you!==view.you
        || next.revision!==view.revision || next.phase!==view.phase || next.actingSide!==view.actingSide) {
-      draft=null;keyForRetry=null;
+      draft=null;keyForRetry=null;autoRoute=false;
     }
     // A same-revision projection should be immutable, but fail closed if a
     // corrupted/restored snapshot invalidates a draft even without a bump.
@@ -223,7 +230,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           if (key(fresh.origin)!==key(draft.origin)) throw Error('BORRADOR_DESACTUALIZADO');
         }
       } catch {
-        draft=null;keyForRetry=null;
+        draft=null;keyForRetry=null;autoRoute=false;
       }
     }
     view=next;

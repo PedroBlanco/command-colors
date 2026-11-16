@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
-  nextMovementHexes, truncateMovementDraft} from './hex-selection.mjs';
+  nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
 import {deckCommand} from './deck-controls.mjs';
 
 const view = () => ({you:'A',turn:'A',actingSide:'A',phase:'MOVEMENT',revision:5,
@@ -129,4 +129,37 @@ test('neighbor hints remain geometric; tapping earlier route steps truncates onl
   assert.deepEqual(truncateMovementDraft(v,second,hex(3,4)).path,[]);
   fail(()=>truncateMovementDraft(v,second,hex(8,6)),'HEX_FUERA_DE_RUTA');
   assert.deepEqual(second.path,[hex(4,4),hex(4,5)]);
+});
+
+test('a distant free hex generates a shortest unoccupied candidate and no server command',()=>{
+  const v=view(),d=starts(v),target=hex(6,4);
+  const proposed=extendMovementDraftTo(v,d,target);
+  assert.ok(proposed.path.length>1);
+  assert.deepEqual(proposed.path.at(-1),target);
+  let last=d.origin;
+  const blocked=new Set(v.board.map(unit=>`${unit.col},${unit.row}`));
+  for(const cell of proposed.path){
+    assert.equal(blocked.has(`${cell.col},${cell.row}`),false);
+    assert.equal(Math.max(...Object.values((()=>{
+      const x=c=>c.col,z=c=>c.row-(c.col-(c.col&1))/2;
+      const a={x:x(last),z:z(last)},b={x:x(cell),z:z(cell)};
+      return {dx:a.x-b.x,dz:a.z-b.z,dy:(-a.x-a.z)-(-b.x-b.z)};
+    })()).map(Math.abs)),1);
+    last=cell;
+  }
+  assert.deepEqual(d.path,[]);
+  const payload=movementDraftFields(v,proposed);
+  assert.deepEqual(payload.path,proposed.path);
+  assert.equal(Object.hasOwn(payload,'actor'),false);
+});
+
+test('automatic route refuses occupied, unreachable, stale and overlong destinations',()=>{
+  const v=view(),d=starts(v);
+  fail(()=>extendMovementDraftTo(v,d,hex(5,4)),'HEX_OCUPADO');
+  fail(()=>extendMovementDraftTo({...v,revision:6},d,hex(6,4)),'BORRADOR_DESACTUALIZADO');
+  const barrier={...v,board:[
+    ...v.board.filter(unit=>unit.id!=='synthetic-b'),
+    ...Array.from({length:9},(_,row)=>({id:`barrier_${row}`,side:'B',col:5,row}))
+  ]};
+  fail(()=>extendMovementDraftTo(barrier,starts(barrier),hex(6,4)),'RUTA_INACCESIBLE');
 });
