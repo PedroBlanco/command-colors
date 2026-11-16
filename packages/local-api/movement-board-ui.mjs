@@ -5,7 +5,7 @@
  */
 import {allCells, pixelCenter, polygonPoints, distance} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
-import {previewBaseMovementOnBoard} from './ancients-base-reference.mjs';
+import {previewBaseMovementOnBoard,previewBaseRangedOnBoard} from './ancients-base-reference.mjs';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
   nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
 
@@ -33,7 +33,8 @@ function svgNode(doc, name, attrs = {}) {
 export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
     orderableUnitIds=[], selectedOrderUnitIds=[],
-    inspectionCell=null, movedUnitIds=[], profileCells=[]}={}) {
+    inspectionCell=null, movedUnitIds=[], profileCells=[],
+    rangedTargets=[],inspectionTarget=null}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -87,6 +88,20 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
         !Number.isSafeInteger(c.steps)||c.steps<1||c.steps>4||
         !['POSSIBLE','UNAVAILABLE','MANDATORY_CLOSE_COMBAT'].includes(c.battle)))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if(!Array.isArray(rangedTargets)||rangedTargets.length>117||
+      rangedTargets.some(t=>!t||!Number.isSafeInteger(t.col)||
+        !Number.isSafeInteger(t.row)||t.col<0||t.col>12||
+        t.row<0||t.row>8||!['BLOCKED_BY_VISIBLE_UNITS',
+        'NO_VISIBLE_UNIT_OBSTRUCTION'].includes(t.visibleUnitCorridor)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const rangedByCell=new Map(rangedTargets.map(t=>[key(t),t]));
+  if(rangedByCell.size!==rangedTargets.length||
+      (inspectionTarget!==null&&(!inspectionTarget||
+        !Number.isSafeInteger(inspectionTarget.col)||
+        !Number.isSafeInteger(inspectionTarget.row)||
+        inspectionTarget.col<0||inspectionTarget.col>12||
+        inspectionTarget.row<0||inspectionTarget.row>8)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
   const previewByCell=new Map(profileCells.map(c=>[key(c),c]));
   if(previewByCell.size!==profileCells.length)
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
@@ -118,11 +133,13 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const inspected=inspectionCell && key(inspectionCell)===key(cell);
     const range=inspectionCell ? distance(cell,inspectionCell):null;
     const profilePreview=previewByCell.get(key(cell));
+    const rangedPreview=rangedByCell.get(key(cell));
+    const focusedTarget=inspectionTarget&&key(inspectionTarget)===key(cell);
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}`,
-      'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget)),
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin unidades interpuestas; terreno y líderes desconocidos' : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}`,
+      'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget || inspected || focusedTarget)),
       'data-col':cell.col,'data-row':cell.row
     });
     hex.classList.add('hex-target');
@@ -138,6 +155,11 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       profilePreview.battle==='MANDATORY_CLOSE_COMBAT'?'hex-profile-charge':
       profilePreview.battle==='POSSIBLE'?'hex-profile-battle':'hex-profile-move'
     );
+    if (rangedPreview)hex.classList.add(
+      rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'
+        ?'hex-profile-los-blocked':'hex-profile-los-open-unverified'
+    );
+    if (focusedTarget)hex.classList.add('hex-profile-target-focus');
     if (next) hex.classList.add('hex-next');
     if (origin) hex.classList.add('hex-origin');
     if (step) hex.classList.add('hex-route');
@@ -230,7 +252,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   const phaseRetries=new Map();
   let phaseContext=null;
   let cardRetryKey=null,cardContext=null;
-  let inspecting=false,inspectedCell=null;
+  let inspecting=false,inspectedCell=null,inspectedTarget=null;
   const PHASE_COMMANDS=Object.freeze({
     'finish_synthetic_movement':null,
     'finish_synthetic_combat':null,
@@ -285,7 +307,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       actions.includes('play_synthetic_card') && Array.isArray(view?.yourHand);
     let renderError = false, nextCells = [], selectableUnitIds = [], combatTargetIds = [];
     let orderableUnitIds=[],selectedOrderUnitIds=[];
-    let profileCells=[];
+    let profileCells=[],rangedTargets=[];
     const boardValid=Array.isArray(view?.board);
     const movedPublic=Array.isArray(view?.movedUnitIds)?view.movedUnitIds:[];
     if (inspectButton) {
@@ -316,9 +338,44 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
             occupiedCells:view.board.map(u=>({col:u.col,row:u.row}))
           });
           profileCells=result.reachable;
+          const firing=previewBaseRangedOnBoard({
+            unitType:result.unitType,origin:inspectedCell,actor:view.you,
+            board:view.board,
+            movedUnitIds:Array.isArray(view.movedUnitIds)?view.movedUnitIds:null
+          });
+          rangedTargets=firing.targets.filter(t=>
+            t.visibleUnitCorridor!=='NOT_EVALUATED'
+          ).map(t=>({col:t.col,row:t.row,
+            visibleUnitCorridor:t.visibleUnitCorridor}));
+          const open=rangedTargets.filter(t=>
+            t.visibleUnitCorridor==='NO_VISIBLE_UNIT_OBSTRUCTION').length;
+          const blocked=rangedTargets.length-open;
+          const firingMessage=firing.status==='NO_MOVEMENT_LEDGER'
+            ? 'Sin registro de movimiento: no se puede estimar disparo.'
+            : firing.status==='MOVEMENT_STEPS_UNKNOWN'
+              ? 'Unidad ya movida: se desconoce el número de pasos. No se estima disparo.'
+              : `${open} objetivos dentro del perfil sin unidades interpuestas y ${blocked} con interposición de unidades; terreno y líderes desconocidos.`;
+          const target=inspectedTarget?firing.targets.find(t=>
+            key(t)===key(inspectedTarget)):null;
+          const reasonName={
+            NO_BASE_RANGED_WEAPON:'sin arma a distancia del perfil',
+            RANGED_TARGET_ADJACENT:'objetivo adyacente, no es tiro a distancia',
+            TARGET_OUT_OF_RANGE:'fuera del alcance del perfil',
+            EXCEEDS_STANDARD_MOVEMENT:'movimiento excesivo para ese perfil',
+            WAR_MACHINE_MOVED:'la máquina de guerra se ha movido',
+            AUXILIA_MOVED_TWO:'auxiliares movidos dos hexágonos'
+          };
+          const targetMessage=inspectedTarget && firing.status!=='REFERENCE_ONLY'
+            ? ' No hay datos fiables de pasos para valorar este objetivo.'
+            : target?target.profileStatus!=='CANDIDATE'
+              ? ` Objetivo ${target.id}: ${reasonName[target.profileReason]??'perfil no compatible'} (distancia ${target.distance}).`
+              : target.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'
+                ? ` Objetivo ${target.id}, distancia ${target.distance}: unidades visibles interpuestas en ${target.obstructingHexes.map(c=>`(${c.col+1},${c.row+1})`).join(', ')}. Disparo de referencia bloqueado en este supuesto.`
+                : ` Objetivo ${target.id}, distancia ${target.distance}: perfil orientativo de ${target.nominalDice} dados; sin unidades visibles interpuestas, pero no se conocen terreno, líderes ni modificadores.`
+              : '';
           const ranged=result.rangedReach===null?'sin disparo a distancia base':
-            'alcance de disparo de perfil '+result.rangedReach+' hex.';
-          profileStatus.textContent=`Referencia Ancients base para ${result.unitType.replaceAll('_',' ').toLowerCase()}: hasta ${result.maxSteps} pasos; ${profileCells.length} destinos geométricos libres; ${ranged}. Verde: perfil permite combatir; azul: solo movimiento; naranja: carga condicionada. No verifica terreno, carta, líder ni escenario. NO autoriza movimientos ni ataques.`;
+            'alcance base de disparo '+result.rangedReach+' hex.';
+          profileStatus.textContent=`Ancients base, unidad de tipo HIPOTÉTICO ${result.unitType.replaceAll('_',' ').toLowerCase()}: máximo ${result.maxSteps} pasos; ${profileCells.length} destinos geométricos libres; ${ranged}. ${firingMessage}${targetMessage} Verde: movimiento y combate; azul: movimiento; naranja: carga condicional; contorno rojo continuo: corredor sin unidades interpuestas; rojo discontinuo: interposición. NO verifica terreno, líderes, órdenes ni escenarios. NO autoriza movimientos ni ataques.`;
         } catch {
           profileStatus.textContent='Selecciona un tipo de tropa válido del juego base.';
         }
@@ -366,7 +423,10 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           orderableUnitIds:inspecting?[]:orderableUnitIds,
           selectedOrderUnitIds:inspecting?[]:selectedOrderUnitIds,
           inspectionCell:inspecting?inspectedCell:null,
-          movedUnitIds:boardValid?movedPublic:[],profileCells:inspecting?profileCells:[]});
+          movedUnitIds:boardValid?movedPublic:[],
+          profileCells:inspecting?profileCells:[],
+          rangedTargets:inspecting?rangedTargets:[],
+          inspectionTarget:inspecting?inspectedTarget:null});
     } catch(err) {
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
@@ -441,7 +501,15 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     try {
       if (!view) throw Error('MOVIMIENTO_NO_DISPONIBLE');
       if (inspecting) {
-        inspectedCell={col:cell.col,row:cell.row};
+        const currentOwn=inspectedCell && view.board.find(unit=>
+          unit.side===view.you && key(unit)===key(inspectedCell));
+        const clicked=view.board.find(unit=>key(unit)===key(cell));
+        if(currentOwn && clicked && clicked.side!==view.you){
+          inspectedTarget={col:cell.col,row:cell.row};
+        }else{
+          inspectedCell={col:cell.col,row:cell.row};
+          inspectedTarget=null;
+        }
         repaint();
         return;
       }
@@ -568,7 +636,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   function toggleInspect() {
     if (pending||!Array.isArray(view?.board))return;
     inspecting=!inspecting;
-    inspectedCell=null;
+    inspectedCell=null;inspectedTarget=null;
     repaint();
   }
   inspectButton?.addEventListener('click',toggleInspect);
@@ -609,7 +677,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
       orderRetryKey=null;orderSelectionFingerprint=null;
-      inspecting=false;inspectedCell=null;
+      inspecting=false;inspectedCell=null;inspectedTarget=null;
     }
     // A same-revision projection should be immutable, but fail closed if a
     // corrupted/restored snapshot invalidates a draft even without a bump.
