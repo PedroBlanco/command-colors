@@ -488,9 +488,10 @@ action('deck-unit-clear',async()=>{
   renderDeck();
   return false;
 });
-action('deck-orders',()=>sendDeck('assign_synthetic_orders',{
+const submitSelectedOrders = (key=null) => sendDeck('assign_synthetic_orders',{
   unitIds: [...selectedOrderUnits]
-}));
+},key);
+action('deck-orders',()=>submitSelectedOrders());
 action('deck-undo',()=>sendDeck('undo_synthetic_orders'));
 action('deck-move',()=>sendDeck('move_synthetic_unit',{
   unitId: el('deck-move-unit').value,
@@ -509,6 +510,17 @@ movementBoard = createMovementBoard({
   cancelButton: el('board-cancel'),
   confirmButton: el('board-confirm'),
   attackButton: el('board-ask-defense'),
+  orderButton: el('board-assign-orders'),
+  getOrderSelection: () => [...selectedOrderUnits],
+  onToggleOrderUnit: id => {
+    if (!deckActions(cached).includes('assign_synthetic_orders') ||
+        !cached?.board?.some(unit=>unit?.id===id && unit.side===cached.you))
+      throw Error('UNIDAD_NO_PROPIA');
+    if (selectedOrderUnits.has(id)) selectedOrderUnits.delete(id);
+    else selectedOrderUnits.add(id);
+    renderDeck(); // synchronizes the existing dropdown and the SVG selection
+  },
+  onAssignOrders: submitSelectedOrders,
   onRequestDefense: async (unitId,idempotencyKey) => {
     const confirmed=await sendDeck('ask_synthetic_defense',
       {targetUnit:unitId},idempotencyKey);

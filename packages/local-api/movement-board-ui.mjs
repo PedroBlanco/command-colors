@@ -30,7 +30,8 @@ function svgNode(doc, name, attrs = {}) {
 
 /** Render public cells/units with keyboard and pointer selection. */
 export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
-  {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null}={}) {
+  {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
+    orderableUnitIds=[], selectedOrderUnitIds=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -61,6 +62,15 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       !(selectedTargetId===null ||
         (typeof selectedTargetId==='string' && combatTargetIds.includes(selectedTargetId))))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if (!Array.isArray(orderableUnitIds) || orderableUnitIds.length>117 ||
+      !Array.isArray(selectedOrderUnitIds) || selectedOrderUnitIds.length>117 ||
+      [...orderableUnitIds,...selectedOrderUnitIds].some(id=>typeof id!=='string' ||
+        !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id)) ||
+      selectedOrderUnitIds.some(id=>!orderableUnitIds.includes(id)) ||
+      new Set(selectedOrderUnitIds).size!==selectedOrderUnitIds.length)
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const orderable=new Set(orderableUnitIds);
+  const ordered=new Set(selectedOrderUnitIds);
   const combatTargets=new Set(combatTargetIds);
   const nextKeys = new Set(nextCells.map(key));
   const selectable = new Set(selectableUnitIds);
@@ -78,17 +88,21 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const step = marked.get(key(cell));
     const next = nextKeys.has(key(cell));
     const selectableOwn = unit?.side===viewer && selectable.has(unit.id);
+    const orderableOwn=unit?.side===viewer && orderable.has(unit.id);
+    const chosenOrder=orderableOwn && ordered.has(unit.id);
     const rivalTarget=unit?.side!==viewer && combatTargets.has(unit?.id);
     const chosenTarget=rivalTarget && selectedTargetId===unit.id;
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
-      'aria-pressed':String(Boolean(origin || step)),
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}`,
+      'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget)),
       'data-col':cell.col,'data-row':cell.row
     });
     hex.classList.add('hex-target');
     if (selectableOwn) hex.classList.add('hex-selectable');
+    if (orderableOwn) hex.classList.add('hex-orderable');
+    if (chosenOrder) hex.classList.add('hex-order-selected');
     if (rivalTarget) hex.classList.add('hex-combat-selectable');
     if (chosenTarget) hex.classList.add('hex-combat-selected');
     if (next) hex.classList.add('hex-next');
@@ -157,11 +171,13 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
  * A failed HTTP response preserves the request key for a safe idempotent retry.
  */
 export function createMovementBoard({svg,status,undoButton,cancelButton,confirmButton,
-  attackButton,onRequestDefense,onConfirm,onError=()=>{},
+  attackButton,onRequestDefense,orderButton,onAssignOrders,onToggleOrderUnit,
+  getOrderSelection=()=>[],onConfirm,onError=()=>{},
   makeIdempotencyKey=()=>crypto.randomUUID().replaceAll('-','')}={}) {
   if (typeof onConfirm!=='function') throw new TypeError('MISSING_MOVEMENT_SENDER');
   let view=null, draft=null, keyForRetry=null, pending=false, autoRoute=false;
   let selectedTargetId=null, defenseRetryKey=null;
+  let orderRetryKey=null, orderSelectionFingerprint=null;
   const message=value=>{if(status)status.textContent=value;};
   // Local geometry failures belong beside the board, not only in the
   // application's general message area. Never echo private server payloads.
@@ -173,7 +189,9 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     RUTA_DEMASIADO_LARGA:'El recorrido supera los 32 pasos del laboratorio.',
     BORRADOR_DESACTUALIZADO:'La partida ha cambiado. Vuelve a elegir la unidad.',
     SELECCIONA_UNIDAD_PROPIA:'Selecciona primero una unidad propia.',
-    OBJETIVO_RIVAL_REQUERIDO:'Selecciona una unidad rival durante el combate sintético.'
+    OBJETIVO_RIVAL_REQUERIDO:'Selecciona una unidad rival durante el combate sintético.',
+    UNIDAD_NO_PROPIA:'Selecciona una unidad propia para darle una orden.',
+    ORDENES_INVALIDAS:'Debes seleccionar al menos una unidad propia.'
   });
   const reportError=error=>{
     if (Object.hasOwn(localErrors,error?.message)) message(localErrors[error.message]);
@@ -185,7 +203,10 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     const editable=actions.includes('move_synthetic_unit');
     const defenseReady=typeof onRequestDefense==='function' &&
       actions.includes('ask_synthetic_defense');
+    const ordersReady=typeof onToggleOrderUnit==='function' &&
+      typeof onAssignOrders==='function' && actions.includes('assign_synthetic_orders');
     let renderError = false, nextCells = [], selectableUnitIds = [], combatTargetIds = [];
+    let orderableUnitIds=[],selectedOrderUnitIds=[];
     try {
       if (editable) {
         const moved = new Set(Array.isArray(view.movedUnitIds) ? view.movedUnitIds : []);
@@ -195,19 +216,33 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       }
       if (defenseReady)
         combatTargetIds=view.board.filter(unit=>unit.side!==view.you).map(unit=>unit.id);
+      if (ordersReady) {
+        orderableUnitIds=view.board.filter(unit=>unit.side===view.you).map(unit=>unit.id);
+        selectedOrderUnitIds=getOrderSelection();
+      }
+      // A changed local selection cannot reuse the previous POST's key.
+      const fingerprint=ordersReady && Array.isArray(selectedOrderUnitIds)
+        ? `${view.matchId}:${view.revision}:${selectedOrderUnitIds.join(',')}` : null;
+      if (fingerprint!==orderSelectionFingerprint) {
+        orderRetryKey=null;orderSelectionFingerprint=fingerprint;
+      }
       renderMovementBoard(svg,view?.board??[],editable?draft:null,select,view?.you??'A',
         {nextCells,selectableUnitIds,combatTargetIds,
-          selectedTargetId:defenseReady?selectedTargetId:null});
+          selectedTargetId:defenseReady?selectedTargetId:null,
+          orderableUnitIds,selectedOrderUnitIds});
     } catch(err) {
       draft=null;keyForRetry=null;autoRoute=false;
-      selectedTargetId=null;defenseRetryKey=null;renderError=true;onError(err);
+      selectedTargetId=null;defenseRetryKey=null;
+      orderRetryKey=null;orderSelectionFingerprint=null;renderError=true;onError(err);
       svg.replaceChildren();
     }
     if (undoButton)undoButton.disabled=pending||renderError||!editable||!draft?.path.length;
     if (cancelButton)cancelButton.disabled=pending||renderError||!draft;
     if (confirmButton)confirmButton.disabled=pending||renderError||!editable||!draft?.path.length;
     if (attackButton)attackButton.disabled=pending||renderError||!defenseReady||!selectedTargetId;
+    if (orderButton)orderButton.disabled=pending||renderError||!ordersReady||!selectedOrderUnitIds.length;
     message(renderError ? 'El tablero recibido no es válido.' :
+      ordersReady ? `Asignación de órdenes: ${selectedOrderUnitIds.length} unidades seleccionadas. Toca unidades propias para añadirlas o quitarlas y confirma para enviar al servidor.` :
       defenseReady ? (selectedTargetId
         ? `Objetivo rival ${selectedTargetId} seleccionado. Solicita la decisión defensiva para enviar el comando al servidor.`
         : 'Combate sintético: selecciona una unidad rival para solicitar su decisión defensiva.') :
@@ -221,6 +256,15 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       if (!view) throw Error('MOVIMIENTO_NO_DISPONIBLE');
       const actions=deckActions(view);
       const occupied = view.board.find(unit=>key(unit)===key(cell));
+      if (typeof onToggleOrderUnit==='function' &&
+          typeof onAssignOrders==='function' &&
+          actions.includes('assign_synthetic_orders')) {
+        if (!occupied || occupied.side!==view.you) throw Error('UNIDAD_NO_PROPIA');
+        onToggleOrderUnit(occupied.id); // the app owns the existing order selection
+        orderRetryKey=null;
+        repaint();
+        return;
+      }
       if (typeof onRequestDefense==='function' &&
           actions.includes('ask_synthetic_defense')) {
         if (!occupied || occupied.side===view.you) throw Error('OBJETIVO_RIVAL_REQUERIDO');
@@ -271,6 +315,24 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       }
     } catch(error){reportError(error);} finally {pending=false;repaint();}
   }
+  async function assignOrders() {
+    if (pending) return;
+    try {
+      if (!view || !deckActions(view).includes('assign_synthetic_orders') ||
+          typeof onAssignOrders!=='function' || typeof onToggleOrderUnit!=='function')
+        throw Error('ORDENES_INVALIDAS');
+      const ids=getOrderSelection();
+      if (!Array.isArray(ids) || ids.length<1 || ids.length>117 ||
+          new Set(ids).size!==ids.length ||
+          ids.some(id=>typeof id!=='string' ||
+            !view.board.some(u=>u?.id===id && u.side===view.you)))
+        throw Error('ORDENES_INVALIDAS');
+      if (!orderRetryKey) orderRetryKey=makeIdempotencyKey();
+      pending=true;repaint();
+      const accepted=await onAssignOrders(orderRetryKey);
+      if (accepted!==false) orderRetryKey=null;
+    } catch(error){reportError(error);} finally {pending=false;repaint();}
+  }
   function undo() {
     if(pending)return;
     try {draft=undoMovementHex(view,draft);keyForRetry=null;autoRoute=false;repaint();}catch(error){reportError(error);}
@@ -280,12 +342,14 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   cancelButton?.addEventListener('click',cancel);
   confirmButton?.addEventListener('click',confirm);
   attackButton?.addEventListener('click',requestDefense);
+  orderButton?.addEventListener('click',assignOrders);
   function setView(next) {
     // Also accept an SSE/HTTP refresh while a submission is in flight.
     if(!next||!view || next.matchId!==view.matchId || next.you!==view.you
        || next.revision!==view.revision || next.phase!==view.phase || next.actingSide!==view.actingSide) {
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
+      orderRetryKey=null;orderSelectionFingerprint=null;
     }
     // A same-revision projection should be immutable, but fail closed if a
     // corrupted/restored snapshot invalidates a draft even without a bump.
@@ -310,6 +374,6 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     repaint();
   }
   repaint();
-  return Object.freeze({setView,select,undo,cancel,confirm,requestDefense,
+  return Object.freeze({setView,select,undo,cancel,confirm,requestDefense,assignOrders,
     getDraft:()=>draft ? structuredClone(draft):null});
 }
