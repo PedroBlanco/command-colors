@@ -505,6 +505,7 @@ test('ranged inspection marks public blockers but never authorizes a shot',async
  assert.equal(cell(ui.svg,5,4).classes.has('hex-profile-los-open-unverified'),true);
  c.select({col:3,row:7});
  assert.equal(cell(ui.svg,3,7).classes.has('hex-profile-target-focus'),true);
+ assert.equal(cell(ui.svg,3,5).classes.has('hex-profile-los-obstacle'),true);
  assert.match(info.textContent,/unidades visibles interpuestas/);
  assert.match(info.textContent,/NO autoriza/);
  await c.confirm();await c.requestDefense();
