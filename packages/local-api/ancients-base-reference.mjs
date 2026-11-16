@@ -5,7 +5,9 @@
  * Obstacles are public occupied hexes; terrain, leaders, cards and scenario
  * modifiers are intentionally outside this preview. Nothing is authorized.
  */
-import {neighbors, inBounds} from '../hex-grid/hex.mjs';
+import {neighbors, inBounds, distance} from '../hex-grid/hex.mjs';
+import {assessAncientsRangedProfile} from '../ancients-rules/ranged-profile.mjs';
+import {assessAncientsLineOfSight} from '../ancients-rules/line-of-sight.mjs';
 import {BASE_MOVEMENT_PROFILES,assessBaseMovement} from '../ancients-rules/movement-profile.mjs';
 import {BASE_RANGED_REACH} from '../ancients-rules/ranged-profile.mjs';
 
@@ -51,4 +53,72 @@ export function previewBaseMovementOnBoard({unitType,origin,occupiedCells=[]}={}
     movementAuthorized:false,attackAuthorized:false,canCommit:false,
     needsFullLegalityCheck:true
   });
+}
+
+/**
+ * Read-only shooter/target preview. The synthetic match has NO canonical troop
+ * type, terrain, leader or complete movement-step history. Hence:
+ * - the chosen unitType is hypothetical;
+ * - a moved unit has UNKNOWN moved steps, not zero;
+ * - VISIBLE means only a corridor free of intervening public unit blockers in
+ *   the ASSUMED clear-ground / no-leader scenario, NOT official line of sight.
+ * All results are non-authorizing, and cannot be sent as a battle command.
+ */
+export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitIds}={}){
+  if(!Object.hasOwn(BASE_MOVEMENT_PROFILES,unitType))
+    throw new TypeError('UNSUPPORTED_BASE_UNIT_TYPE');
+  if(!origin||!Number.isSafeInteger(origin.col)||
+      !Number.isSafeInteger(origin.row)||!inBounds(origin)||
+      !['A','B'].includes(actor)||!Array.isArray(board)||board.length>117)
+    throw new TypeError('INVALID_RANGED_BOARD_REFERENCE');
+  const unitIds=new Set(),positions=new Set();
+  for(const unit of board){
+    if(!unit||typeof unit.id!=='string'||
+        !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(unit.id)||
+        !['A','B'].includes(unit.side)||
+        !Number.isSafeInteger(unit.col)||!Number.isSafeInteger(unit.row)||
+        !inBounds(unit)||unitIds.has(unit.id)||positions.has(key(unit)))
+      throw new TypeError('INVALID_RANGED_BOARD_REFERENCE');
+    unitIds.add(unit.id);positions.add(key(unit));
+  }
+  const shooter=board.find(u=>key(u)===key(origin));
+  if(!shooter||shooter.side!==actor)
+    throw new TypeError('INVALID_RANGED_SHOOTER');
+  if(movedUnitIds!==null&&(!Array.isArray(movedUnitIds)||
+      movedUnitIds.length>117||movedUnitIds.some(id=>!unitIds.has(id))))
+    throw new TypeError('INVALID_RANGED_MOVEMENT_LEDGER');
+  const blockedStatus=movedUnitIds===null?'NO_MOVEMENT_LEDGER':
+    movedUnitIds.includes(shooter.id)?'MOVEMENT_STEPS_UNKNOWN':null;
+  const base={
+    unitType,shooterId:shooter.id,
+    status:blockedStatus??'REFERENCE_ONLY',
+    assumedTerrain:'UNKNOWN',leadersKnown:false,
+    movementAuthorized:false,attackAuthorized:false,
+    canCommit:false,needsFullLegalityCheck:true
+  };
+  if(blockedStatus)return Object.freeze({...base,targets:Object.freeze([])});
+  const allPositions=board.map(ownCell);
+  const targets=board.filter(u=>u.side!==actor).map(target=>{
+    const range=distance(origin,target);
+    const profile=assessAncientsRangedProfile({
+      unitType,movedSteps:0,targetDistance:range
+    });
+    const los=profile.status==='CANDIDATE'
+      ? assessAncientsLineOfSight({
+          from:ownCell(origin),to:ownCell(target),units:allPositions,
+          leaders:[],terrain:[]
+        })
+      : null;
+    return Object.freeze({
+      id:target.id,col:target.col,row:target.row,distance:range,
+      profileStatus:profile.status,profileReason:profile.reason,
+      nominalDice:profile.status==='CANDIDATE'?profile.baseDice:null,
+      visibleUnitCorridor:los===null?'NOT_EVALUATED':
+        los.status==='BLOCKED'?'BLOCKED_BY_VISIBLE_UNITS':
+          'NO_VISIBLE_UNIT_OBSTRUCTION',
+      obstructingHexes:Object.freeze(los?.obstructions.map(ownCell)??[]),
+      attackAuthorized:false,lineOfSightAuthorized:false
+    });
+  });
+  return Object.freeze({...base,targets:Object.freeze(targets)});
 }
