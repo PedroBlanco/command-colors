@@ -505,6 +505,9 @@ action('deck-combat',()=>sendDeck('finish_synthetic_combat'));
 action('deck-draw',()=>sendDeck('acknowledge_synthetic_draw'));
 movementBoard = createMovementBoard({
   svg: el('movement-board'),
+  inspectButton:el('board-inspect-toggle'),
+  inspectPanel:el('board-inspect-info'),
+  overviewPanel:el('board-overview'),
   status: el('movement-status'),
   undoButton: el('board-undo'),
   cancelButton: el('board-cancel'),

@@ -34,6 +34,13 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .hex-target.hex-order-selected .hex-shape{fill:#93c8ef;stroke:#23577e;stroke-width:4}
 .hex-target.hex-combat-selectable .hex-shape{stroke:#a34d43;stroke-width:2.8}
 .hex-target.hex-combat-selected .hex-shape{fill:#f3bbb2;stroke:#853026;stroke-width:4}
+.hex-target.hex-range-1 .hex-shape{stroke:#537eaa;stroke-width:1.9}
+.hex-target.hex-range-2 .hex-shape{stroke:#79a3c6;stroke-width:1.7}
+.hex-target.hex-range-3 .hex-shape{stroke:#a5bcd0;stroke-width:1.5}
+.hex-target.hex-inspected .hex-shape{fill:#ffe2a8;stroke:#a45f17;stroke-width:4}
+.hex-target.hex-already-moved .unit-a,.hex-target.hex-already-moved .unit-b{opacity:.65}
+.unit-moved-dot{fill:#1a573f;stroke:white;stroke-width:1}
+.unit-moved-tick{fill:white;font:bold 10px system-ui}
 .hex-next-marker{fill:#267951;opacity:.8}
 .hex-target.hex-origin .hex-shape{fill:#f5cc74;stroke:#986f23;stroke-width:3}
 .hex-target.hex-route .hex-shape{fill:#c7d8a3;stroke:#557c31;stroke-width:3}
@@ -44,6 +51,10 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .unit-label{fill:white;font-weight:700;font-size:13px}
 .route-number{fill:#27421c;font-weight:700;font-size:13px}
 #movement-status{min-height:2em}
+#board-overview{font-size:.93rem;font-weight:600;margin:8px 0}
+#board-inspect-info{padding:10px;border-left:3px solid #547b73;background:#eff5f2;border-radius:4px;overflow-wrap:anywhere}
+#board-inspect-toggle[aria-pressed="true"]{background:#d8e9f4;border-color:#2d607b}
+@media(max-width:580px){#board-overview{line-height:1.5}}
 @media(max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:470px){#movement-section{padding:8px}}
 </style></head>
@@ -89,9 +100,12 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section id="movement-section" aria-labelledby="movement-title">
 <details id="movement-details"><summary id="movement-title">Tablero hexagonal de laboratorio (13 × 9)</summary>
 <p>Selecciona una unidad propia y toca los hexágonos vecinos para trazar el movimiento.
-Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. También puedes jugar una carta de tu propia mano, terminar movimiento, combate o turno según la fase. No son reglas oficiales de Ancients.</p>
+Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. También puedes jugar una carta de tu propia mano, terminar movimiento, combate o turno según la fase. Usa «Inspeccionar tablero» para consultar unidades, movimientos realizados y distancias hexagonales sin alterar la partida. No son reglas oficiales de Ancients.</p>
 <div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
   role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
+<p id="board-overview" aria-live="polite">Sin tablero cargado</p>
+<button type="button" id="board-inspect-toggle" aria-pressed="false" disabled>Inspeccionar tablero</button>
+<p id="board-inspect-info" role="status" aria-live="polite" hidden></p>
 <p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>
 <div id="board-card-controls" hidden>
 <label>Carta de mando de tu mano

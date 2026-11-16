@@ -443,3 +443,24 @@ test('board card retry key changes on selection or private view change',async()=
  await c.playCard();
  assert.deepEqual(keys.map(x=>x.key),['card_retry_1','card_retry_1','card_retry_2','card_retry_3']);
 });
+
+test('inspection reads public geometry and does not send a gameplay command',async()=>{
+ const ui=fixture(),inspector=new Node(ui.svg.ownerDocument,'p'),
+   overview=new Node(ui.svg.ownerDocument,'p'),
+   toggle=new Node(ui.svg.ownerDocument,'button'),sent=[];
+ const c=createMovementBoard({...ui,inspectButton:toggle,inspectPanel:inspector,
+   overviewPanel:overview,onConfirm:async()=>sent.push('move')});
+ c.setView({...view(),movedUnitIds:['synthetic-a']});
+ assert.match(overview.textContent,/1 movidas/);
+ assert.equal(cell(ui.svg,3,4).classes.has('hex-already-moved'),true);
+ toggle.dispatch('click');c.select({col:3,row:4});
+ assert.match(inspector.textContent,/synthetic-a/);
+ assert.match(inspector.textContent,/Distancias geométricas/);
+ assert.equal(cell(ui.svg,3,4).classes.has('hex-inspected'),true);
+ assert.equal(cell(ui.svg,4,4).classes.has('hex-range-1'),true);
+ await c.confirm();
+ assert.deepEqual(sent,[]);
+ c.setView({...view(),revision:6});
+ assert.equal(toggle.attrs['aria-pressed'],'false');
+ assert.equal(inspector.textContent,'');
+});
