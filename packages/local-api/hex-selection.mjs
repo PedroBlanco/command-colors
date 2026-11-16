@@ -3,7 +3,7 @@
  * Only reads the player's authorized board projection. This is NOT a rules
  * engine: the SQLite server decides orders, movement range and terrain.
  */
-import {distance, inBounds} from '../hex-grid/hex.mjs';
+import {distance, inBounds, neighbors} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
 
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
@@ -84,4 +84,23 @@ export function movementDraftFields(view, draft) {
   checkedDraft(view, draft);
   if (draft.path.length === 0) throw new Error('RUTA_VACIA');
   return {unitId: draft.unitId, path: draft.path.map(coordinates)};
+}
+
+/** Candidate neighboring cells for visual guidance ONLY; no rule authorization. */
+export function nextMovementHexes(view, draft) {
+  const {last, visited, occupied} = checkedDraft(view, draft);
+  if (draft.path.length >= 32) return [];
+  return neighbors(last).filter(cell => !visited.has(key(cell)) && !occupied.has(key(cell)));
+}
+
+/** Go back to an earlier step (or the origin) without sending any command. */
+export function truncateMovementDraft(view, draft, cell) {
+  checkedDraft(view, draft);
+  if (!cell || typeof cell !== 'object' || Array.isArray(cell) || !inBounds(cell))
+    throw new Error('HEX_INVALIDO');
+  const origin = key(cell) === key(draft.origin);
+  const index = origin ? 0 : draft.path.findIndex(step => key(step) === key(cell)) + 1;
+  if (!origin && index === 0) throw new Error('HEX_FUERA_DE_RUTA');
+  return {unitId:draft.unitId, revision:draft.revision,
+    origin:coordinates(draft.origin), path:draft.path.slice(0,index).map(coordinates)};
 }

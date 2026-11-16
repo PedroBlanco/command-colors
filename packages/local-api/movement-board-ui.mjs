@@ -5,7 +5,8 @@
  */
 import {allCells, pixelCenter, polygonPoints} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
-import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields} from './hex-selection.mjs';
+import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
+  nextMovementHexes, truncateMovementDraft} from './hex-selection.mjs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const RADIUS = 24, OX = 35, OY = 34;
@@ -28,7 +29,8 @@ function svgNode(doc, name, attrs = {}) {
 }
 
 /** Render public cells/units with keyboard and pointer selection. */
-export function renderMovementBoard(svg, board, draft, onSelect, viewer='A') {
+export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
+  {nextCells=[], selectableUnitIds=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -46,6 +48,16 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A') {
     units.set(unit.id,unit);
     cellsById.set(key(unit),unit);
   }
+  // Presentational hints cannot grant permission; validate their bounded shape.
+  if (!Array.isArray(nextCells) || nextCells.length>6 ||
+      nextCells.some(cell => !cell || !Number.isSafeInteger(cell.col) ||
+        !Number.isSafeInteger(cell.row) || cell.col<0 || cell.col>12 ||
+        cell.row<0 || cell.row>8) ||
+      !Array.isArray(selectableUnitIds) || selectableUnitIds.length>117 ||
+      selectableUnitIds.some(id => typeof id!=='string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const nextKeys = new Set(nextCells.map(key));
+  const selectable = new Set(selectableUnitIds);
   const marked = new Map((draft?.path ?? []).map((step,index) => [key(step),index+1]));
   // One Tab stop on the board; arrow keys navigate cells. Preserve DOM focus
   // through redraws, otherwise Enter would strand keyboard players after
@@ -58,20 +70,27 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A') {
     const unit = cellsById.get(key(cell));
     const origin = draft && key(draft.origin) === key(cell);
     const step = marked.get(key(cell));
+    const next = nextKeys.has(key(cell));
+    const selectableOwn = unit?.side===viewer && selectable.has(unit.id);
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}` : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}`,
       'aria-pressed':String(Boolean(origin || step)),
       'data-col':cell.col,'data-row':cell.row
     });
     hex.classList.add('hex-target');
+    if (selectableOwn) hex.classList.add('hex-selectable');
+    if (next) hex.classList.add('hex-next');
     if (origin) hex.classList.add('hex-origin');
     if (step) hex.classList.add('hex-route');
     const points = polygonPoints(cell,RADIUS,OX,OY)
       .map(p=>displayPoint(p,viewer))
       .map(p=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
     hex.append(svgNode(doc,'polygon',{points,class:'hex-shape'}));
+    if (next) hex.append(svgNode(doc,'circle',{
+      cx:position.x,cy:position.y,r:7,class:'hex-next-marker','pointer-events':'none'
+    }));
     if (unit) {
       const badge = svgNode(doc,'circle',{cx:position.x,cy:position.y,r:15,class:unit.side==='A'?'unit-a':'unit-b','pointer-events':'none'});
       const text = svgNode(doc,'text',{x:position.x,y:position.y+4,'text-anchor':'middle',class:'unit-label','pointer-events':'none'});
@@ -135,8 +154,17 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   function repaint() {
     if (!svg?.ownerDocument?.createElementNS) return; // stub DOM in legacy tests
     const editable = !!view && deckActions(view).includes('move_synthetic_unit');
-    let renderError = false;
-    try {renderMovementBoard(svg,view?.board??[],editable?draft:null,select,view?.you??'A');} catch(err) {
+    let renderError = false, nextCells = [], selectableUnitIds = [];
+    try {
+      if (editable) {
+        const moved = new Set(Array.isArray(view.movedUnitIds) ? view.movedUnitIds : []);
+        selectableUnitIds = view.board.filter(unit => unit.side===view.you && !moved.has(unit.id))
+          .map(unit => unit.id);
+        if (draft) nextCells = nextMovementHexes(view,draft);
+      }
+      renderMovementBoard(svg,view?.board??[],editable?draft:null,select,view?.you??'A',
+        {nextCells,selectableUnitIds});
+    } catch(err) {
       draft=null;keyForRetry=null;renderError=true;onError(err);
       svg.replaceChildren();
     }
@@ -144,15 +172,18 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if (cancelButton)cancelButton.disabled=pending||renderError||!draft;
     if (confirmButton)confirmButton.disabled=pending||renderError||!editable||!draft?.path.length;
     message(renderError ? 'El tablero recibido no es válido.' : !editable?'Tablero de consulta. No puedes mover ahora.':
-      draft?`Unidad ${draft.unitId}: ${draft.path.length} pasos seleccionados. Confirma para enviar al servidor.`:
-        'Selecciona una unidad propia y luego los hexágonos de su ruta.');
+      draft?`Unidad ${draft.unitId}: ${draft.path.length} pasos seleccionados. ${nextCells.length} vecinos geométricos marcados. Toca un paso anterior para recortar la ruta o confirma para enviar al servidor.`:
+        `${selectableUnitIds.length} unidades propias sin mover destacadas. Selecciona una para trazar la ruta.`);
   }
   function select(cell) {
     if(pending)return;
     try {
       if (!view||!deckActions(view).includes('move_synthetic_unit'))throw Error('MOVIMIENTO_NO_DISPONIBLE');
       const occupied = view.board.find(unit=>key(unit)===key(cell));
-      if (occupied?.side===view.you) draft=beginMovementDraft(view,occupied.id);
+      if (draft && (key(draft.origin)===key(cell) ||
+          draft.path.some(step=>key(step)===key(cell))))
+        draft=truncateMovementDraft(view,draft,cell);
+      else if (occupied?.side===view.you) draft=beginMovementDraft(view,occupied.id);
       else if(draft)draft=appendMovementHex(view,draft,cell);
       else throw Error('SELECCIONA_UNIDAD_PROPIA');
       keyForRetry=null;repaint();
