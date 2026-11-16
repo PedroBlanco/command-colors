@@ -3,7 +3,7 @@
  * Visual decisions are reversible previews; only a confirmed request reaches
  * the server, which remains authoritative. No licensed assets or game rules.
  */
-import {allCells, pixelCenter, polygonPoints} from '../hex-grid/hex.mjs';
+import {allCells, pixelCenter, polygonPoints, distance} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
   nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
@@ -31,7 +31,8 @@ function svgNode(doc, name, attrs = {}) {
 /** Render public cells/units with keyboard and pointer selection. */
 export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
-    orderableUnitIds=[], selectedOrderUnitIds=[]}={}) {
+    orderableUnitIds=[], selectedOrderUnitIds=[],
+    inspectionCell=null, movedUnitIds=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -69,6 +70,17 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       selectedOrderUnitIds.some(id=>!orderableUnitIds.includes(id)) ||
       new Set(selectedOrderUnitIds).size!==selectedOrderUnitIds.length)
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if (inspectionCell!==null && (!inspectionCell ||
+      !Number.isSafeInteger(inspectionCell.col) ||
+      !Number.isSafeInteger(inspectionCell.row) ||
+      inspectionCell.col<0||inspectionCell.col>12||
+      inspectionCell.row<0||inspectionCell.row>8))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if (!Array.isArray(movedUnitIds)||movedUnitIds.length>117||
+      movedUnitIds.some(id=>typeof id!=='string' ||
+        !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const moved=new Set(movedUnitIds);
   const orderable=new Set(orderableUnitIds);
   const ordered=new Set(selectedOrderUnitIds);
   const combatTargets=new Set(combatTargetIds);
@@ -92,10 +104,13 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const chosenOrder=orderableOwn && ordered.has(unit.id);
     const rivalTarget=unit?.side!==viewer && combatTargets.has(unit?.id);
     const chosenTarget=rivalTarget && selectedTargetId===unit.id;
+    const alreadyMoved=!!unit && unit.side===viewer && moved.has(unit.id);
+    const inspected=inspectionCell && key(inspectionCell)===key(cell);
+    const range=inspectionCell ? distance(cell,inspectionCell):null;
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}`,
       'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -105,6 +120,9 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     if (chosenOrder) hex.classList.add('hex-order-selected');
     if (rivalTarget) hex.classList.add('hex-combat-selectable');
     if (chosenTarget) hex.classList.add('hex-combat-selected');
+    if (alreadyMoved) hex.classList.add('hex-already-moved');
+    if (inspected) hex.classList.add('hex-inspected');
+    else if (range!==null && range>=1 && range<=3)hex.classList.add(`hex-range-${range}`);
     if (next) hex.classList.add('hex-next');
     if (origin) hex.classList.add('hex-origin');
     if (step) hex.classList.add('hex-route');
@@ -120,6 +138,19 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       const text = svgNode(doc,'text',{x:position.x,y:position.y+4,'text-anchor':'middle',class:'unit-label','pointer-events':'none'});
       text.textContent=unit.side;
       hex.append(badge,text);
+      if (alreadyMoved) {
+        // Small public marker, with an equivalent spoken label on the hex.
+        const dot=svgNode(doc,'circle',{
+          cx:position.x+13,cy:position.y-13,r:6,
+          class:'unit-moved-dot','pointer-events':'none'
+        });
+        const tick=svgNode(doc,'text',{
+          x:position.x+13,y:position.y-10,
+          'text-anchor':'middle',class:'unit-moved-tick','pointer-events':'none'
+        });
+        tick.textContent='✓';
+        hex.append(dot,tick);
+      }
     }
     if (step) {
       const indexLabel=svgNode(doc,'text',{x:position.x+14,y:position.y-11,class:'route-number','text-anchor':'middle','pointer-events':'none'});
@@ -174,6 +205,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   attackButton,onRequestDefense,orderButton,onAssignOrders,onToggleOrderUnit,
   getOrderSelection=()=>[],phaseButtons={},onPhaseCommand,
   cardGroup,cardSelect,cardButton,onPlayCard,
+  inspectButton,inspectPanel,overviewPanel,
   onConfirm,onError=()=>{},
   makeIdempotencyKey=()=>crypto.randomUUID().replaceAll('-','')}={}) {
   if (typeof onConfirm!=='function') throw new TypeError('MISSING_MOVEMENT_SENDER');
@@ -183,6 +215,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   const phaseRetries=new Map();
   let phaseContext=null;
   let cardRetryKey=null,cardContext=null;
+  let inspecting=false,inspectedCell=null;
   const PHASE_COMMANDS=Object.freeze({
     'finish_synthetic_movement':null,
     'finish_synthetic_combat':null,
@@ -237,6 +270,36 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       actions.includes('play_synthetic_card') && Array.isArray(view?.yourHand);
     let renderError = false, nextCells = [], selectableUnitIds = [], combatTargetIds = [];
     let orderableUnitIds=[],selectedOrderUnitIds=[];
+    const boardValid=Array.isArray(view?.board);
+    const movedPublic=Array.isArray(view?.movedUnitIds)?view.movedUnitIds:[];
+    if (inspectButton) {
+      inspectButton.disabled=!boardValid||pending;
+      inspectButton.textContent=inspecting?'Volver al juego':'Inspeccionar tablero';
+      inspectButton.setAttribute?.('aria-pressed',String(inspecting));
+    }
+    if (overviewPanel) {
+      const boardUnits=boardValid?view.board:[];
+      const own=boardUnits.filter(unit=>unit?.side===view?.you);
+      const enemy=boardUnits.filter(unit=>unit?.side!==view?.you);
+      const used=own.filter(unit=>movedPublic.includes(unit.id)).length;
+      overviewPanel.textContent=!boardValid?'Sin tablero cargado':
+        `Bando ${view.you} · Turno ${view.turn} · Debe actuar ${view.actingSide} · Fase ${view.phase} · Revisión ${view.revision}. ${own.length} unidades propias (${used} movidas), ${enemy.length} rivales.`;
+    }
+    if (inspectPanel) {
+      inspectPanel.hidden=!inspecting||!boardValid;
+      if (!inspecting||!boardValid) inspectPanel.textContent='';
+      else if (!inspectedCell) inspectPanel.textContent='Toca un hexágono para consultar su contenido y las distancias geométricas hasta otras unidades.';
+      else {
+        const unit=view.board.find(item=>key(item)===key(inspectedCell));
+        const counterpart=view.board.filter(item=>key(item)!==key(inspectedCell))
+          .map(item=>({unit:item,steps:distance(inspectedCell,item)}))
+          .sort((a,b)=>a.steps-b.steps||a.unit.id.localeCompare(b.unit.id))
+          .slice(0,5)
+          .map(({unit:item,steps})=>`${item.id}: ${steps} hex.`);
+        const who=unit?`${unit.id} · bando ${unit.side} · ${unit.side===view.you?'propia':'rival'}${unit.side===view.you && movedPublic.includes(unit.id)?' · ya movida':''}`:'hexágono vacío';
+        inspectPanel.textContent=`Columna ${inspectedCell.col+1}, fila ${inspectedCell.row+1}: ${who}. ${counterpart.length?'Distancias a unidades próximas: '+counterpart.join(' · '):'No hay otras unidades.'} Distancias geométricas; no representan alcance de ataque ni legalidad de movimiento.`;
+      }
+    }
     try {
       if (editable) {
         const moved = new Set(Array.isArray(view.movedUnitIds) ? view.movedUnitIds : []);
@@ -256,21 +319,26 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       if (fingerprint!==orderSelectionFingerprint) {
         orderRetryKey=null;orderSelectionFingerprint=fingerprint;
       }
-      renderMovementBoard(svg,view?.board??[],editable?draft:null,select,view?.you??'A',
-        {nextCells,selectableUnitIds,combatTargetIds,
-          selectedTargetId:defenseReady?selectedTargetId:null,
-          orderableUnitIds,selectedOrderUnitIds});
+      renderMovementBoard(svg,view?.board??[],editable&&!inspecting?draft:null,select,view?.you??'A',
+        {nextCells:inspecting?[]:nextCells,
+          selectableUnitIds:inspecting?[]:selectableUnitIds,
+          combatTargetIds:inspecting?[]:combatTargetIds,
+          selectedTargetId:inspecting?null:defenseReady?selectedTargetId:null,
+          orderableUnitIds:inspecting?[]:orderableUnitIds,
+          selectedOrderUnitIds:inspecting?[]:selectedOrderUnitIds,
+          inspectionCell:inspecting?inspectedCell:null,
+          movedUnitIds:boardValid?movedPublic:[]});
     } catch(err) {
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
       orderRetryKey=null;orderSelectionFingerprint=null;renderError=true;onError(err);
       svg.replaceChildren();
     }
-    if (undoButton)undoButton.disabled=pending||renderError||!editable||!draft?.path.length;
-    if (cancelButton)cancelButton.disabled=pending||renderError||!draft;
-    if (confirmButton)confirmButton.disabled=pending||renderError||!editable||!draft?.path.length;
-    if (attackButton)attackButton.disabled=pending||renderError||!defenseReady||!selectedTargetId;
-    if (orderButton)orderButton.disabled=pending||renderError||!ordersReady||!selectedOrderUnitIds.length;
+    if (undoButton)undoButton.disabled=pending||renderError||inspecting||!editable||!draft?.path.length;
+    if (cancelButton)cancelButton.disabled=pending||renderError||inspecting||!draft;
+    if (confirmButton)confirmButton.disabled=pending||renderError||inspecting||!editable||!draft?.path.length;
+    if (attackButton)attackButton.disabled=pending||renderError||inspecting||!defenseReady||!selectedTargetId;
+    if (orderButton)orderButton.disabled=pending||renderError||inspecting||!ordersReady||!selectedOrderUnitIds.length;
     if (cardGroup) cardGroup.hidden=!cardsReady||renderError;
     if (cardSelect) {
       const current=cardSelect.value;
@@ -291,15 +359,16 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       if (cardSelect.value!==current)cardRetryKey=null;
       cardSelect.disabled=pending||!cardsReady||renderError;
     }
-    if (cardButton)cardButton.disabled=pending||!cardsReady||renderError||
+    if (cardButton)cardButton.disabled=pending||inspecting||!cardsReady||renderError||
       !view.yourHand.includes(cardSelect?.value);
     for (const [action,button] of Object.entries(phaseButtons)) {
       if (!button) continue;
       const allowed=!renderError && permittedPhaseCommand(action,actions);
       button.hidden=!allowed;
-      button.disabled=pending||!allowed;
+      button.disabled=pending||inspecting||!allowed;
     }
     message(renderError ? 'El tablero recibido no es válido.' :
+      inspecting?'Modo inspección: toca un hexágono para consultar posiciones y distancias. No se enviarán comandos.' :
       cardsReady ? 'Selecciona una carta de tu mano y pulsa Jugar carta de mando para continuar.' :
       ordersReady ? `Asignación de órdenes: ${selectedOrderUnitIds.length} unidades seleccionadas. Toca unidades propias para añadirlas o quitarlas y confirma para enviar al servidor.` :
       actions.includes('answer_synthetic_defense') ? 'Decisión defensiva sintética pendiente: elige Mantener posición o Evadir. No se envía nada hasta pulsar un botón.' :
@@ -315,6 +384,11 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if(pending)return;
     try {
       if (!view) throw Error('MOVIMIENTO_NO_DISPONIBLE');
+      if (inspecting) {
+        inspectedCell={col:cell.col,row:cell.row};
+        repaint();
+        return;
+      }
       const actions=deckActions(view);
       const occupied = view.board.find(unit=>key(unit)===key(cell));
       if (typeof onToggleOrderUnit==='function' &&
@@ -352,7 +426,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     } catch(error){reportError(error);}
   }
   async function confirm() {
-    if(pending)return;
+    if(pending||inspecting)return;
     try {
       const fields=movementDraftFields(view,draft);
       if(!keyForRetry)keyForRetry=makeIdempotencyKey();
@@ -362,7 +436,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     } catch(error){reportError(error);} finally {pending=false;repaint();}
   }
   async function requestDefense() {
-    if (pending) return;
+    if (pending||inspecting) return;
     try {
       if (!selectedTargetId || !view ||
           !deckActions(view).includes('ask_synthetic_defense') ||
@@ -377,7 +451,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     } catch(error){reportError(error);} finally {pending=false;repaint();}
   }
   async function assignOrders() {
-    if (pending) return;
+    if (pending||inspecting) return;
     try {
       if (!view || !deckActions(view).includes('assign_synthetic_orders') ||
           typeof onAssignOrders!=='function' || typeof onToggleOrderUnit!=='function')
@@ -397,7 +471,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   /** Playing a selected private card requires explicit confirmation and the
    * same authenticated command path as the existing deck panel. */
   async function playCard() {
-    if (pending) return false;
+    if (pending||inspecting) return false;
     try {
       if (typeof onPlayCard!=='function' ||
           !deckActions(view).includes('play_synthetic_card'))
@@ -416,7 +490,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   /** Buttons send only the already-supported synthetic commands; retries
    * reuse keys for the same view, phase and defensive choice. */
   async function sendPhaseAction(action) {
-    if (pending) return false;
+    if (pending||inspecting) return false;
     try {
       if (!permittedPhaseCommand(action)) throw Error('ACCION_NO_DISPONIBLE');
       if (!phaseRetries.has(action)) phaseRetries.set(action,makeIdempotencyKey());
@@ -431,10 +505,17 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     finally {pending=false;repaint();}
   }
   function undo() {
-    if(pending)return;
+    if(pending||inspecting)return;
     try {draft=undoMovementHex(view,draft);keyForRetry=null;autoRoute=false;repaint();}catch(error){reportError(error);}
   }
-  function cancel() {if(pending)return;draft=null;keyForRetry=null;autoRoute=false;repaint();}
+  function cancel() {if(pending||inspecting)return;draft=null;keyForRetry=null;autoRoute=false;repaint();}
+  function toggleInspect() {
+    if (pending||!Array.isArray(view?.board))return;
+    inspecting=!inspecting;
+    inspectedCell=null;
+    repaint();
+  }
+  inspectButton?.addEventListener('click',toggleInspect);
   undoButton?.addEventListener('click',undo);
   cancelButton?.addEventListener('click',cancel);
   confirmButton?.addEventListener('click',confirm);
@@ -471,6 +552,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
       orderRetryKey=null;orderSelectionFingerprint=null;
+      inspecting=false;inspectedCell=null;
     }
     // A same-revision projection should be immutable, but fail closed if a
     // corrupted/restored snapshot invalidates a draft even without a bump.
@@ -496,5 +578,6 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   }
   repaint();
   return Object.freeze({setView,select,undo,cancel,confirm,requestDefense,assignOrders,
-    sendPhaseAction,playCard,getDraft:()=>draft ? structuredClone(draft):null});
+    sendPhaseAction,playCard,toggleInspect,
+    getDraft:()=>draft ? structuredClone(draft):null});
 }
