@@ -334,12 +334,29 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       orderRetryKey=null;orderSelectionFingerprint=null;renderError=true;onError(err);
       svg.replaceChildren();
     }
-    if (undoButton)undoButton.disabled=pending||renderError||inspecting||!editable||!draft?.path.length;
-    if (cancelButton)cancelButton.disabled=pending||renderError||inspecting||!draft;
-    if (confirmButton)confirmButton.disabled=pending||renderError||inspecting||!editable||!draft?.path.length;
-    if (attackButton)attackButton.disabled=pending||renderError||inspecting||!defenseReady||!selectedTargetId;
-    if (orderButton)orderButton.disabled=pending||renderError||inspecting||!ordersReady||!selectedOrderUnitIds.length;
-    if (cardGroup) cardGroup.hidden=!cardsReady||renderError;
+    // Keep the tactical toolbar focused on the current phase. A hidden
+    // control cannot be invoked through stale keyboard focus or callbacks.
+    if (undoButton) {
+      undoButton.hidden=inspecting||!editable;
+      undoButton.disabled=pending||renderError||inspecting||!editable||!draft?.path.length;
+    }
+    if (cancelButton) {
+      cancelButton.hidden=inspecting||!editable;
+      cancelButton.disabled=pending||renderError||inspecting||!draft;
+    }
+    if (confirmButton) {
+      confirmButton.hidden=inspecting||!editable;
+      confirmButton.disabled=pending||renderError||inspecting||!editable||!draft?.path.length;
+    }
+    if (attackButton) {
+      attackButton.hidden=inspecting||!defenseReady;
+      attackButton.disabled=pending||renderError||inspecting||!defenseReady||!selectedTargetId;
+    }
+    if (orderButton) {
+      orderButton.hidden=inspecting||!ordersReady;
+      orderButton.disabled=pending||renderError||inspecting||!ordersReady||!selectedOrderUnitIds.length;
+    }
+    if (cardGroup) cardGroup.hidden=inspecting||!cardsReady||renderError;
     if (cardSelect) {
       const current=cardSelect.value;
       cardSelect.replaceChildren();
@@ -364,7 +381,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     for (const [action,button] of Object.entries(phaseButtons)) {
       if (!button) continue;
       const allowed=!renderError && permittedPhaseCommand(action,actions);
-      button.hidden=!allowed;
+      button.hidden=inspecting||!allowed;
       button.disabled=pending||inspecting||!allowed;
     }
     message(renderError ? 'El tablero recibido no es válido.' :
