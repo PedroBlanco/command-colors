@@ -521,6 +521,15 @@ movementBoard = createMovementBoard({
     renderDeck(); // synchronizes the existing dropdown and the SVG selection
   },
   onAssignOrders: submitSelectedOrders,
+  phaseButtons: {
+    finish_synthetic_movement:el('board-finish-movement'),
+    undo_synthetic_orders:el('board-undo-orders'),
+    defense_stand:el('board-defense-stand'),
+    defense_evade:el('board-defense-evade'),
+    finish_synthetic_combat:el('board-finish-combat'),
+    acknowledge_synthetic_draw:el('board-draw')
+  },
+  onPhaseCommand: (type,fields,key)=>sendDeck(type,fields,key),
   onRequestDefense: async (unitId,idempotencyKey) => {
     const confirmed=await sendDeck('ask_synthetic_defense',
       {targetUnit:unitId},idempotencyKey);

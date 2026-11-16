@@ -341,3 +341,61 @@ test('assigning orders reuses a retry key until the local selection changes',asy
  await c.assignOrders();
  assert.equal(keys[2],'order_key_2');
 });
+
+test('phase buttons expose only permitted synthetic transitions for the acting player',async()=>{
+ const ui=fixture(),sent=[],buttons={};
+ for(const action of ['finish_synthetic_movement','undo_synthetic_orders','defense_stand',
+   'defense_evade','finish_synthetic_combat','acknowledge_synthetic_draw']){
+   buttons[action]=new Node(ui.svg.ownerDocument,'button');
+ }
+ const c=createMovementBoard({...ui,phaseButtons:buttons,onConfirm:async()=>{},
+   onPhaseCommand:async (type,fields,key)=>{sent.push({type,fields,key});return true},
+   makeIdempotencyKey:()=> 'phase_action_001'});
+ c.setView(view());
+ assert.equal(buttons.finish_synthetic_movement.hidden,false);
+ assert.equal(buttons.undo_synthetic_orders.hidden,false);
+ assert.equal(buttons.finish_synthetic_combat.hidden,true);
+ await buttons.finish_synthetic_movement.dispatch('click');
+ assert.deepEqual(sent[0],{type:'finish_synthetic_movement',fields:{},key:'phase_action_001'});
+ c.setView({...view(),phase:'COMBAT',revision:6});
+ assert.equal(buttons.finish_synthetic_combat.disabled,false);
+ assert.equal(buttons.defense_stand.hidden,true);
+ c.setView({...view(),phase:'DRAW_CARD',revision:7});
+ assert.equal(buttons.acknowledge_synthetic_draw.disabled,false);
+ c.setView({...view(),phase:'DRAW_CARD',revision:8,actingSide:'B'});
+ assert.equal(buttons.acknowledge_synthetic_draw.hidden,true);
+});
+
+test('pending defense offers only options granted to the defender',async()=>{
+ const ui=fixture(),sent=[],buttons={
+   defense_stand:new Node(ui.svg.ownerDocument,'button'),
+   defense_evade:new Node(ui.svg.ownerDocument,'button'),
+   finish_synthetic_combat:new Node(ui.svg.ownerDocument,'button')
+ };
+ const c=createMovementBoard({...ui,phaseButtons:buttons,onConfirm:async()=>{},
+   onPhaseCommand:async(type,fields,key)=>sent.push({type,fields,key}),
+   makeIdempotencyKey:()=> 'defend_phase_001'});
+ c.setView({...view(),phase:'COMBAT',
+   pendingDecision:{actor:'A',kind:'DEFENSE_CHOICE',options:['STAND']}});
+ assert.equal(buttons.defense_stand.hidden,false);
+ assert.equal(buttons.defense_evade.hidden,true);
+ assert.equal(buttons.finish_synthetic_combat.hidden,true);
+ await c.sendPhaseAction('defense_evade');
+ assert.equal(sent.length,0);
+ await buttons.defense_stand.dispatch('click');
+ assert.deepEqual(sent,[{type:'answer_synthetic_defense',fields:{choice:'STAND'},key:'defend_phase_001'}]);
+});
+
+test('phase retries reuse command keys only within the same revision',async()=>{
+ const ui=fixture(),keys=[],buttons={finish_synthetic_movement:new Node(ui.svg.ownerDocument,'button')};
+ let number=0;
+ const c=createMovementBoard({...ui,phaseButtons:buttons,onConfirm:async()=>{},
+   onPhaseCommand:async(_type,_fields,key)=>{keys.push(key);throw Error('NETWORK_FAILED')},
+   onError:()=>{},makeIdempotencyKey:()=> `retry_phase_${++number}`});
+ c.setView(view());
+ await c.sendPhaseAction('finish_synthetic_movement');
+ await c.sendPhaseAction('finish_synthetic_movement');
+ c.setView({...view(),revision:6});
+ await c.sendPhaseAction('finish_synthetic_movement');
+ assert.deepEqual(keys,['retry_phase_1','retry_phase_1','retry_phase_2']);
+});

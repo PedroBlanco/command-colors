@@ -89,7 +89,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section id="movement-section" aria-labelledby="movement-title">
 <details id="movement-details"><summary id="movement-title">Tablero hexagonal de laboratorio (13 × 9)</summary>
 <p>Selecciona una unidad propia y toca los hexágonos vecinos para trazar el movimiento.
-Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; no es un ataque reglamentario de Ancients.</p>
+Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. Aquí también puedes terminar movimiento, combate o turno cuando corresponda. No son ataques reglamentarios de Ancients.</p>
 <div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
   role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
 <p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>
@@ -98,6 +98,14 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button type="button" id="board-confirm" disabled>Confirmar movimiento</button>
 <button type="button" id="board-assign-orders" disabled>Asignar órdenes a las seleccionadas</button>
 <button type="button" id="board-ask-defense" disabled>Solicitar defensa del objetivo</button>
+<div id="board-phase-actions" role="group" aria-label="Acciones de fase sintética">
+<button type="button" id="board-undo-orders" hidden disabled>Deshacer órdenes</button>
+<button type="button" id="board-finish-movement" hidden disabled>Terminar movimiento</button>
+<button type="button" id="board-defense-stand" hidden disabled>Mantener posición (STAND)</button>
+<button type="button" id="board-defense-evade" hidden disabled>Evadir (EVADE)</button>
+<button type="button" id="board-finish-combat" hidden disabled>Terminar combate</button>
+<button type="button" id="board-draw" hidden disabled>Robar carta y terminar turno</button>
+</div>
 <p class="notice">Sin reglas oficiales: el servidor valida unidades ordenadas, recorrido y límites de la partida.</p>
 </details></section>
 </div>

@@ -172,12 +172,36 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
  */
 export function createMovementBoard({svg,status,undoButton,cancelButton,confirmButton,
   attackButton,onRequestDefense,orderButton,onAssignOrders,onToggleOrderUnit,
-  getOrderSelection=()=>[],onConfirm,onError=()=>{},
+  getOrderSelection=()=>[],phaseButtons={},onPhaseCommand,
+  onConfirm,onError=()=>{},
   makeIdempotencyKey=()=>crypto.randomUUID().replaceAll('-','')}={}) {
   if (typeof onConfirm!=='function') throw new TypeError('MISSING_MOVEMENT_SENDER');
   let view=null, draft=null, keyForRetry=null, pending=false, autoRoute=false;
   let selectedTargetId=null, defenseRetryKey=null;
   let orderRetryKey=null, orderSelectionFingerprint=null;
+  const phaseRetries=new Map();
+  let phaseContext=null;
+  const PHASE_COMMANDS=Object.freeze({
+    'finish_synthetic_movement':null,
+    'finish_synthetic_combat':null,
+    'acknowledge_synthetic_draw':null,
+    'undo_synthetic_orders':null,
+    'defense_stand':'STAND',
+    'defense_evade':'EVADE'
+  });
+  function permittedPhaseCommand(action,actions=deckActions(view)) {
+    if (!Object.hasOwn(PHASE_COMMANDS,action) || typeof onPhaseCommand!=='function')
+      return false;
+    const choice=PHASE_COMMANDS[action];
+    if (choice===null) return actions.includes(action);
+    return actions.includes('answer_synthetic_defense') &&
+      Array.isArray(view?.pendingDecision?.options) &&
+      view.pendingDecision.options.includes(choice);
+  }
+  function phaseFields(action) {
+    const choice=PHASE_COMMANDS[action];
+    return choice===null?{}:{choice};
+  }
   const message=value=>{if(status)status.textContent=value;};
   // Local geometry failures belong beside the board, not only in the
   // application's general message area. Never echo private server payloads.
@@ -241,8 +265,16 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if (confirmButton)confirmButton.disabled=pending||renderError||!editable||!draft?.path.length;
     if (attackButton)attackButton.disabled=pending||renderError||!defenseReady||!selectedTargetId;
     if (orderButton)orderButton.disabled=pending||renderError||!ordersReady||!selectedOrderUnitIds.length;
+    for (const [action,button] of Object.entries(phaseButtons)) {
+      if (!button) continue;
+      const allowed=!renderError && permittedPhaseCommand(action,actions);
+      button.hidden=!allowed;
+      button.disabled=pending||!allowed;
+    }
     message(renderError ? 'El tablero recibido no es válido.' :
       ordersReady ? `Asignación de órdenes: ${selectedOrderUnitIds.length} unidades seleccionadas. Toca unidades propias para añadirlas o quitarlas y confirma para enviar al servidor.` :
+      actions.includes('answer_synthetic_defense') ? 'Decisión defensiva sintética pendiente: elige Mantener posición o Evadir. No se envía nada hasta pulsar un botón.' :
+      actions.includes('acknowledge_synthetic_draw') ? 'Fin del turno sintético: puedes robar una carta y pasar al rival.' :
       defenseReady ? (selectedTargetId
         ? `Objetivo rival ${selectedTargetId} seleccionado. Solicita la decisión defensiva para enviar el comando al servidor.`
         : 'Combate sintético: selecciona una unidad rival para solicitar su decisión defensiva.') :
@@ -333,6 +365,23 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       if (accepted!==false) orderRetryKey=null;
     } catch(error){reportError(error);} finally {pending=false;repaint();}
   }
+  /** Buttons send only the already-supported synthetic commands; retries
+   * reuse keys for the same view, phase and defensive choice. */
+  async function sendPhaseAction(action) {
+    if (pending) return false;
+    try {
+      if (!permittedPhaseCommand(action)) throw Error('ACCION_NO_DISPONIBLE');
+      if (!phaseRetries.has(action)) phaseRetries.set(action,makeIdempotencyKey());
+      pending=true;repaint();
+      const accepted=await onPhaseCommand(
+        action.startsWith('defense_')?'answer_synthetic_defense':action,
+        phaseFields(action),phaseRetries.get(action)
+      );
+      if (accepted!==false) phaseRetries.delete(action);
+      return accepted;
+    } catch(error){reportError(error);return false;}
+    finally {pending=false;repaint();}
+  }
   function undo() {
     if(pending)return;
     try {draft=undoMovementHex(view,draft);keyForRetry=null;autoRoute=false;repaint();}catch(error){reportError(error);}
@@ -343,7 +392,21 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   confirmButton?.addEventListener('click',confirm);
   attackButton?.addEventListener('click',requestDefense);
   orderButton?.addEventListener('click',assignOrders);
+  for (const [action,button] of Object.entries(phaseButtons)) {
+    if (button && Object.hasOwn(PHASE_COMMANDS,action))
+      button.addEventListener('click',()=>sendPhaseAction(action));
+  }
   function setView(next) {
+    // Never reuse a command key across revisions, phases, identities or
+    // a changed defense decision even if an inconsistent snapshot retains its revision.
+    const context=next ? JSON.stringify([
+      next.matchId,next.you,next.revision,next.phase,next.actingSide,
+      next.turn,next.pendingDecision??null
+    ]) : null;
+    if (context!==phaseContext) {
+      phaseRetries.clear();
+      phaseContext=context;
+    }
     // Also accept an SSE/HTTP refresh while a submission is in flight.
     if(!next||!view || next.matchId!==view.matchId || next.you!==view.you
        || next.revision!==view.revision || next.phase!==view.phase || next.actingSide!==view.actingSide) {
@@ -375,5 +438,5 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   }
   repaint();
   return Object.freeze({setView,select,undo,cancel,confirm,requestDefense,assignOrders,
-    getDraft:()=>draft ? structuredClone(draft):null});
+    sendPhaseAction,getDraft:()=>draft ? structuredClone(draft):null});
 }
