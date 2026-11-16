@@ -60,15 +60,19 @@ test('keyboard unit selection and click route need explicit confirmation',async(
  assert.equal(controller.getDraft(),null);
 });
 
-test('occupied cells and jumps are rejected without mutating the route',()=>{
- const {svg,controller,errors,requests}=setup();
+test('distant clicks build candidate routes, occupied destinations stay blocked',()=>{
+ const {svg,controller,errors,requests,status}=setup();
  cell(svg,3,4).dispatch('click');
  cell(svg,5,5).dispatch('click');
- assert.deepEqual(errors,['HEX_NO_ADYACENTE']);
- cell(svg,4,4).dispatch('click');
+ assert.equal(errors.length,0);
+ assert.deepEqual(controller.getDraft().path.at(-1),{col:5,row:5});
+ assert.ok(controller.getDraft().path.length>1);
+ assert.match(status.textContent,/Ruta geométrica automática/);
+ const oldPath=controller.getDraft().path;
  cell(svg,5,4).dispatch('click');
  assert.equal(errors.at(-1),'HEX_OCUPADO');
- assert.deepEqual(controller.getDraft().path,[{col:4,row:4}]);
+ assert.match(status.textContent,/está ocupado/);
+ assert.deepEqual(controller.getDraft().path,oldPath);
  assert.equal(requests.length,0);
 });
 
@@ -220,4 +224,21 @@ test('next-step hints and route trimming update the board without sending a comm
  cell(svg,3,4).dispatch('click');
  assert.deepEqual(controller.getDraft().path,[]);
  assert.equal(requests.length,0);
+});
+
+test('suggested routes need confirmation and expire after an updated revision',async()=>{
+ const {controller,requests,confirmButton}=setup();
+ controller.select({col:3,row:4});
+ controller.select({col:8,row:6});
+ assert.equal(requests.length,0);
+ controller.setView({...view(),revision:6});
+ assert.equal(controller.getDraft(),null);
+ assert.equal(confirmButton.disabled,true);
+ controller.setView(view());
+ controller.select({col:3,row:4});
+ controller.select({col:8,row:6});
+ await controller.confirm();
+ assert.equal(requests.length,1);
+ assert.deepEqual(requests[0].fields.path.at(-1),{col:8,row:6});
+ assert.equal(Object.hasOwn(requests[0].fields,'actor'),false);
 });
