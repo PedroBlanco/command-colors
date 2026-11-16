@@ -64,7 +64,7 @@ export function previewBaseMovementOnBoard({unitType,origin,occupiedCells=[]}={}
  *   the ASSUMED clear-ground / no-leader scenario, NOT official line of sight.
  * All results are non-authorizing, and cannot be sent as a battle command.
  */
-export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitIds}={}){
+export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitIds=null}={}){
   if(!Object.hasOwn(BASE_MOVEMENT_PROFILES,unitType))
     throw new TypeError('UNSUPPORTED_BASE_UNIT_TYPE');
   if(!origin||!Number.isSafeInteger(origin.col)||
