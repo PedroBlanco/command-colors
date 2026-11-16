@@ -273,3 +273,17 @@ test('wrong targets and stale combat selection cannot be submitted',async()=>{
  assert.equal(sent.length,0);
  assert.equal(ui.attackButton.disabled,true);
 });
+
+test('synthetic defense retry keeps the same idempotency key until success',async()=>{
+ const ui=fixture(),keys=[];let fail=true;
+ const c=createMovementBoard({...ui,onConfirm:async()=>{},
+   onRequestDefense:async(_,key)=>{keys.push(key);if(fail)throw Error('NETWORK_FAILED')},
+   makeIdempotencyKey:()=> 'defense_retry_01'});
+ c.setView({...view(),phase:'COMBAT'});
+ c.select({col:5,row:4});
+ await c.requestDefense();
+ fail=false;
+ await c.requestDefense();
+ assert.deepEqual(keys,['defense_retry_01','defense_retry_01']);
+ assert.equal(ui.attackButton.disabled,true);
+});
