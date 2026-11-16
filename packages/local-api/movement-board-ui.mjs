@@ -34,7 +34,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
     orderableUnitIds=[], selectedOrderUnitIds=[],
     inspectionCell=null, movedUnitIds=[], profileCells=[],
-    rangedTargets=[],inspectionTarget=null}={}) {
+    rangedTargets=[],inspectionTarget=null,losBlockerCells=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -94,6 +94,14 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
         t.row<0||t.row>8||!['BLOCKED_BY_VISIBLE_UNITS',
         'NO_VISIBLE_UNIT_OBSTRUCTION'].includes(t.visibleUnitCorridor)))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if(!Array.isArray(losBlockerCells)||losBlockerCells.length>117||
+      losBlockerCells.some(c=>!c||!Number.isSafeInteger(c.col)||
+        !Number.isSafeInteger(c.row)||c.col<0||c.col>12||
+        c.row<0||c.row>8))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const blockerKeys=new Set(losBlockerCells.map(key));
+  if(blockerKeys.size!==losBlockerCells.length)
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
   const rangedByCell=new Map(rangedTargets.map(t=>[key(t),t]));
   if(rangedByCell.size!==rangedTargets.length||
       (inspectionTarget!==null&&(!inspectionTarget||
@@ -135,10 +143,11 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const profilePreview=previewByCell.get(key(cell));
     const rangedPreview=rangedByCell.get(key(cell));
     const focusedTarget=inspectionTarget&&key(inspectionTarget)===key(cell);
+    const viewBlocker=blockerKeys.has(key(cell));
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin unidades interpuestas; terreno y líderes desconocidos' : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin unidades interpuestas; terreno y líderes desconocidos' : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}${viewBlocker ? ', unidad visible que bloquea el corredor hipotético' : ''}`,
       'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget || inspected || focusedTarget)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -160,6 +169,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
         ?'hex-profile-los-blocked':'hex-profile-los-open-unverified'
     );
     if (focusedTarget)hex.classList.add('hex-profile-target-focus');
+    if (viewBlocker)hex.classList.add('hex-profile-los-obstacle');
     if (next) hex.classList.add('hex-next');
     if (origin) hex.classList.add('hex-origin');
     if (step) hex.classList.add('hex-route');
@@ -307,7 +317,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       actions.includes('play_synthetic_card') && Array.isArray(view?.yourHand);
     let renderError = false, nextCells = [], selectableUnitIds = [], combatTargetIds = [];
     let orderableUnitIds=[],selectedOrderUnitIds=[];
-    let profileCells=[],rangedTargets=[];
+    let profileCells=[],rangedTargets=[],losBlockerCells=[];
     const boardValid=Array.isArray(view?.board);
     const movedPublic=Array.isArray(view?.movedUnitIds)?view.movedUnitIds:[];
     if (inspectButton) {
@@ -365,6 +375,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
             WAR_MACHINE_MOVED:'la máquina de guerra se ha movido',
             AUXILIA_MOVED_TWO:'auxiliares movidos dos hexágonos'
           };
+          if(target?.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS')
+            losBlockerCells=target.obstructingHexes;
           const targetMessage=inspectedTarget && firing.status!=='REFERENCE_ONLY'
             ? ' No hay datos fiables de pasos para valorar este objetivo.'
             : target?target.profileStatus!=='CANDIDATE'
@@ -426,7 +438,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           movedUnitIds:boardValid?movedPublic:[],
           profileCells:inspecting?profileCells:[],
           rangedTargets:inspecting?rangedTargets:[],
-          inspectionTarget:inspecting?inspectedTarget:null});
+          inspectionTarget:inspecting?inspectedTarget:null,
+          losBlockerCells:inspecting?losBlockerCells:[]});
     } catch(err) {
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
