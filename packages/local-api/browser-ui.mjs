@@ -508,6 +508,13 @@ movementBoard = createMovementBoard({
   undoButton: el('board-undo'),
   cancelButton: el('board-cancel'),
   confirmButton: el('board-confirm'),
+  attackButton: el('board-ask-defense'),
+  onRequestDefense: async (unitId,idempotencyKey) => {
+    const confirmed=await sendDeck('ask_synthetic_defense',
+      {targetUnit:unitId},idempotencyKey);
+    if (confirmed) message('Solicitud de defensa sintética registrada');
+    return confirmed;
+  },
   onConfirm: async (fields, idempotencyKey) => {
     if (await sendDeck('move_synthetic_unit', fields, idempotencyKey))
       message('Movimiento sintético confirmado por el servidor');

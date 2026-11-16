@@ -30,7 +30,7 @@ function svgNode(doc, name, attrs = {}) {
 
 /** Render public cells/units with keyboard and pointer selection. */
 export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
-  {nextCells=[], selectableUnitIds=[]}={}) {
+  {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -56,6 +56,12 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       !Array.isArray(selectableUnitIds) || selectableUnitIds.length>117 ||
       selectableUnitIds.some(id => typeof id!=='string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id)))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if (!Array.isArray(combatTargetIds) || combatTargetIds.length>117 ||
+      combatTargetIds.some(id=>typeof id!=='string'||!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id)) ||
+      !(selectedTargetId===null ||
+        (typeof selectedTargetId==='string' && combatTargetIds.includes(selectedTargetId))))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const combatTargets=new Set(combatTargetIds);
   const nextKeys = new Set(nextCells.map(key));
   const selectable = new Set(selectableUnitIds);
   const marked = new Map((draft?.path ?? []).map((step,index) => [key(step),index+1]));
@@ -72,15 +78,19 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const step = marked.get(key(cell));
     const next = nextKeys.has(key(cell));
     const selectableOwn = unit?.side===viewer && selectable.has(unit.id);
+    const rivalTarget=unit?.side!==viewer && combatTargets.has(unit?.id);
+    const chosenTarget=rivalTarget && selectedTargetId===unit.id;
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
       'aria-pressed':String(Boolean(origin || step)),
       'data-col':cell.col,'data-row':cell.row
     });
     hex.classList.add('hex-target');
     if (selectableOwn) hex.classList.add('hex-selectable');
+    if (rivalTarget) hex.classList.add('hex-combat-selectable');
+    if (chosenTarget) hex.classList.add('hex-combat-selected');
     if (next) hex.classList.add('hex-next');
     if (origin) hex.classList.add('hex-origin');
     if (step) hex.classList.add('hex-route');
@@ -147,9 +157,11 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
  * A failed HTTP response preserves the request key for a safe idempotent retry.
  */
 export function createMovementBoard({svg,status,undoButton,cancelButton,confirmButton,
-  onConfirm,onError=()=>{},makeIdempotencyKey=()=>crypto.randomUUID().replaceAll('-','')}={}) {
+  attackButton,onRequestDefense,onConfirm,onError=()=>{},
+  makeIdempotencyKey=()=>crypto.randomUUID().replaceAll('-','')}={}) {
   if (typeof onConfirm!=='function') throw new TypeError('MISSING_MOVEMENT_SENDER');
   let view=null, draft=null, keyForRetry=null, pending=false, autoRoute=false;
+  let selectedTargetId=null, defenseRetryKey=null;
   const message=value=>{if(status)status.textContent=value;};
   // Local geometry failures belong beside the board, not only in the
   // application's general message area. Never echo private server payloads.
@@ -160,7 +172,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     RUTA_INACCESIBLE:'No existe un recorrido geométrico libre hasta el destino.',
     RUTA_DEMASIADO_LARGA:'El recorrido supera los 32 pasos del laboratorio.',
     BORRADOR_DESACTUALIZADO:'La partida ha cambiado. Vuelve a elegir la unidad.',
-    SELECCIONA_UNIDAD_PROPIA:'Selecciona primero una unidad propia.'
+    SELECCIONA_UNIDAD_PROPIA:'Selecciona primero una unidad propia.',
+    OBJETIVO_RIVAL_REQUERIDO:'Selecciona una unidad rival durante el combate sintético.'
   });
   const reportError=error=>{
     if (Object.hasOwn(localErrors,error?.message)) message(localErrors[error.message]);
@@ -168,8 +181,11 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   };
   function repaint() {
     if (!svg?.ownerDocument?.createElementNS) return; // stub DOM in legacy tests
-    const editable = !!view && deckActions(view).includes('move_synthetic_unit');
-    let renderError = false, nextCells = [], selectableUnitIds = [];
+    const actions=deckActions(view);
+    const editable=actions.includes('move_synthetic_unit');
+    const defenseReady=typeof onRequestDefense==='function' &&
+      actions.includes('ask_synthetic_defense');
+    let renderError = false, nextCells = [], selectableUnitIds = [], combatTargetIds = [];
     try {
       if (editable) {
         const moved = new Set(Array.isArray(view.movedUnitIds) ? view.movedUnitIds : []);
@@ -177,24 +193,43 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           .map(unit => unit.id);
         if (draft) nextCells = nextMovementHexes(view,draft);
       }
+      if (defenseReady)
+        combatTargetIds=view.board.filter(unit=>unit.side!==view.you).map(unit=>unit.id);
       renderMovementBoard(svg,view?.board??[],editable?draft:null,select,view?.you??'A',
-        {nextCells,selectableUnitIds});
+        {nextCells,selectableUnitIds,combatTargetIds,
+          selectedTargetId:defenseReady?selectedTargetId:null});
     } catch(err) {
-      draft=null;keyForRetry=null;autoRoute=false;renderError=true;onError(err);
+      draft=null;keyForRetry=null;autoRoute=false;
+      selectedTargetId=null;defenseRetryKey=null;renderError=true;onError(err);
       svg.replaceChildren();
     }
     if (undoButton)undoButton.disabled=pending||renderError||!editable||!draft?.path.length;
     if (cancelButton)cancelButton.disabled=pending||renderError||!draft;
     if (confirmButton)confirmButton.disabled=pending||renderError||!editable||!draft?.path.length;
-    message(renderError ? 'El tablero recibido no es válido.' : !editable?'Tablero de consulta. No puedes mover ahora.':
+    if (attackButton)attackButton.disabled=pending||renderError||!defenseReady||!selectedTargetId;
+    message(renderError ? 'El tablero recibido no es válido.' :
+      defenseReady ? (selectedTargetId
+        ? `Objetivo rival ${selectedTargetId} seleccionado. Solicita la decisión defensiva para enviar el comando al servidor.`
+        : 'Combate sintético: selecciona una unidad rival para solicitar su decisión defensiva.') :
+      !editable?'Tablero de consulta. No puedes mover ahora.':
       draft?`Unidad ${draft.unitId}: ${draft.path.length} pasos seleccionados. ${nextCells.length} vecinos geométricos marcados.${autoRoute ? ' Ruta geométrica automática sugerida (sin validar reglas).' : ''} Toca un paso anterior para recortar la ruta o confirma para enviar al servidor.`:
         `${selectableUnitIds.length} unidades propias sin mover destacadas. Selecciona una para trazar la ruta.`);
   }
   function select(cell) {
     if(pending)return;
     try {
-      if (!view||!deckActions(view).includes('move_synthetic_unit'))throw Error('MOVIMIENTO_NO_DISPONIBLE');
+      if (!view) throw Error('MOVIMIENTO_NO_DISPONIBLE');
+      const actions=deckActions(view);
       const occupied = view.board.find(unit=>key(unit)===key(cell));
+      if (typeof onRequestDefense==='function' &&
+          actions.includes('ask_synthetic_defense')) {
+        if (!occupied || occupied.side===view.you) throw Error('OBJETIVO_RIVAL_REQUERIDO');
+        selectedTargetId=occupied.id;
+        defenseRetryKey=null;
+        repaint();
+        return;
+      }
+      if (!actions.includes('move_synthetic_unit'))throw Error('MOVIMIENTO_NO_DISPONIBLE');
       if (draft && (key(draft.origin)===key(cell) ||
           draft.path.some(step=>key(step)===key(cell)))) {
         draft=truncateMovementDraft(view,draft,cell);
@@ -221,6 +256,21 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       draft=null;keyForRetry=null;autoRoute=false;
     } catch(error){reportError(error);} finally {pending=false;repaint();}
   }
+  async function requestDefense() {
+    if (pending) return;
+    try {
+      if (!selectedTargetId || !view ||
+          !deckActions(view).includes('ask_synthetic_defense') ||
+          !view.board.some(u=>u?.id===selectedTargetId && u.side!==view.you))
+        throw Error('OBJETIVO_RIVAL_REQUERIDO');
+      if (!defenseRetryKey) defenseRetryKey=makeIdempotencyKey();
+      pending=true;repaint();
+      const result=await onRequestDefense(selectedTargetId,defenseRetryKey);
+      if (result!==false) {
+        selectedTargetId=null;defenseRetryKey=null;
+      }
+    } catch(error){reportError(error);} finally {pending=false;repaint();}
+  }
   function undo() {
     if(pending)return;
     try {draft=undoMovementHex(view,draft);keyForRetry=null;autoRoute=false;repaint();}catch(error){reportError(error);}
@@ -229,11 +279,13 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   undoButton?.addEventListener('click',undo);
   cancelButton?.addEventListener('click',cancel);
   confirmButton?.addEventListener('click',confirm);
+  attackButton?.addEventListener('click',requestDefense);
   function setView(next) {
     // Also accept an SSE/HTTP refresh while a submission is in flight.
     if(!next||!view || next.matchId!==view.matchId || next.you!==view.you
        || next.revision!==view.revision || next.phase!==view.phase || next.actingSide!==view.actingSide) {
       draft=null;keyForRetry=null;autoRoute=false;
+      selectedTargetId=null;defenseRetryKey=null;
     }
     // A same-revision projection should be immutable, but fail closed if a
     // corrupted/restored snapshot invalidates a draft even without a bump.
@@ -248,9 +300,16 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
         draft=null;keyForRetry=null;autoRoute=false;
       }
     }
+    if (selectedTargetId && (!next ||
+        !deckActions(next).includes('ask_synthetic_defense') ||
+        !Array.isArray(next.board) ||
+        !next.board.some(u=>u?.id===selectedTargetId && u.side!==next.you))) {
+      selectedTargetId=null;defenseRetryKey=null;
+    }
     view=next;
     repaint();
   }
   repaint();
-  return Object.freeze({setView,select,undo,cancel,confirm,getDraft:()=>draft ? structuredClone(draft):null});
+  return Object.freeze({setView,select,undo,cancel,confirm,requestDefense,
+    getDraft:()=>draft ? structuredClone(draft):null});
 }
