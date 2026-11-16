@@ -283,7 +283,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           const option=cardSelect.ownerDocument.createElement('option');
           option.value=ref;
           option.textContent=ref;
-          cardSelect.appendChild(option);
+          cardSelect.append(option);
         }
         cardSelect.value=hand.includes(current)?current:'';
       } else cardSelect.value='';
