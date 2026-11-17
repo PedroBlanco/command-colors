@@ -68,6 +68,18 @@ function updatePanels() {
   for (const [id,expanded] of Object.entries(open)) el(id).open = expanded;
 }
 
+const PUBLIC_TROOP_LABELS=Object.freeze({
+  LIGHT_INFANTRY:'Infantería ligera',
+  LIGHT_SLING_INFANTRY:'Infantería ligera con honda',
+  LIGHT_BOW_INFANTRY:'Infantería ligera con arco',
+  AUXILIA_INFANTRY:'Auxiliares',WARRIOR_INFANTRY:'Guerreros',
+  MEDIUM_INFANTRY:'Infantería media',HEAVY_INFANTRY:'Infantería pesada',
+  HEAVY_WAR_MACHINE:'Máquina de guerra pesada',
+  LIGHT_CAVALRY:'Caballería ligera',MEDIUM_CAVALRY:'Caballería media',
+  HEAVY_CAVALRY:'Caballería pesada',ELEPHANT:'Elefante',
+  HEAVY_CHARIOT:'Carro pesado'
+});
+
 // A dropdown is only a convenience: the server independently validates all
 // unit IDs and all orders. Never present hidden hands or opponent units as
 // selectable own units.
@@ -89,7 +101,10 @@ function updateUnitOptions(id, side, multiple = false) {
         !Number.isSafeInteger(unit.col) || !Number.isSafeInteger(unit.row)) continue;
     const option = document.createElement('option');
     option.value = unit.id;
-    option.textContent = `${unit.id} (col. ${unit.col+1}, fila ${unit.row+1})`;
+    const type=cached?.trainingReference?.unitTypes?.[unit.id];
+    const troop=Object.hasOwn(PUBLIC_TROOP_LABELS,type)?
+      ' · '+PUBLIC_TROOP_LABELS[type]:'';
+    option.textContent = `${unit.id}${troop} (col. ${unit.col+1}, fila ${unit.row+1})`;
     option.selected = multiple ? previous.has(unit.id) : previousValue === unit.id;
     select.appendChild(option);
   }
