@@ -599,6 +599,8 @@ el('board-ranged-check-button').addEventListener('click',async()=>{
     if(!privateScope.isCurrent(ticket,matchId)||
        el('match-id').value.trim()!==matchId||
        cached?.revision!==revision||cached?.you!==player||
+       el('board-ranged-attacker').value!==data.attackerId||
+       el('board-ranged-target').value!==data.targetId||
        !deckActions(cached).includes('check_training_ranged_declaration'))return;
     const report=response.reference;
     if(response.code!=='TRAINING_RANGED_REFERENCE'||
@@ -653,6 +655,15 @@ movementBoard = createMovementBoard({
   cardSelect:el('board-card-select'),
   cardButton:el('board-card-play'),
   onPlayCard:(cardRef,key)=>sendDeck('play_synthetic_card',{cardRef},key),
+  onReferenceSelection: (role,id) => {
+    if(!deckActions(cached).includes('check_training_ranged_declaration')||
+       !['attacker','target'].includes(role)||
+       !cached?.board?.some(u=>u?.id===id&&
+         (role==='attacker'?u.side===cached.you:u.side!==cached.you)))return;
+    el(role==='attacker'?'board-ranged-attacker':'board-ranged-target').value=id;
+    el('board-ranged-check-result').textContent='';
+    renderRangedCheck();
+  },
   onRequestDefense: async (unitId,idempotencyKey) => {
     const confirmed=await sendDeck('ask_synthetic_defense',
       {targetUnit:unitId},idempotencyKey);
