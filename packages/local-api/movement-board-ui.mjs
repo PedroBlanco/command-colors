@@ -8,7 +8,8 @@ import {deckActions} from './deck-controls.mjs';
 import {BASE_MOVEMENT_PROFILES} from '../ancients-rules/movement-profile.mjs';
 import {previewBaseMovementOnBoard,previewBaseRangedOnBoard} from './ancients-base-reference.mjs';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
-  nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
+  nextMovementHexes, truncateMovementDraft, extendMovementDraftTo,
+  previewTrainingMovementDraft} from './hex-selection.mjs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const RADIUS = 24, OX = 35, OY = 34;
@@ -295,6 +296,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   let phaseContext=null;
   let cardRetryKey=null,cardContext=null;
   let inspecting=false,inspectedCell=null,inspectedTarget=null;
+  let lastBoardError=null;
   const PHASE_COMMANDS=Object.freeze({
     'finish_synthetic_movement':null,
     'finish_synthetic_combat':null,
@@ -331,10 +333,19 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     UNIDAD_NO_PROPIA:'Selecciona una unidad propia para darle una orden.',
     ORDENES_INVALIDAS:'Debes seleccionar al menos una unidad propia.',
     CARTA_NO_PROPIA:'Selecciona una carta de tu mano.',
-    ACCION_NO_DISPONIBLE:'Esta acción no está disponible en la fase actual.'
+    ACCION_NO_DISPONIBLE:'Esta acción no está disponible en la fase actual.',
+    TRAINING_TROOP_RANGE_EXCEEDED:'La ruta supera los pasos admitidos para este tipo de tropa en el ejercicio de entrenamiento.',
+    TRAINING_TERRAIN_RESTRICTED:'El terreno de entrenamiento impide continuar esa ruta o exige detenerse.',
+    TRAINING_CONDITIONAL_CHARGE_UNSUPPORTED:'Este movimiento exigiría una carga y combate obligatorio aún no implementados.',
+    TRAINING_REFERENCE_UNAVAILABLE:'La referencia de entrenamiento está incompleta. No se enviará el movimiento.'
   });
   const reportError=error=>{
-    if (Object.hasOwn(localErrors,error?.message)) message(localErrors[error.message]);
+    // API errors have the public shape "400: CODE"; never display a server
+    // payload or an arbitrary error as a trusted local movement verdict.
+    const code=/^(?:400|409): ([A-Z0-9_]+)$/.exec(error?.message??'')?.[1] ??
+      error?.message;
+    lastBoardError=Object.hasOwn(localErrors,code)?localErrors[code]:null;
+    if(lastBoardError)message(lastBoardError);
     onError(error);
   };
   function repaint() {
@@ -355,6 +366,11 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       view.trainingReference:null;
     const terrainCells=Array.isArray(training?.terrain)?training.terrain:[];
     const movedPublic=Array.isArray(view?.movedUnitIds)?view.movedUnitIds:[];
+    let trainingDraftHint=null;
+    if(editable && draft?.path.length&&!inspecting){
+      try {trainingDraftHint=previewTrainingMovementDraft(view,draft);}
+      catch {trainingDraftHint={accepted:false,reason:'TRAINING_REFERENCE_UNAVAILABLE'}; }
+    }
     if (inspectButton) {
       inspectButton.disabled=!boardValid||pending;
       inspectButton.textContent=inspecting?'Volver al juego':'Inspeccionar tablero';
@@ -515,7 +531,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     }
     if (confirmButton) {
       confirmButton.hidden=inspecting||!editable;
-      confirmButton.disabled=pending||renderError||inspecting||!editable||!draft?.path.length;
+      confirmButton.disabled=pending||renderError||inspecting||!editable||
+        !draft?.path.length||(trainingDraftHint!==null&&!trainingDraftHint.accepted);
     }
     if (attackButton) {
       attackButton.hidden=inspecting||!defenseReady;
@@ -554,6 +571,9 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       button.disabled=pending||inspecting||!allowed;
     }
     message(renderError ? 'El tablero recibido no es válido.' :
+      lastBoardError?lastBoardError:
+      trainingDraftHint&&!trainingDraftHint.accepted?
+        (localErrors[trainingDraftHint.reason]??'El movimiento necesita verificación adicional del servidor.') :
       inspecting?'Modo inspección: toca un hexágono para consultar posiciones y distancias. No se enviarán comandos.' :
       cardsReady ? 'Selecciona una carta de tu mano y pulsa Jugar carta de mando para continuar.' :
       ordersReady ? `Asignación de órdenes: ${selectedOrderUnitIds.length} unidades seleccionadas. Toca unidades propias para añadirlas o quitarlas y confirma para enviar al servidor.` :
@@ -568,6 +588,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   }
   function select(cell) {
     if(pending)return;
+    lastBoardError=null;
     try {
       if (!view) throw Error('MOVIMIENTO_NO_DISPONIBLE');
       if (inspecting) {
@@ -623,6 +644,9 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if(pending||inspecting)return;
     try {
       const fields=movementDraftFields(view,draft);
+      const hint=previewTrainingMovementDraft(view,draft);
+      if(hint&&!hint.accepted)throw Error(hint.reason);
+      lastBoardError=null;
       if(!keyForRetry)keyForRetry=makeIdempotencyKey();
       pending=true;repaint();
       await onConfirm(fields,keyForRetry);
@@ -748,6 +772,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       selectedTargetId=null;defenseRetryKey=null;
       orderRetryKey=null;orderSelectionFingerprint=null;
       inspecting=false;inspectedCell=null;inspectedTarget=null;
+      lastBoardError=null;
     }
     // A same-revision projection should be immutable, but fail closed if a
     // corrupted/restored snapshot invalidates a draft even without a bump.
