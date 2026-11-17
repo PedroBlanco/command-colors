@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createSqliteCommandDeckStore, hasCommandDeck} from './sqlite-game.mjs';
+import {createTrainingReference} from './training-reference.mjs';
 
 const MATCH = '123e4567-e89b-42d3-a456-426614174000';
 const initial = () => ({schemaVersion:1,matchId:MATCH,status:'ACTIVE',turn:'A',board:[{id:'unit_1',side:'A',col:3,row:4},{id:'alpha',side:'A',col:4,row:4},
@@ -313,4 +314,22 @@ test('CCWB deck: corrupt mixed-mode row cannot dispatch or project private cards
   assert.equal(inst.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,0);
   assert.equal(inst.db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,0);
   assert.equal(inst.db.isTransaction,false);
+}));
+
+test('training terrain rejection is atomic and a valid move still commits',()=>fixture(({inst})=>{
+ const state=JSON.parse(inst.getRow(MATCH).private_state);
+ state.board=[{id:'synthetic-a',side:'A',col:4,row:4},{id:'synthetic-b',side:'B',col:9,row:2}];
+ state.trainingReference=createTrainingReference(state.board);
+ inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ inst.store.initialize('A');
+ apply(inst.store,'A','play_synthetic_card',0,{cardRef:inst.store.view('A').yourHand[0]});
+ apply(inst.store,'A','assign_synthetic_orders',1,{unitIds:['synthetic-a']});
+ const before=inst.getRow(MATCH);
+ const blocked=inst.store.dispatch(command('A','move_synthetic_unit',2,
+   {unitId:'synthetic-a',path:[{col:5,row:4},{col:6,row:4}]}));
+ assert.equal(blocked.code,'TRAINING_TERRAIN_RESTRICTED');
+ assert.deepEqual(inst.getRow(MATCH),before);
+ assert.equal(inst.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,2);
+ assert.equal(inst.store.dispatch(command('A','move_synthetic_unit',2,
+   {unitId:'synthetic-a',path:[{col:5,row:4}]},'valid_training_move_01')).code,'APPLIED');
 }));

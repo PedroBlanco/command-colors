@@ -11,6 +11,7 @@ import {transitionSyntheticMovement} from '../movement/movement.mjs';
 import {createServerSyntheticMovementPolicy} from '../movement/server-policy.mjs';
 import {projectTrainingReference} from './training-reference.mjs';
 import {getTrainingScenario} from './training-scenario.mjs';
+import {screenVersionedTrainingMove} from './training-movement-screen.mjs';
 
 const KEY = /^[A-Za-z0-9_-]{8,80}$/;
 const TYPES = new Set([
@@ -160,6 +161,13 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
           board: state.board, movedUnitIds: state.movedUnitIds,
           phaseState: state.commandSession.phaseState
         }, approvedCommand, createServerSyntheticMovementPolicy(state.board));
+        // Only a move already eligible by the synthetic reducer reaches this
+        // server-owned base/terrain screen. Denials remain wholly uncommitted:
+        // no board changes, revision, event or idempotency record.
+        if (result.accepted) {
+          const training = screenVersionedTrainingMove(state, approvedCommand);
+          if (!training.accepted) result = {accepted:false,reason:training.reason};
+        }
         if (result.accepted) {
           state.board = result.nextState.board;
           state.movedUnitIds = result.nextState.movedUnitIds;

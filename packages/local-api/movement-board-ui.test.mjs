@@ -536,3 +536,16 @@ test('server training terrain and types replace manual guess only in annotated m
  assert.match(info.textContent,/tipo declarado por el servidor/);
  assert.match(info.textContent,/NO autoriza/);
 });
+
+test('versioned troop hints keep an invalid auto-route off the wire',async()=>{
+ const {controller:c,requests,status}=setup();
+ c.setView({...view(),board:[{id:'synthetic-a',side:'A',col:3,row:4},
+   {id:'synthetic-b',side:'B',col:9,row:2}],
+   trainingReference:{kind:'SYNTHETIC_ANCIENTS_TRAINING_V1',
+     scenario:{id:'test-synthetic-001',official:false},
+     unitTypes:{'synthetic-a':'MEDIUM_INFANTRY'},terrain:[]}});
+ c.select({col:3,row:4});c.select({col:4,row:4});c.select({col:5,row:4});
+ assert.deepEqual(c.getDraft().path,[{col:4,row:4}]);
+ assert.match(status.textContent,/No existe una ruta compatible/);
+ assert.equal(requests.length,0);
+});
