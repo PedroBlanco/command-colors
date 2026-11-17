@@ -20,6 +20,10 @@ const PRIVATE_VIEW_SCOPE_FILE = fileURLToPath(new URL('./private-view-scope.mjs'
 const PRIVATE_PROJECTION_FILE = fileURLToPath(new URL('./private-projection.mjs',import.meta.url));
 const REVISION_REFRESH_FILE = fileURLToPath(new URL('./revision-refresh.mjs',import.meta.url));
 const HEX_GRID_FILE = fileURLToPath(new URL('../hex-grid/hex.mjs',import.meta.url));
+const ANCIENTS_REFERENCE_FILE = fileURLToPath(new URL('./ancients-base-reference.mjs',import.meta.url));
+const ANCIENTS_PROFILE_FILE = fileURLToPath(new URL('../ancients-rules/movement-profile.mjs',import.meta.url));
+const ANCIENTS_RANGED_FILE = fileURLToPath(new URL('../ancients-rules/ranged-profile.mjs',import.meta.url));
+const ANCIENTS_LOS_FILE = fileURLToPath(new URL('../ancients-rules/line-of-sight.mjs',import.meta.url));
 // Exact same-origin allowlist: never serve arbitrary repository paths.
 const BROWSER_ASSETS = new Map([
   ['/browser-ui.mjs', CLIENT_FILE],
@@ -29,7 +33,11 @@ const BROWSER_ASSETS = new Map([
   ['/private-view-scope.mjs', PRIVATE_VIEW_SCOPE_FILE],
   ['/private-projection.mjs', PRIVATE_PROJECTION_FILE],
   ['/revision-refresh.mjs', REVISION_REFRESH_FILE],
-  ['/hex-grid/hex.mjs', HEX_GRID_FILE]
+  ['/hex-grid/hex.mjs', HEX_GRID_FILE],
+  ['/ancients-base-reference.mjs', ANCIENTS_REFERENCE_FILE],
+  ['/ancients-rules/movement-profile.mjs', ANCIENTS_PROFILE_FILE],
+  ['/ancients-rules/ranged-profile.mjs', ANCIENTS_RANGED_FILE],
+  ['/ancients-rules/line-of-sight.mjs', ANCIENTS_LOS_FILE]
 ]);
 
 async function jsonRequest(req) {
