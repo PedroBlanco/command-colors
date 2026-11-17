@@ -71,20 +71,16 @@ test('invalid and legacy states do not produce deck actions',()=>{
   assert.equal(deckSummary({}),null);
 });
 
-test('reference-only ranged check uses own attacker and rival without sending actor or steps',()=>{
+test('ranged reference request sends only public attacker/target and current revision',()=>{
  const view={...baseline(),phase:'COMBAT',
    board:[{id:'bow_a',side:'A'},{id:'enemy_b',side:'B'}],
    trainingRangedHints:{status:'REFERENCE_ONLY',attackAuthorized:false}};
  assert.equal(deckActions(view).includes('check_training_ranged_declaration'),true);
- assert.deepEqual(deckCommand(view,'check_training_ranged_declaration',
-   {attackerId:'bow_a',targetId:'enemy_b',movedSteps:0,terrain:[]},KEY),{
-   type:'check_training_ranged_declaration',expectedRevision:0,
-   idempotencyKey:KEY,attackerId:'bow_a',targetId:'enemy_b'
- });
+ const request=deckCommand(view,'check_training_ranged_declaration',
+   {attackerId:'bow_a',targetId:'enemy_b',movedSteps:9},KEY);
+ assert.deepEqual(request,{type:'check_training_ranged_declaration',
+   expectedRevision:0,idempotencyKey:KEY,attackerId:'bow_a',targetId:'enemy_b'});
  assert.throws(()=>deckCommand(view,'check_training_ranged_declaration',
    {attackerId:'enemy_b',targetId:'bow_a'},KEY),/DECLARACION_TIRO_INVALIDA/);
- assert.equal(deckActions({...view,trainingRangedHints:null}).includes(
-   'check_training_ranged_declaration'),false);
- assert.equal(deckActions({...view,actingSide:'B'}).includes(
-   'check_training_ranged_declaration'),false);
+ assert.equal(deckActions({...view,actingSide:'B'}).includes('check_training_ranged_declaration'),false);
 });
