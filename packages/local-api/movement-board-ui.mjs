@@ -37,7 +37,8 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     orderableUnitIds=[], selectedOrderUnitIds=[],
     inspectionCell=null, movedUnitIds=[], profileCells=[],
     rangedTargets=[],inspectionTarget=null,losBlockerCells=[],terrainCells=[],
-    unitTypes={},trainingDestinations=[],trainingShotTargetIds=[]}={}) {
+    unitTypes={},trainingDestinations=[],trainingShotTargetIds=[],
+    trainingShotPairs=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -141,6 +142,15 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   if(!Array.isArray(trainingShotTargetIds)||trainingShotTargetIds.length>117||
       new Set(trainingShotTargetIds).size!==trainingShotTargetIds.length||
       trainingShotTargetIds.some(id=>typeof id!=='string'||!combatTargetsForViewer(id)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if(!Array.isArray(trainingShotPairs)||trainingShotPairs.length>12||
+      trainingShotPairs.some(s=>!s||typeof s.attackerId!=='string'||
+        typeof s.targetId!=='string'||!units.has(s.attackerId)||
+        !units.has(s.targetId)||units.get(s.attackerId).side!==viewer||
+        units.get(s.targetId).side===viewer||
+        !trainingShotTargetIds.includes(s.targetId)||
+        !Number.isSafeInteger(s.diceAfterTerrain)||s.diceAfterTerrain<0||
+        s.diceAfterTerrain>8))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
   const trainingShots=new Set(trainingShotTargetIds);
   const moved=new Set(movedUnitIds);
@@ -298,6 +308,16 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     });
     focusable.set(key(cell),hex);
     group.append(hex);
+  }
+  // Draw at most twelve read-only corridors. They cannot intercept clicks,
+  // indicate legal shots, or participate in the movement path selection.
+  for(const pair of trainingShotPairs){
+    const from=displayPoint(pixelCenter(units.get(pair.attackerId),RADIUS,OX,OY),viewer);
+    const to=displayPoint(pixelCenter(units.get(pair.targetId),RADIUS,OX,OY),viewer);
+    group.append(svgNode(doc,'line',{
+      x1:from.x,y1:from.y,x2:to.x,y2:to.y,
+      class:'training-ranged-corridor','pointer-events':'none'
+    }));
   }
   svg.replaceChildren(group);
   if (hadBoardFocus) focusable.get(svg.dataset?.focusedCell ?? focusKey)?.focus?.();
@@ -586,7 +606,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           terrainCells:boardValid?terrainCells:[],
           unitTypes:training?.unitTypes??{},
           trainingDestinations:inspecting?[]:trainingDestinations,
-          trainingShotTargetIds:inspecting?[]:trainingShotTargetIds});
+          trainingShotTargetIds:inspecting?[]:trainingShotTargetIds,
+          trainingShotPairs:inspecting?[]:trainingShotCandidates.slice(0,12)});
     } catch(err) {
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
