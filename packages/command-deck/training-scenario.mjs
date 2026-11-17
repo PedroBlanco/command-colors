@@ -11,7 +11,6 @@ import {BASE_TERRAIN_TYPES} from '../ancients-rules/terrain-movement.mjs';
 
 export const DEFAULT_TRAINING_SCENARIO_ID='test-synthetic-001';
 const FAIL=()=>{throw new TypeError('INVALID_SYNTHETIC_SCENARIO')};
-const type=Object.hasOwn.bind(Object);
 const plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&
   Object.getPrototypeOf(x)===Object.prototype;
 const exact=(x,fields)=>plain(x)&&Reflect.ownKeys(x).length===fields.length&&
@@ -92,5 +91,7 @@ export function compileTrainingScenario(spec){
 /** No caller-controlled selection: only the checked, bundled fixture. */
 export function getTrainingScenario(id=DEFAULT_TRAINING_SCENARIO_ID){
   if(id!==DEFAULT_TRAINING_SCENARIO_ID)FAIL();
-  return compileTrainingScenario(source);
+  const scenario=compileTrainingScenario(source);
+  if(scenario.id!==id)FAIL(); // detect ID drift between fixture and catalog
+  return scenario;
 }
