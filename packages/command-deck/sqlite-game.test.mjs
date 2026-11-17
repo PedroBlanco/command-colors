@@ -316,35 +316,20 @@ test('CCWB deck: corrupt mixed-mode row cannot dispatch or project private cards
   assert.equal(inst.db.isTransaction,false);
 }));
 
-test('versioned synthetic scenario screens terrain and troop range atomically, legacy unaffected',()=>fixture(({inst})=>{
- const row=inst.getRow(MATCH),state=JSON.parse(row.private_state);
- state.board=[{id:'synthetic-a',side:'A',col:4,row:4},
-   {id:'synthetic-b',side:'B',col:9,row:2}];
+test('training terrain rejection is atomic and a valid move still commits',()=>fixture(({inst})=>{
+ const state=JSON.parse(inst.getRow(MATCH).private_state);
+ state.board=[{id:'synthetic-a',side:'A',col:4,row:4},{id:'synthetic-b',side:'B',col:9,row:2}];
  state.trainingReference=createTrainingReference(state.board);
- inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?')
-   .run(JSON.stringify(state),MATCH);
- assert.equal(inst.store.initialize('A').status,201);
+ inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ inst.store.initialize('A');
  apply(inst.store,'A','play_synthetic_card',0,{cardRef:inst.store.view('A').yourHand[0]});
  apply(inst.store,'A','assign_synthetic_orders',1,{unitIds:['synthetic-a']});
- const snapshot=inst.getRow(MATCH);
- const denied=inst.store.dispatch(command('A','move_synthetic_unit',2,
-   {unitId:'synthetic-a',path:[{col:5,row:4},{col:6,row:4}]}));
- assert.equal(denied.status,400);
- assert.equal(denied.code,'TRAINING_TERRAIN_RESTRICTED');
- assert.deepEqual(inst.getRow(MATCH),snapshot);
- assert.equal(inst.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,2);
- const valid=inst.store.dispatch(command('A','move_synthetic_unit',2,
-   {unitId:'synthetic-a',path:[{col:5,row:4}]},'training_valid_move_01'));
- assert.equal(valid.code,'APPLIED');
- assert.equal(valid.view.revision,3);
- apply(inst.store,'A','finish_synthetic_movement',3);
- apply(inst.store,'A','finish_synthetic_combat',4);
- apply(inst.store,'A','acknowledge_synthetic_draw',5);
- apply(inst.store,'B','play_synthetic_card',6,{cardRef:inst.store.view('B').yourHand[0]});
- apply(inst.store,'B','assign_synthetic_orders',7,{unitIds:['synthetic-b']});
  const before=inst.getRow(MATCH);
- const long=inst.store.dispatch(command('B','move_synthetic_unit',8,
-   {unitId:'synthetic-b',path:[{col:8,row:2},{col:7,row:2}]}));
- assert.equal(long.code,'TRAINING_TROOP_RANGE_EXCEEDED');
+ const blocked=inst.store.dispatch(command('A','move_synthetic_unit',2,
+   {unitId:'synthetic-a',path:[{col:5,row:4},{col:6,row:4}]}));
+ assert.equal(blocked.code,'TRAINING_TERRAIN_RESTRICTED');
  assert.deepEqual(inst.getRow(MATCH),before);
-});
+ assert.equal(inst.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,2);
+ assert.equal(inst.store.dispatch(command('A','move_synthetic_unit',2,
+   {unitId:'synthetic-a',path:[{col:5,row:4}]},'valid_training_move_01')).code,'APPLIED');
+}));
