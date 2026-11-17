@@ -5,6 +5,7 @@
  */
 import {allCells, pixelCenter, polygonPoints, distance} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
+import {BASE_MOVEMENT_PROFILES} from '../ancients-rules/movement-profile.mjs';
 import {previewBaseMovementOnBoard,previewBaseRangedOnBoard} from './ancients-base-reference.mjs';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
   nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
@@ -34,7 +35,8 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
     orderableUnitIds=[], selectedOrderUnitIds=[],
     inspectionCell=null, movedUnitIds=[], profileCells=[],
-    rangedTargets=[],inspectionTarget=null,losBlockerCells=[],terrainCells=[]}={}) {
+    rangedTargets=[],inspectionTarget=null,losBlockerCells=[],terrainCells=[],
+    unitTypes={}}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -118,6 +120,10 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
         !Number.isSafeInteger(t.row)||t.col<0||t.col>12||t.row<0||
         t.row>8||!['FOREST','HILL','BROKEN_GROUND'].includes(t.kind)))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if(!unitTypes||typeof unitTypes!=='object'||Array.isArray(unitTypes)||
+      Object.entries(unitTypes).some(([id,type])=>
+        !units.has(id)||!Object.hasOwn(BASE_MOVEMENT_PROFILES,type)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
   const terrainByCell=new Map(terrainCells.map(t=>[key(t),t.kind]));
   if(terrainByCell.size!==terrainCells.length)
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
@@ -153,10 +159,11 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const focusedTarget=inspectionTarget&&key(inspectionTarget)===key(cell);
     const viewBlocker=blockerKeys.has(key(cell));
     const terrainKind=terrainByCell.get(key(cell));
+    const knownUnitType=unit&&Object.hasOwn(unitTypes,unit.id)?unitTypes[unit.id]:null;
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_TRAINING_TERRAIN'?', referencia de disparo bloqueada por terreno sintético':rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin bloqueos detectados; líderes desconocidos' : ''}${terrainKind ? `, terreno del ejercicio: ${terrainKind}` : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}${viewBlocker ? ', celda que bloquea el corredor provisional' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${knownUnitType ? `, tipo de entrenamiento ${knownUnitType}` : ''} ` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_TRAINING_TERRAIN'?', referencia de disparo bloqueada por terreno sintético':rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin bloqueos detectados; líderes desconocidos' : ''}${terrainKind ? `, terreno del ejercicio: ${terrainKind}` : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}${viewBlocker ? ', celda que bloquea el corredor provisional' : ''}`,
       'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget || inspected || focusedTarget)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -191,6 +198,12 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       cx:position.x,cy:position.y,r:7,class:'hex-next-marker','pointer-events':'none'
     }));
     if (unit) {
+      if (knownUnitType) {
+        const label=svgNode(doc,'title');
+        label.textContent=unit.id+' · '+knownUnitType.replaceAll('_',' ').toLowerCase()+
+          ' (tipo declarado para ejercicio sintético)';
+        hex.append(label);
+      }
       const badge = svgNode(doc,'circle',{cx:position.x,cy:position.y,r:15,class:unit.side==='A'?'unit-a':'unit-b','pointer-events':'none'});
       const text = svgNode(doc,'text',{x:position.x,y:position.y+4,'text-anchor':'middle',class:'unit-label','pointer-events':'none'});
       text.textContent=unit.side;
@@ -442,7 +455,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           .sort((a,b)=>a.steps-b.steps||a.unit.id.localeCompare(b.unit.id))
           .slice(0,5)
           .map(({unit:item,steps})=>`${item.id}: ${steps} hex.`);
-        const who=unit?`${unit.id} · bando ${unit.side} · ${unit.side===view.you?'propia':'rival'}${unit.side===view.you && movedPublic.includes(unit.id)?' · ya movida':''}`:'hexágono vacío';
+        const who=unit?`${unit.id} · bando ${unit.side} · ${unit.side===view.you?'propia':'rival'}${training?.unitTypes?.[unit.id]?' · tipo de entrenamiento '+training.unitTypes[unit.id].replaceAll('_',' ').toLowerCase():''}${unit.side===view.you && movedPublic.includes(unit.id)?' · ya movida':''}`:'hexágono vacío';
         inspectPanel.textContent=`Columna ${inspectedCell.col+1}, fila ${inspectedCell.row+1}: ${who}. ${counterpart.length?'Distancias a unidades próximas: '+counterpart.join(' · '):'No hay otras unidades.'} Distancias geométricas; no representan alcance de ataque ni legalidad de movimiento.`;
       }
     }
@@ -478,7 +491,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           rangedTargets:inspecting?rangedTargets:[],
           inspectionTarget:inspecting?inspectedTarget:null,
           losBlockerCells:inspecting?losBlockerCells:[],
-          terrainCells:boardValid?terrainCells:[]});
+          terrainCells:boardValid?terrainCells:[],
+          unitTypes:training?.unitTypes??{}});
     } catch(err) {
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
