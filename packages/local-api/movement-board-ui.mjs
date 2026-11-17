@@ -209,6 +209,15 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       const text = svgNode(doc,'text',{x:position.x,y:position.y+4,'text-anchor':'middle',class:'unit-label','pointer-events':'none'});
       text.textContent=unit.side;
       hex.append(badge,text);
+      if (knownUnitType?.endsWith('_CAVALRY')) {
+        const cavalry=svgNode(doc,'text',{
+          x:position.x,y:position.y+22,'text-anchor':'middle',
+          class:'unit-type-cavalry','pointer-events':'none'
+        });
+        cavalry.textContent=knownUnitType==='LIGHT_CAVALRY'?'CL':
+          knownUnitType==='MEDIUM_CAVALRY'?'CM':'CP';
+        hex.append(cavalry);
+      }
       if (alreadyMoved) {
         // Small public marker, with an equivalent spoken label on the hex.
         const dot=svgNode(doc,'circle',{
@@ -366,6 +375,9 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     const training=view?.trainingReference?.kind==='SYNTHETIC_ANCIENTS_TRAINING_V1'?
       view.trainingReference:null;
     const terrainCells=Array.isArray(training?.terrain)?training.terrain:[];
+    const draftType=draft&&training?.unitTypes?.[draft.unitId];
+    const profileSteps=draftType&&Object.hasOwn(BASE_MOVEMENT_PROFILES,draftType)?
+      BASE_MOVEMENT_PROFILES[draftType].maxSteps:null;
     const movedPublic=Array.isArray(view?.movedUnitIds)?view.movedUnitIds:[];
     let trainingDraftHint=null;
     if(editable && draft?.path.length&&!inspecting){
@@ -584,7 +596,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
         ? `Objetivo rival ${selectedTargetId} seleccionado. Solicita la decisión defensiva para enviar el comando al servidor.`
         : 'Combate sintético: selecciona una unidad rival para solicitar su decisión defensiva.') :
       !editable?'Tablero de consulta. No puedes mover ahora.':
-      draft?`Unidad ${draft.unitId}: ${draft.path.length} pasos seleccionados. ${nextCells.length} vecinos geométricos marcados.${autoRoute ? ' Ruta geométrica automática sugerida (sin validar reglas).' : ''} Toca un paso anterior para recortar la ruta o confirma para enviar al servidor.`:
+      draft?`Unidad ${draft.unitId}: ${draft.path.length} pasos seleccionados${profileSteps!==null?' de '+profileSteps+' máximos según perfil base':''}. ${nextCells.length} vecinos ${training?.scenario?'compatibles con el entrenamiento':'geométricos'} marcados.${autoRoute ? training?.scenario?' Ruta automática orientativa ajustada a tropa y terreno; el servidor vuelve a comprobarla.':' Ruta geométrica automática sugerida (sin validar reglas).' : ''} Toca un paso anterior para recortar la ruta o confirma para enviar al servidor.`:
         `${selectableUnitIds.length} unidades propias sin mover destacadas. Selecciona una para trazar la ruta.`);
   }
   function select(cell) {
