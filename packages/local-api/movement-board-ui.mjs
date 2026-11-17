@@ -418,7 +418,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
             : target?target.profileStatus!=='CANDIDATE'
               ? ` Objetivo ${target.id}: ${reasonName[target.profileReason]??'perfil no compatible'} (distancia ${target.distance}).`
               : target.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'
-                ? ` Objetivo ${target.id}, distancia ${target.distance}: unidades interpuestas en ${target.obstructingHexes.map(c=>`(${c.col+1},${c.row+1})`).join(', ')}. Disparo de referencia bloqueado.`
+                ? ` Objetivo ${target.id}, distancia ${target.distance}: unidades visibles interpuestas en ${target.obstructingHexes.map(c=>`(${c.col+1},${c.row+1})`).join(', ')}. Disparo de referencia bloqueado.`
                 : target.visibleUnitCorridor==='BLOCKED_BY_TRAINING_TERRAIN'
                   ? ` Objetivo ${target.id}, distancia ${target.distance}: terreno de entrenamiento bloqueante en ${target.obstructingHexes.map(c=>`(${c.col+1},${c.row+1})`).join(', ')}.`
                   : ` Objetivo ${target.id}, distancia ${target.distance}: ${target.nominalDice} dados base orientativos; corredor sin obstáculos detectados, pero faltan líderes, órdenes y modificadores.`
