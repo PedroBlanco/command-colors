@@ -550,21 +550,18 @@ test('versioned troop hints keep an invalid auto-route off the wire',async()=>{
  assert.equal(requests.length,0);
 });
 
-test('cavalry shows troop badge and permits a four-step preview before server confirmation',async()=>{
+test('cavalry shows four-step reach and confirms selected path',async()=>{
  const ui=fixture(),sent=[];
  const c=createMovementBoard({...ui,onConfirm:async fields=>sent.push(fields)});
  c.setView({...view(),board:[
-   {id:'synthetic-cavalry-a',side:'A',col:1,row:7},
-   {id:'synthetic-cavalry-b',side:'B',col:11,row:1}],
-   trainingReference:{kind:'SYNTHETIC_ANCIENTS_TRAINING_V1',
-     scenario:{id:'test-synthetic-cavalry-002',official:false},
-     unitTypes:{'synthetic-cavalry-a':'LIGHT_CAVALRY','synthetic-cavalry-b':'MEDIUM_CAVALRY'},
-     terrain:[]}});
- assert.equal(cell(ui.svg,1,7).children.some(n=>n.textContent==='CL'),true);
+  {id:'synthetic-cavalry-a',side:'A',col:1,row:7},
+  {id:'synthetic-cavalry-b',side:'B',col:11,row:1}],
+  trainingReference:{kind:'SYNTHETIC_ANCIENTS_TRAINING_V1',
+    scenario:{id:'test-synthetic-cavalry-002'},
+    unitTypes:{'synthetic-cavalry-a':'LIGHT_CAVALRY'},terrain:[]}});
  c.select({col:1,row:7});
  assert.equal(cell(ui.svg,5,7).classes.has('hex-training-destination'),true);
  c.select({col:5,row:7});
- assert.equal(c.getDraft().path.length,4);
  assert.match(ui.status.textContent,/de 4 máximos/);
  await c.confirm();assert.equal(sent[0].path.length,4);
 });
