@@ -64,7 +64,8 @@ export function previewBaseMovementOnBoard({unitType,origin,occupiedCells=[]}={}
  *   the ASSUMED clear-ground / no-leader scenario, NOT official line of sight.
  * All results are non-authorizing, and cannot be sent as a battle command.
  */
-export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitIds=null}={}){
+export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitIds=null,
+  terrain=null}={}){
   if(!Object.hasOwn(BASE_MOVEMENT_PROFILES,unitType))
     throw new TypeError('UNSUPPORTED_BASE_UNIT_TYPE');
   if(!origin||!Number.isSafeInteger(origin.col)||
@@ -81,6 +82,19 @@ export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitI
       throw new TypeError('INVALID_RANGED_BOARD_REFERENCE');
     unitIds.add(unit.id);positions.add(key(unit));
   }
+  const terrainIndex=new Map();
+  if(terrain!==null){
+    if(!Array.isArray(terrain)||terrain.length>117)
+      throw new TypeError('INVALID_RANGED_TRAINING_TERRAIN');
+    for(const tile of terrain){
+      if(!tile||!Number.isSafeInteger(tile.col)||
+         !Number.isSafeInteger(tile.row)||!inBounds(tile)||
+         !['FOREST','HILL','BROKEN_GROUND'].includes(tile.kind)||
+         terrainIndex.has(key(tile)))
+        throw new TypeError('INVALID_RANGED_TRAINING_TERRAIN');
+      terrainIndex.set(key(tile),{col:tile.col,row:tile.row,kind:tile.kind});
+    }
+  }
   const shooter=board.find(u=>key(u)===key(origin));
   if(!shooter||shooter.side!==actor)
     throw new TypeError('INVALID_RANGED_SHOOTER');
@@ -92,7 +106,7 @@ export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitI
   const base={
     unitType,shooterId:shooter.id,
     status:blockedStatus??'REFERENCE_ONLY',
-    assumedTerrain:'UNKNOWN',leadersKnown:false,
+    assumedTerrain:terrain===null?'UNKNOWN':'SERVER_TRAINING_ONLY',leadersKnown:false,
     movementAuthorized:false,attackAuthorized:false,
     canCommit:false,needsFullLegalityCheck:true
   };
@@ -106,15 +120,17 @@ export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitI
     const los=profile.status==='CANDIDATE'
       ? assessAncientsLineOfSight({
           from:ownCell(origin),to:ownCell(target),units:allPositions,
-          leaders:[],terrain:[]
+          leaders:[],terrain:terrain===null?[]:[...terrainIndex.values()]
         })
       : null;
+    const hasTrainingBlocker=los?.obstructions.some(c=>terrainIndex.has(key(c)))??false;
     return Object.freeze({
       id:target.id,col:target.col,row:target.row,distance:range,
       profileStatus:profile.status,profileReason:profile.reason,
       nominalDice:profile.status==='CANDIDATE'?profile.baseDice:null,
       visibleUnitCorridor:los===null?'NOT_EVALUATED':
-        los.status==='BLOCKED'?'BLOCKED_BY_VISIBLE_UNITS':
+        los.status==='BLOCKED'?(hasTrainingBlocker?
+          'BLOCKED_BY_TRAINING_TERRAIN':'BLOCKED_BY_VISIBLE_UNITS'):
           'NO_VISIBLE_UNIT_OBSTRUCTION',
       obstructingHexes:Object.freeze(los?.obstructions.map(ownCell)??[]),
       attackAuthorized:false,lineOfSightAuthorized:false
