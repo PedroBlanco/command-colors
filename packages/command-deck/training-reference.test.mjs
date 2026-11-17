@@ -15,3 +15,17 @@ test('synthetic annotations are public and legacy games remain unannotated',()=>
  original.trainingReference.unitTypes['synthetic-a']='INJECTED';
  assert.throws(()=>projectTrainingReference(original),/INVALID_TRAINING_REFERENCE/);
 });
+
+test('new references preserve public scenario identity without a card leak',()=>{
+ const board=[{id:'synthetic-a',side:'A',col:3,row:6},
+   {id:'synthetic-b',side:'B',col:9,row:2}];
+ const ref=createTrainingReference(board);
+ const view=projectTrainingReference({board,trainingReference:ref});
+ assert.equal(view.scenario.id,'test-synthetic-001');
+ assert.equal(view.scenario.official,false);
+ assert.equal(view.scenario.victory.implemented,false);
+ assert.equal(JSON.stringify(view).includes('PRIVATE_A_1'),false);
+ ref.terrain[0].kind='HILL';
+ assert.throws(()=>projectTrainingReference({board,trainingReference:ref}),
+   /INVALID_TRAINING_REFERENCE/);
+});
