@@ -123,6 +123,14 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
   role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
 <p id="board-overview" aria-live="polite">Sin tablero cargado</p>
+<fieldset id="board-ranged-check" hidden>
+<legend>Comprobar declaración de tiro (solo consulta)</legend>
+<p>Elige una unidad atacante propia y un objetivo rival. El servidor comprueba órdenes, pasos registrados, alcance y línea de visión. No autoriza ataques, no lanza dados y no cambia la partida.</p>
+<label>Unidad atacante<select id="board-ranged-attacker" aria-label="Unidad atacante propia"></select></label>
+<label>Objetivo rival<select id="board-ranged-target" aria-label="Objetivo rival"></select></label>
+<button type="button" id="board-ranged-check-button" disabled>Comprobar en el servidor</button>
+<p id="board-ranged-check-result" role="status" aria-live="polite"></p>
+</fieldset>
 <button type="button" id="board-inspect-toggle" aria-pressed="false" disabled>Inspeccionar tablero</button>
 <p id="board-inspect-info" role="status" aria-live="polite" hidden></p>
 <div id="board-profile-group" hidden>
@@ -142,7 +150,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <option value="ELEPHANT">Elefante</option>
 <option value="HEAVY_CHARIOT">Carro pesado</option>
 </select></label>
-<p class="notice">Terreno del ejercicio: ♣ bosque, ▲ colina, ◇ terreno accidentado. El motor sintético no aplica todavía esas reglas a los movimientos.</p>
+<p class="notice">Terreno del ejercicio: ♣ bosque, ▲ colina, ◇ terreno accidentado. En escenarios versionados el servidor aplica restricciones parciales de movimiento; faltan las reglas completas de Ancients.</p>
 <p id="board-profile-status" role="status" aria-live="polite"></p>
 </div>
 <p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>
