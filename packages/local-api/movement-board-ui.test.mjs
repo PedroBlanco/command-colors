@@ -561,7 +561,9 @@ test('cavalry shows troop badge and permits a four-step preview before server co
      unitTypes:{'synthetic-cavalry-a':'LIGHT_CAVALRY','synthetic-cavalry-b':'MEDIUM_CAVALRY'},
      terrain:[]}});
  assert.equal(cell(ui.svg,1,7).children.some(n=>n.textContent==='CL'),true);
- c.select({col:1,row:7});c.select({col:5,row:7});
+ c.select({col:1,row:7});
+ assert.equal(cell(ui.svg,5,7).classes.has('hex-training-destination'),true);
+ c.select({col:5,row:7});
  assert.equal(c.getDraft().path.length,4);
  assert.match(ui.status.textContent,/de 4 máximos/);
  await c.confirm();assert.equal(sent[0].path.length,4);
