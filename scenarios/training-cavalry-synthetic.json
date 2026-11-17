@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "id": "test-synthetic-cavalry-002",
+  "game": "ancients",
+  "kind": "synthetic-training-only",
+  "title": "Maniobras de caballería — escenario sintético no oficial",
+  "rulesetVersion": "ancients-base-3e-2009",
+  "board": {
+    "columns": 13,
+    "rows": 9
+  },
+  "startingSide": "A",
+  "handSizes": {
+    "A": 2,
+    "B": 3
+  },
+  "units": [
+    {
+      "id": "synthetic-a",
+      "side": "A",
+      "unitType": "LIGHT_BOW_INFANTRY",
+      "hex": {
+        "col": 3,
+        "row": 6
+      }
+    },
+    {
+      "id": "synthetic-b",
+      "side": "B",
+      "unitType": "MEDIUM_INFANTRY",
+      "hex": {
+        "col": 9,
+        "row": 2
+      }
+    },
+    {
+      "id": "synthetic-cavalry-a",
+      "side": "A",
+      "unitType": "LIGHT_CAVALRY",
+      "hex": {
+        "col": 1,
+        "row": 7
+      }
+    },
+    {
+      "id": "synthetic-cavalry-b",
+      "side": "B",
+      "unitType": "MEDIUM_CAVALRY",
+      "hex": {
+        "col": 11,
+        "row": 1
+      }
+    }
+  ],
+  "terrain": [
+    {
+      "col": 5,
+      "row": 4,
+      "kind": "FOREST"
+    },
+    {
+      "col": 7,
+      "row": 3,
+      "kind": "HILL"
+    },
+    {
+      "col": 8,
+      "row": 4,
+      "kind": "BROKEN_GROUND"
+    }
+  ],
+  "victory": {
+    "kind": "illustrative-only",
+    "banners": 1
+  },
+  "warning": "Ejercicio no oficial de maniobra: las tropas a caballo pueden mover hasta su perfil base. Combates, líderes, cartas y victoria todavía usan el laboratorio sintético."
+}
