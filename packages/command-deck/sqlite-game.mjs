@@ -42,7 +42,8 @@ function project(row, matchId, actor) {
   if (row.game_revision !== state.commandSession.phaseState.revision) throw new Error('COMMAND_REVISION_MISMATCH');
   const view = projectCommandSession(state.commandSession, actor);
   return {matchId, status: 'ACTIVE', board: structuredClone(state.board),
-    trainingReference:projectTrainingReference(state),
+    ...(Object.hasOwn(state,'trainingReference')
+      ? {trainingReference:projectTrainingReference(state)} : {}),
     movedUnitIds: Array.isArray(state.movedUnitIds) ? [...state.movedUnitIds] : null, ...view};
 }
 
