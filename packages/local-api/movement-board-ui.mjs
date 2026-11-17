@@ -330,7 +330,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
  * A failed HTTP response preserves the request key for a safe idempotent retry.
  */
 export function createMovementBoard({svg,status,undoButton,cancelButton,confirmButton,
-  attackButton,onRequestDefense,orderButton,onAssignOrders,onToggleOrderUnit,
+  attackButton,onRequestDefense,onReferenceSelection,orderButton,onAssignOrders,onToggleOrderUnit,
   getOrderSelection=()=>[],phaseButtons={},onPhaseCommand,
   cardGroup,cardSelect,cardButton,onPlayCard,
   inspectButton,inspectPanel,overviewPanel,profileSelect,profileStatus,profileGroup,
@@ -707,6 +707,17 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
         if (!occupied || occupied.side!==view.you) throw Error('UNIDAD_NO_PROPIA');
         onToggleOrderUnit(occupied.id); // the app owns the existing order selection
         orderRetryKey=null;
+        repaint();
+        return;
+      }
+      if (typeof onReferenceSelection==='function' &&
+          actions.includes('check_training_ranged_declaration') && occupied) {
+        // A click picks the public attacker/target only; it does not trigger
+        // the reference request, a defense decision or an attack.
+        onReferenceSelection(occupied.side===view.you?'attacker':'target',occupied.id);
+        if (occupied.side!==view.you) {
+          selectedTargetId=occupied.id;defenseRetryKey=null;
+        }
         repaint();
         return;
       }
