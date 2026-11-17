@@ -1,47 +1,59 @@
 {
+  "schemaVersion": 1,
   "id": "test-synthetic-001",
   "game": "ancients",
-  "kind": "synthetic-test-only",
-  "title": "Escenario sintético para pruebas — NO OFICIAL",
-  "rulesetVersion": "draft-0.1",
+  "kind": "synthetic-training-only",
+  "title": "Cruce de entrenamiento — escenario no oficial",
+  "rulesetVersion": "ancients-base-3e-2009",
   "board": {
     "columns": 13,
     "rows": 9
   },
-  "players": [
-    {
-      "side": "A",
-      "handSize": 4
-    },
-    {
-      "side": "B",
-      "handSize": 4
-    }
-  ],
+  "startingSide": "A",
+  "handSizes": {
+    "A": 2,
+    "B": 3
+  },
   "units": [
     {
-      "id": "u-a-1",
+      "id": "synthetic-a",
       "side": "A",
-      "kind": "test-infantry",
+      "unitType": "LIGHT_BOW_INFANTRY",
       "hex": {
         "col": 3,
-        "row": 4
+        "row": 6
       }
     },
     {
-      "id": "u-b-1",
+      "id": "synthetic-b",
       "side": "B",
-      "kind": "test-infantry",
+      "unitType": "MEDIUM_INFANTRY",
       "hex": {
-        "col": 8,
-        "row": 4
+        "col": 9,
+        "row": 2
       }
     }
   ],
-  "terrain": [],
+  "terrain": [
+    {
+      "col": 5,
+      "row": 4,
+      "kind": "FOREST"
+    },
+    {
+      "col": 7,
+      "row": 3,
+      "kind": "HILL"
+    },
+    {
+      "col": 8,
+      "row": 4,
+      "kind": "BROKEN_GROUND"
+    }
+  ],
   "victory": {
-    "kind": "test-only",
+    "kind": "illustrative-only",
     "banners": 1
   },
-  "warning": "No contiene reglas ni despliegues oficiales. No es jugable con el motor porque aún no existe."
+  "warning": "Ejercicio no oficial: las condiciones de victoria, los tipos y los efectos de terreno no autorizan los comandos sintéticos."
 }

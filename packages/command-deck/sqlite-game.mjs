@@ -10,6 +10,7 @@ import {createServerSyntheticOrderContext} from '../order-validator/server-conte
 import {transitionSyntheticMovement} from '../movement/movement.mjs';
 import {createServerSyntheticMovementPolicy} from '../movement/server-policy.mjs';
 import {projectTrainingReference} from './training-reference.mjs';
+import {getTrainingScenario} from './training-scenario.mjs';
 
 const KEY = /^[A-Za-z0-9_-]{8,80}$/;
 const TYPES = new Set([
@@ -84,8 +85,15 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
       // IMMEDIATE, before touching the ordinary deck or game tables.
       if (Object.hasOwn(state, 'ancientsSectionHistoryLab')) return deny(409, 'SECTION_LAB_MODE_ACTIVE');
       if (row.game_revision !== 0 || Object.hasOwn(state, 'commandSession')) return deny(409, 'DECK_ALREADY_STARTED');
-      // Server-owned scenario-independent placeholder: never trust card IDs/sizes from a browser.
-      const session = createCommandSession({cardIds: SYNTHETIC_CARDS, handSizes: {A: 2, B: 3}});
+      // The initial hand sizes and first side come from the server-compiled
+      // training scenario, never from HTTP. Legacy snapshots retain defaults.
+      const reference=projectTrainingReference(state);
+      const scenario=reference?.scenario?getTrainingScenario(reference.scenario.id):null;
+      const session=createCommandSession({
+        cardIds:SYNTHETIC_CARDS,
+        handSizes:scenario?.handSizes??{A:2,B:3},
+        startingSide:scenario?.startingSide??'A'
+      });
       state.commandSession = session;
       // This is an invented laboratory policy; never accept movement range from HTTP.
       createServerSyntheticMovementPolicy(state.board);
