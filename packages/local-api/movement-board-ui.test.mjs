@@ -581,3 +581,17 @@ test('ranged hints draw inert corridors, not combat commands',()=>{
  assert.match(overview.textContent,/ninguna autoriza ataques/);
  assert.deepEqual(sent,[]);
 });
+
+test('combat board can pick attacker and target without sending defense or attack',()=>{
+ const ui=fixture(),picked=[],sent=[];
+ const controller=createMovementBoard({...ui,onConfirm:async()=>{},
+   onRequestDefense:async id=>sent.push(id),
+   onReferenceSelection:(role,id)=>picked.push([role,id])});
+ controller.setView({...view(),phase:'COMBAT',actingSide:'A',
+   trainingRangedHints:{status:'REFERENCE_ONLY',attackAuthorized:false,
+     candidates:[]}});
+ controller.select({col:3,row:4});
+ controller.select({col:5,row:4});
+ assert.deepEqual(picked,[['attacker','synthetic-a'],['target','synthetic-b']]);
+ assert.deepEqual(sent,[]);
+});
