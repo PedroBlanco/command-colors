@@ -24,7 +24,12 @@ export function deckActions(view) {
     MOVEMENT: ['move_synthetic_unit',
       ...(Array.isArray(view.movedUnitIds) && view.movedUnitIds.length > 0 ? [] : ['undo_synthetic_orders']),
       'finish_synthetic_movement'],
-    COMBAT: ['ask_synthetic_defense', 'finish_synthetic_combat'],
+    COMBAT: [
+      'ask_synthetic_defense','finish_synthetic_combat',
+      ...(view.trainingRangedHints?.status==='REFERENCE_ONLY' &&
+         view.trainingRangedHints?.attackAuthorized===false
+         ? ['check_training_ranged_declaration'] : [])
+    ],
     DRAW_CARD: ['acknowledge_synthetic_draw']
   };
   return Object.freeze(actions[view.phase] || []);
@@ -61,6 +66,16 @@ export function deckCommand(view, type, data = {}, key) {
       request.unitId = data.unitId;
       request.path = data.path.map(cell => ({col: cell.col, row: cell.row}));
       break;
+    case 'check_training_ranged_declaration': {
+      const attacker=data.attackerId,target=data.targetId;
+      if (!IDENTIFIER.test(attacker) || !IDENTIFIER.test(target) ||
+          !Array.isArray(view.board) ||
+          !view.board.some(u=>u?.id===attacker&&u.side===view.you) ||
+          !view.board.some(u=>u?.id===target&&u.side!==view.you))
+        throw new Error('DECLARACION_TIRO_INVALIDA');
+      request.attackerId=attacker;request.targetId=target;
+      break;
+    }
     case 'ask_synthetic_defense':
       if (typeof data.targetUnit !== 'string' || !IDENTIFIER.test(data.targetUnit)) throw new Error('OBJETIVO_INVALIDO');
       request.targetUnit = data.targetUnit;
