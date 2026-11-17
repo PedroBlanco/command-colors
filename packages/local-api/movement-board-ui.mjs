@@ -337,7 +337,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     TRAINING_TROOP_RANGE_EXCEEDED:'La ruta supera los pasos admitidos para este tipo de tropa en el ejercicio de entrenamiento.',
     TRAINING_TERRAIN_RESTRICTED:'El terreno de entrenamiento impide continuar esa ruta o exige detenerse.',
     TRAINING_CONDITIONAL_CHARGE_UNSUPPORTED:'Este movimiento exigiría una carga y combate obligatorio aún no implementados.',
-    TRAINING_REFERENCE_UNAVAILABLE:'La referencia de entrenamiento está incompleta. No se enviará el movimiento.'
+    TRAINING_REFERENCE_UNAVAILABLE:'La referencia de entrenamiento está incompleta. No se enviará el movimiento.',
+    TRAINING_ROUTE_UNAVAILABLE:'No existe una ruta compatible con el perfil de la tropa y el terreno hasta ese destino.'
   });
   const reportError=error=>{
     // API errors have the public shape "400: CODE"; never display a server
