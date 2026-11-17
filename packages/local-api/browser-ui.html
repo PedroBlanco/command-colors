@@ -38,6 +38,9 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .hex-target.hex-range-2 .hex-shape{stroke:#79a3c6;stroke-width:1.7}
 .hex-target.hex-range-3 .hex-shape{stroke:#a5bcd0;stroke-width:1.5}
 .hex-target.hex-inspected .hex-shape{fill:#ffe2a8;stroke:#a45f17;stroke-width:4}
+.hex-target.hex-terrain-forest .hex-shape{fill:#c8dec3}
+.hex-target.hex-terrain-hill .hex-shape{fill:#e8d9a6}
+.hex-target.hex-terrain-broken-ground .hex-shape{fill:#dad2c8}
 .hex-target.hex-profile-battle .hex-shape{fill:#cde4d0;stroke:#36764c;stroke-width:2}
 .hex-target.hex-profile-move .hex-shape{fill:#d9e9f8;stroke:#3973a2;stroke-width:2}
 .hex-target.hex-profile-charge .hex-shape{fill:#ffe0ab;stroke:#a9671e;stroke-width:3}
@@ -45,6 +48,9 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .hex-target.hex-profile-los-blocked .hex-shape{stroke:#b33e43;stroke-width:3;stroke-dasharray:5 4}
 .hex-target.hex-profile-target-focus .hex-shape{stroke:#692877;stroke-width:5}
 .hex-target.hex-profile-los-obstacle .hex-shape{fill:#ead7ea;stroke:#803978;stroke-width:4}
+.terrain-symbol{font:bold 14px system-ui;fill:#3d4936}
+.hex-target.hex-inspected .hex-shape{stroke:#a45f17;stroke-width:4}
+.hex-target.hex-profile-los-obstacle .hex-shape{stroke:#803978;stroke-width:4}
 .hex-target.hex-inspected .hex-shape{fill:#ffe2a8;stroke:#a45f17;stroke-width:4}
 .hex-target.hex-already-moved .unit-a,.hex-target.hex-already-moved .unit-b{opacity:.65}
 .unit-moved-dot{fill:#1a573f;stroke:white;stroke-width:1}
@@ -116,7 +122,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button type="button" id="board-inspect-toggle" aria-pressed="false" disabled>Inspeccionar tablero</button>
 <p id="board-inspect-info" role="status" aria-live="polite" hidden></p>
 <div id="board-profile-group" hidden>
-<label>Tipo hipotético de tropa (Ancients, juego base)
+<label>Tipo de tropa (fijado por servidor cuando exista, o hipotético en partidas antiguas)
 <select id="board-profile-type">
 <option value="LIGHT_INFANTRY">Infantería ligera</option>
 <option value="LIGHT_SLING_INFANTRY">Infantería ligera con honda</option>
@@ -132,6 +138,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <option value="ELEPHANT">Elefante</option>
 <option value="HEAVY_CHARIOT">Carro pesado</option>
 </select></label>
+<p class="notice">Terreno del ejercicio: ♣ bosque, ▲ colina, ◇ terreno accidentado. El motor sintético no aplica todavía esas reglas a los movimientos.</p>
 <p id="board-profile-status" role="status" aria-live="polite"></p>
 </div>
 <p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>

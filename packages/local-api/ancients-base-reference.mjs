@@ -9,11 +9,12 @@ import {neighbors, inBounds, distance} from '../hex-grid/hex.mjs';
 import {assessAncientsRangedProfile} from '../ancients-rules/ranged-profile.mjs';
 import {assessAncientsLineOfSight} from '../ancients-rules/line-of-sight.mjs';
 import {BASE_MOVEMENT_PROFILES,assessBaseMovement} from '../ancients-rules/movement-profile.mjs';
+import {assessAncientsTerrainMovement} from '../ancients-rules/terrain-movement.mjs';
 import {BASE_RANGED_REACH} from '../ancients-rules/ranged-profile.mjs';
 
 const key=c=>c.col+','+c.row;
 const ownCell=c=>({col:c.col,row:c.row});
-export function previewBaseMovementOnBoard({unitType,origin,occupiedCells=[]}={}){
+export function previewBaseMovementOnBoard({unitType,origin,occupiedCells=[],terrain=null}={}){
   if(!Object.hasOwn(BASE_MOVEMENT_PROFILES,unitType))
     throw new TypeError('UNSUPPORTED_BASE_UNIT_TYPE');
   if(!origin||!inBounds(origin)||!Number.isSafeInteger(origin.col)||
@@ -26,21 +27,33 @@ export function previewBaseMovementOnBoard({unitType,origin,occupiedCells=[]}={}
   const blocked=new Set(occupiedCells.map(key));
   if(new Set(occupiedCells.map(key)).size!==occupiedCells.length)
     throw new TypeError('DUPLICATE_PROFILE_OCCUPANTS');
+  if(terrain!==null&&(!Array.isArray(terrain)||terrain.length>117||
+      terrain.some(tile=>!tile||!Number.isSafeInteger(tile.col)||
+        !Number.isSafeInteger(tile.row)||!inBounds(tile)||
+        !['FOREST','HILL','BROKEN_GROUND'].includes(tile.kind))||
+      new Set(terrain.map(key)).size!==terrain.length))
+    throw new TypeError('INVALID_PROFILE_TRAINING_TERRAIN');
   const profile=BASE_MOVEMENT_PROFILES[unitType];
-  const queue=[ownCell(origin)],visited=new Set([key(origin)]),reached=[];
+  const queue=[{...ownCell(origin),path:[]}],visited=new Set([key(origin)]),reached=[];
   for(let i=0;i<queue.length;i++){
     const current=queue[i];
     const steps=current.steps??0;
     if(steps>=profile.maxSteps)continue;
     for(const next of neighbors(current)){
       if(visited.has(key(next))||blocked.has(key(next)))continue;
+      const path=[...current.path,ownCell(next)];
+      const terrainVerdict=terrain===null?null:assessAncientsTerrainMovement({
+        unitType,origin,path,terrain
+      });
+      if(terrainVerdict?.status==='BLOCKED')continue;
       visited.add(key(next));
       const count=steps+1;
       const assessed=assessBaseMovement({unitType,steps:count});
       const record=Object.freeze({...ownCell(next),steps:count,
-        battle:assessed.battle,status:assessed.status});
+        battle:terrainVerdict?.battleOnEntry==='UNAVAILABLE'?'UNAVAILABLE':
+          assessed.battle,status:assessed.status});
       reached.push(record);
-      queue.push(record);
+      queue.push({...record,path});
     }
   }
   return Object.freeze({
@@ -49,6 +62,7 @@ export function previewBaseMovementOnBoard({unitType,origin,occupiedCells=[]}={}
     rangedReach:BASE_RANGED_REACH[unitType]??null,
     origin:Object.freeze(ownCell(origin)),
     reachable:Object.freeze(reached),
+    terrainApplied:terrain!==null,
     status:'HYPOTHETICAL_GEOMETRIC_PREVIEW',
     movementAuthorized:false,attackAuthorized:false,canCommit:false,
     needsFullLegalityCheck:true
@@ -64,7 +78,8 @@ export function previewBaseMovementOnBoard({unitType,origin,occupiedCells=[]}={}
  *   the ASSUMED clear-ground / no-leader scenario, NOT official line of sight.
  * All results are non-authorizing, and cannot be sent as a battle command.
  */
-export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitIds=null}={}){
+export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitIds=null,
+  terrain=null}={}){
   if(!Object.hasOwn(BASE_MOVEMENT_PROFILES,unitType))
     throw new TypeError('UNSUPPORTED_BASE_UNIT_TYPE');
   if(!origin||!Number.isSafeInteger(origin.col)||
@@ -81,6 +96,19 @@ export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitI
       throw new TypeError('INVALID_RANGED_BOARD_REFERENCE');
     unitIds.add(unit.id);positions.add(key(unit));
   }
+  const terrainIndex=new Map();
+  if(terrain!==null){
+    if(!Array.isArray(terrain)||terrain.length>117)
+      throw new TypeError('INVALID_RANGED_TRAINING_TERRAIN');
+    for(const tile of terrain){
+      if(!tile||!Number.isSafeInteger(tile.col)||
+         !Number.isSafeInteger(tile.row)||!inBounds(tile)||
+         !['FOREST','HILL','BROKEN_GROUND'].includes(tile.kind)||
+         terrainIndex.has(key(tile)))
+        throw new TypeError('INVALID_RANGED_TRAINING_TERRAIN');
+      terrainIndex.set(key(tile),{col:tile.col,row:tile.row,kind:tile.kind});
+    }
+  }
   const shooter=board.find(u=>key(u)===key(origin));
   if(!shooter||shooter.side!==actor)
     throw new TypeError('INVALID_RANGED_SHOOTER');
@@ -92,7 +120,7 @@ export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitI
   const base={
     unitType,shooterId:shooter.id,
     status:blockedStatus??'REFERENCE_ONLY',
-    assumedTerrain:'UNKNOWN',leadersKnown:false,
+    assumedTerrain:terrain===null?'UNKNOWN':'SERVER_TRAINING_ONLY',leadersKnown:false,
     movementAuthorized:false,attackAuthorized:false,
     canCommit:false,needsFullLegalityCheck:true
   };
@@ -106,15 +134,17 @@ export function previewBaseRangedOnBoard({unitType,origin,actor,board,movedUnitI
     const los=profile.status==='CANDIDATE'
       ? assessAncientsLineOfSight({
           from:ownCell(origin),to:ownCell(target),units:allPositions,
-          leaders:[],terrain:[]
+          leaders:[],terrain:terrain===null?[]:[...terrainIndex.values()]
         })
       : null;
+    const hasTrainingBlocker=los?.obstructions.some(c=>terrainIndex.has(key(c)))??false;
     return Object.freeze({
       id:target.id,col:target.col,row:target.row,distance:range,
       profileStatus:profile.status,profileReason:profile.reason,
       nominalDice:profile.status==='CANDIDATE'?profile.baseDice:null,
       visibleUnitCorridor:los===null?'NOT_EVALUATED':
-        los.status==='BLOCKED'?'BLOCKED_BY_VISIBLE_UNITS':
+        los.status==='BLOCKED'?(hasTrainingBlocker?
+          'BLOCKED_BY_TRAINING_TERRAIN':'BLOCKED_BY_VISIBLE_UNITS'):
           'NO_VISIBLE_UNIT_OBSTRUCTION',
       obstructingHexes:Object.freeze(los?.obstructions.map(ownCell)??[]),
       attackAuthorized:false,lineOfSightAuthorized:false

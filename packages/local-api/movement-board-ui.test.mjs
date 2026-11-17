@@ -515,3 +515,24 @@ test('ranged inspection marks public blockers but never authorizes a shot',async
  assert.match(info.textContent,/se desconoce el número de pasos/);
  assert.equal(cell(ui.svg,5,4).classes.has('hex-profile-los-open-unverified'),false);
 });
+
+test('server training terrain and types replace manual guess only in annotated matches',()=>{
+ const ui=fixture(),doc=ui.svg.ownerDocument;
+ const choice=new Node(doc,'select'),info=new Node(doc,'p'),
+   toggle=new Node(doc,'button');
+ choice.value='HEAVY_INFANTRY';
+ const c=createMovementBoard({...ui,profileSelect:choice,profileStatus:info,
+   inspectButton:toggle,onConfirm:async()=>{throw Error('NO_MUTATION')}});
+ c.setView({...view(),movedUnitIds:[],
+   board:[{id:'synthetic-a',side:'A',col:3,row:4},{id:'synthetic-b',side:'B',col:3,row:7}],
+   trainingReference:{kind:'SYNTHETIC_ANCIENTS_TRAINING_V1',
+     unitTypes:{'synthetic-a':'LIGHT_BOW_INFANTRY','synthetic-b':'MEDIUM_INFANTRY'},
+     terrain:[{col:3,row:5,kind:'FOREST'}]}});
+ toggle.dispatch('click');c.select({col:3,row:4});
+ assert.equal(choice.value,'LIGHT_BOW_INFANTRY');
+ assert.equal(choice.disabled,true);
+ assert.equal(cell(ui.svg,3,5).classes.has('hex-terrain-forest'),true);
+ assert.equal(cell(ui.svg,3,7).classes.has('hex-profile-los-blocked'),true);
+ assert.match(info.textContent,/tipo declarado por el servidor/);
+ assert.match(info.textContent,/NO autoriza/);
+});

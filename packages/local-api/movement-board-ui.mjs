@@ -5,6 +5,7 @@
  */
 import {allCells, pixelCenter, polygonPoints, distance} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
+import {BASE_MOVEMENT_PROFILES} from '../ancients-rules/movement-profile.mjs';
 import {previewBaseMovementOnBoard,previewBaseRangedOnBoard} from './ancients-base-reference.mjs';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
   nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
@@ -34,7 +35,8 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
     orderableUnitIds=[], selectedOrderUnitIds=[],
     inspectionCell=null, movedUnitIds=[], profileCells=[],
-    rangedTargets=[],inspectionTarget=null,losBlockerCells=[]}={}) {
+    rangedTargets=[],inspectionTarget=null,losBlockerCells=[],terrainCells=[],
+    unitTypes={}}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -91,7 +93,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   if(!Array.isArray(rangedTargets)||rangedTargets.length>117||
       rangedTargets.some(t=>!t||!Number.isSafeInteger(t.col)||
         !Number.isSafeInteger(t.row)||t.col<0||t.col>12||
-        t.row<0||t.row>8||!['BLOCKED_BY_VISIBLE_UNITS',
+        t.row<0||t.row>8||!['BLOCKED_BY_VISIBLE_UNITS','BLOCKED_BY_TRAINING_TERRAIN',
         'NO_VISIBLE_UNIT_OBSTRUCTION'].includes(t.visibleUnitCorridor)))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
   if(!Array.isArray(losBlockerCells)||losBlockerCells.length>117||
@@ -112,6 +114,18 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
   const previewByCell=new Map(profileCells.map(c=>[key(c),c]));
   if(previewByCell.size!==profileCells.length)
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if(!Array.isArray(terrainCells)||terrainCells.length>117||
+      terrainCells.some(t=>!t||!Number.isSafeInteger(t.col)||
+        !Number.isSafeInteger(t.row)||t.col<0||t.col>12||t.row<0||
+        t.row>8||!['FOREST','HILL','BROKEN_GROUND'].includes(t.kind)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  if(!unitTypes||typeof unitTypes!=='object'||Array.isArray(unitTypes)||
+      Object.entries(unitTypes).some(([id,type])=>
+        !units.has(id)||!Object.hasOwn(BASE_MOVEMENT_PROFILES,type)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const terrainByCell=new Map(terrainCells.map(t=>[key(t),t.kind]));
+  if(terrainByCell.size!==terrainCells.length)
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
   const moved=new Set(movedUnitIds);
   const orderable=new Set(orderableUnitIds);
@@ -144,10 +158,12 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const rangedPreview=rangedByCell.get(key(cell));
     const focusedTarget=inspectionTarget&&key(inspectionTarget)===key(cell);
     const viewBlocker=blockerKeys.has(key(cell));
+    const terrainKind=terrainByCell.get(key(cell));
+    const knownUnitType=unit&&Object.hasOwn(unitTypes,unit.id)?unitTypes[unit.id]:null;
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin unidades interpuestas; terreno y líderes desconocidos' : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}${viewBlocker ? ', unidad visible que bloquea el corredor hipotético' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${knownUnitType ? `, tipo de entrenamiento ${knownUnitType}` : ''}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_TRAINING_TERRAIN'?', referencia de disparo bloqueada por terreno sintético':rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin bloqueos detectados; líderes desconocidos' : ''}${terrainKind ? `, terreno del ejercicio: ${terrainKind}` : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}${viewBlocker ? ', celda que bloquea el corredor provisional' : ''}`,
       'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget || inspected || focusedTarget)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -165,11 +181,12 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       profilePreview.battle==='POSSIBLE'?'hex-profile-battle':'hex-profile-move'
     );
     if (rangedPreview)hex.classList.add(
-      rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'
-        ?'hex-profile-los-blocked':'hex-profile-los-open-unverified'
+      rangedPreview.visibleUnitCorridor==='NO_VISIBLE_UNIT_OBSTRUCTION'
+        ?'hex-profile-los-open-unverified':'hex-profile-los-blocked'
     );
     if (focusedTarget)hex.classList.add('hex-profile-target-focus');
     if (viewBlocker)hex.classList.add('hex-profile-los-obstacle');
+    if (terrainKind)hex.classList.add('hex-terrain-'+terrainKind.toLowerCase().replaceAll('_','-'));
     if (next) hex.classList.add('hex-next');
     if (origin) hex.classList.add('hex-origin');
     if (step) hex.classList.add('hex-route');
@@ -181,6 +198,12 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       cx:position.x,cy:position.y,r:7,class:'hex-next-marker','pointer-events':'none'
     }));
     if (unit) {
+      if (knownUnitType) {
+        const label=svgNode(doc,'title');
+        label.textContent=unit.id+' · '+knownUnitType.replaceAll('_',' ').toLowerCase()+
+          ' (tipo declarado para ejercicio sintético)';
+        hex.append(label);
+      }
       const badge = svgNode(doc,'circle',{cx:position.x,cy:position.y,r:15,class:unit.side==='A'?'unit-a':'unit-b','pointer-events':'none'});
       const text = svgNode(doc,'text',{x:position.x,y:position.y+4,'text-anchor':'middle',class:'unit-label','pointer-events':'none'});
       text.textContent=unit.side;
@@ -198,6 +221,15 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
         tick.textContent='✓';
         hex.append(dot,tick);
       }
+    }
+    if (terrainKind) {
+      const symbol=svgNode(doc,'text',{
+        x:position.x+14,y:position.y-13,
+        'text-anchor':'middle',class:'terrain-symbol','pointer-events':'none'
+      });
+      symbol.textContent=terrainKind==='FOREST'?'♣':
+        terrainKind==='HILL'?'▲':'◇';
+      hex.append(symbol);
     }
     if (step) {
       const indexLabel=svgNode(doc,'text',{x:position.x+14,y:position.y-11,class:'route-number','text-anchor':'middle','pointer-events':'none'});
@@ -319,6 +351,9 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     let orderableUnitIds=[],selectedOrderUnitIds=[];
     let profileCells=[],rangedTargets=[],losBlockerCells=[];
     const boardValid=Array.isArray(view?.board);
+    const training=view?.trainingReference?.kind==='SYNTHETIC_ANCIENTS_TRAINING_V1'?
+      view.trainingReference:null;
+    const terrainCells=Array.isArray(training?.terrain)?training.terrain:[];
     const movedPublic=Array.isArray(view?.movedUnitIds)?view.movedUnitIds:[];
     if (inspectButton) {
       inspectButton.disabled=!boardValid||pending;
@@ -334,7 +369,15 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
         `Bando ${view.you} · Turno ${view.turn} · Debe actuar ${view.actingSide} · Fase ${view.phase} · Revisión ${view.revision}. ${own.length} unidades propias (${used} movidas), ${enemy.length} rivales.`;
     }
     if(profileGroup)profileGroup.hidden=!inspecting||!boardValid;
-    if(profileSelect)profileSelect.disabled=!inspecting||!boardValid;
+    const ownInspected=inspectedCell&&boardValid?view.board.find(u=>
+      u.side===view.you&&key(u)===key(inspectedCell)):null;
+    const boundType=ownInspected&&training?.unitTypes&&
+      Object.hasOwn(training.unitTypes,ownInspected.id)?
+      training.unitTypes[ownInspected.id]:null;
+    if(profileSelect){
+      if(boundType)profileSelect.value=boundType;
+      profileSelect.disabled=!inspecting||!boardValid||Boolean(boundType);
+    }
     if(profileStatus){
       if(!inspecting||!boardValid)profileStatus.textContent='';
       else {
@@ -343,15 +386,17 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
         if(!own)profileStatus.textContent='Elige una unidad propia para ver un perfil base hipotético.';
         else try {
           const result=previewBaseMovementOnBoard({
-            unitType:profileSelect?.value,
+            unitType:boundType??profileSelect?.value,
             origin:inspectedCell,
-            occupiedCells:view.board.map(u=>({col:u.col,row:u.row}))
+            occupiedCells:view.board.map(u=>({col:u.col,row:u.row})),
+            terrain:training?terrainCells:null
           });
           profileCells=result.reachable;
           const firing=previewBaseRangedOnBoard({
             unitType:result.unitType,origin:inspectedCell,actor:view.you,
             board:view.board,
-            movedUnitIds:Array.isArray(view.movedUnitIds)?view.movedUnitIds:null
+            movedUnitIds:Array.isArray(view.movedUnitIds)?view.movedUnitIds:null,
+            terrain:training?terrainCells:null
           });
           rangedTargets=firing.targets.filter(t=>
             t.visibleUnitCorridor!=='NOT_EVALUATED'
@@ -360,11 +405,14 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           const open=rangedTargets.filter(t=>
             t.visibleUnitCorridor==='NO_VISIBLE_UNIT_OBSTRUCTION').length;
           const blocked=rangedTargets.length-open;
+          const terrainNote=training?
+            ' Terreno declarado por el servidor para este ejercicio sintético; no es un escenario oficial.':
+            ' Terreno desconocido; la línea de visión supone suelo despejado.';
           const firingMessage=firing.status==='NO_MOVEMENT_LEDGER'
             ? 'Sin registro de movimiento: no se puede estimar disparo.'
             : firing.status==='MOVEMENT_STEPS_UNKNOWN'
               ? 'Unidad ya movida: se desconoce el número de pasos. No se estima disparo.'
-              : `${open} objetivos dentro del perfil sin unidades interpuestas y ${blocked} con interposición de unidades; terreno y líderes desconocidos.`;
+              : `${open} corredores sin obstáculos detectados y ${blocked} con obstáculos bajo los datos de referencia; líderes desconocidos.`;
           const target=inspectedTarget?firing.targets.find(t=>
             key(t)===key(inspectedTarget)):null;
           const reasonName={
@@ -375,19 +423,22 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
             WAR_MACHINE_MOVED:'la máquina de guerra se ha movido',
             AUXILIA_MOVED_TWO:'auxiliares movidos dos hexágonos'
           };
-          if(target?.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS')
+          if(target && target.visibleUnitCorridor!=='NO_VISIBLE_UNIT_OBSTRUCTION' &&
+             target.visibleUnitCorridor!=='NOT_EVALUATED')
             losBlockerCells=target.obstructingHexes;
           const targetMessage=inspectedTarget && firing.status!=='REFERENCE_ONLY'
             ? ' No hay datos fiables de pasos para valorar este objetivo.'
             : target?target.profileStatus!=='CANDIDATE'
               ? ` Objetivo ${target.id}: ${reasonName[target.profileReason]??'perfil no compatible'} (distancia ${target.distance}).`
               : target.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'
-                ? ` Objetivo ${target.id}, distancia ${target.distance}: unidades visibles interpuestas en ${target.obstructingHexes.map(c=>`(${c.col+1},${c.row+1})`).join(', ')}. Disparo de referencia bloqueado en este supuesto.`
-                : ` Objetivo ${target.id}, distancia ${target.distance}: perfil orientativo de ${target.nominalDice} dados; sin unidades visibles interpuestas, pero no se conocen terreno, líderes ni modificadores.`
+                ? ` Objetivo ${target.id}, distancia ${target.distance}: unidades visibles interpuestas en ${target.obstructingHexes.map(c=>`(${c.col+1},${c.row+1})`).join(', ')}. Disparo de referencia bloqueado.`
+                : target.visibleUnitCorridor==='BLOCKED_BY_TRAINING_TERRAIN'
+                  ? ` Objetivo ${target.id}, distancia ${target.distance}: terreno de entrenamiento bloqueante en ${target.obstructingHexes.map(c=>`(${c.col+1},${c.row+1})`).join(', ')}.`
+                  : ` Objetivo ${target.id}, distancia ${target.distance}: ${target.nominalDice} dados base orientativos; corredor sin obstáculos detectados, pero faltan líderes, órdenes y modificadores.`
               : '';
           const ranged=result.rangedReach===null?'sin disparo a distancia base':
             'alcance base de disparo '+result.rangedReach+' hex.';
-          profileStatus.textContent=`Ancients base, unidad de tipo HIPOTÉTICO ${result.unitType.replaceAll('_',' ').toLowerCase()}: máximo ${result.maxSteps} pasos; ${profileCells.length} destinos geométricos libres; ${ranged}. ${firingMessage}${targetMessage} Verde: movimiento y combate; azul: movimiento; naranja: carga condicional; contorno rojo continuo: corredor sin unidades interpuestas; rojo discontinuo: interposición. NO verifica terreno, líderes, órdenes ni escenarios. NO autoriza movimientos ni ataques.`;
+          profileStatus.textContent=`Ancients base, ${boundType?'tipo declarado por el servidor para entrenamiento':'tipo HIPOTÉTICO elegido manualmente'}: ${result.unitType.replaceAll('_',' ').toLowerCase()}; máximo ${result.maxSteps} pasos; ${profileCells.length} destinos ${result.terrainApplied?'con comprobación parcial del terreno de entrenamiento':'geométricos sin datos de terreno'}; ${ranged}. ${firingMessage}${targetMessage}${terrainNote} Verde: movimiento y combate según perfil; azul: movimiento; naranja: carga condicional; contorno rojo continuo: corredor sin bloqueos detectados; rojo discontinuo: obstáculo. NO verifica líderes, órdenes ni reglas completas de escenario. NO autoriza movimientos ni ataques.`;
         } catch {
           profileStatus.textContent='Selecciona un tipo de tropa válido del juego base.';
         }
@@ -404,7 +455,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           .sort((a,b)=>a.steps-b.steps||a.unit.id.localeCompare(b.unit.id))
           .slice(0,5)
           .map(({unit:item,steps})=>`${item.id}: ${steps} hex.`);
-        const who=unit?`${unit.id} · bando ${unit.side} · ${unit.side===view.you?'propia':'rival'}${unit.side===view.you && movedPublic.includes(unit.id)?' · ya movida':''}`:'hexágono vacío';
+        const who=unit?`${unit.id} · bando ${unit.side} · ${unit.side===view.you?'propia':'rival'}${training?.unitTypes?.[unit.id]?' · tipo de entrenamiento '+training.unitTypes[unit.id].replaceAll('_',' ').toLowerCase():''}${unit.side===view.you && movedPublic.includes(unit.id)?' · ya movida':''}`:'hexágono vacío';
         inspectPanel.textContent=`Columna ${inspectedCell.col+1}, fila ${inspectedCell.row+1}: ${who}. ${counterpart.length?'Distancias a unidades próximas: '+counterpart.join(' · '):'No hay otras unidades.'} Distancias geométricas; no representan alcance de ataque ni legalidad de movimiento.`;
       }
     }
@@ -439,7 +490,9 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           profileCells:inspecting?profileCells:[],
           rangedTargets:inspecting?rangedTargets:[],
           inspectionTarget:inspecting?inspectedTarget:null,
-          losBlockerCells:inspecting?losBlockerCells:[]});
+          losBlockerCells:inspecting?losBlockerCells:[],
+          terrainCells:boardValid?terrainCells:[],
+          unitTypes:training?.unitTypes??{}});
     } catch(err) {
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;

@@ -9,6 +9,7 @@ import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {initializeSchema, CCW_SCHEMA_SQL} from './schema-version.mjs';
 import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqlite-game.mjs';
+import {createTrainingReference, projectTrainingReference} from '../command-deck/training-reference.mjs';
 import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
 import {proposeMovementDraft, projectMovementDraft} from '../ancients-rules/movement-draft-contract.mjs';
@@ -43,11 +44,14 @@ function normalizeHandle(value) {
 
 
 function initialState(matchId) {
+  // Local synthetic training configuration, not a licensed scenario or
+  // official unit placement. Previous snapshots remain unmodified.
+  const board=[{id: 'synthetic-a', side: 'A', col: 3, row: 6},
+    {id: 'synthetic-b', side: 'B', col: 9, row: 2}];
   return {
     schemaVersion: 1, matchId, status: 'ACTIVE', turn: 'A',
-    // Landscape 13 × 9 lab: both sides occupy opposite LONG edges.
-    // Only new matches receive this layout; existing saved boards stay intact.
-    board: [{id: 'synthetic-a', side: 'A', col: 3, row: 6}, {id: 'synthetic-b', side: 'B', col: 9, row: 2}],
+    board,
+    trainingReference:createTrainingReference(board),
     hands: {A: ['PRIVATE_A_1', 'PRIVATE_A_2'], B: ['PRIVATE_B_1','PRIVATE_B_2','PRIVATE_B_3']},
     deck: ['HIDDEN_FUTURE_CARD']
   };
@@ -62,6 +66,8 @@ function project(row, actor) {
   return {
     matchId: row.id, revision: row.game_revision, status: state.status,
     turn: state.turn, you: actor, board: structuredClone(state.board),
+    ...(Object.hasOwn(state,'trainingReference')
+      ? {trainingReference:projectTrainingReference(state)} : {}),
     yourHand: structuredClone(state.hands[actor]),
     opponentCardCount: state.hands[actor === 'A' ? 'B' : 'A'].length
   };
