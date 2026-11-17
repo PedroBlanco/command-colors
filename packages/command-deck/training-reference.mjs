@@ -5,7 +5,7 @@
  */
 import {BASE_MOVEMENT_PROFILES} from '../ancients-rules/movement-profile.mjs';
 import {BASE_TERRAIN_TYPES} from '../ancients-rules/terrain-movement.mjs';
-import {getTrainingScenario} from './training-scenario.mjs';
+import {getTrainingScenario,DEFAULT_TRAINING_SCENARIO_ID} from './training-scenario.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 export const TRAINING_REFERENCE_KIND='SYNTHETIC_ANCIENTS_TRAINING_V1';
@@ -17,8 +17,8 @@ const key=x=>x.col+','+x.row;
 const fail=()=>{throw new TypeError('INVALID_TRAINING_REFERENCE')};
 
 /** Derive all public annotations from the compiled server fixture. */
-export function createTrainingReference(board){
-  const scenario=getTrainingScenario();
+export function createTrainingReference(board,scenarioId=DEFAULT_TRAINING_SCENARIO_ID){
+  const scenario=getTrainingScenario(scenarioId);
   if(!Array.isArray(board)||board.length!==scenario.units.length)fail();
   const matching=new Map(scenario.units.map(u=>[u.id,u]));
   const seen=new Set(),positions=new Set();
