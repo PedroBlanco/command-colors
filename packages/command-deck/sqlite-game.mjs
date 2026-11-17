@@ -9,6 +9,7 @@ import {validateSyntheticOrderAssignment} from '../order-validator/validator.mjs
 import {createServerSyntheticOrderContext} from '../order-validator/server-context.mjs';
 import {transitionSyntheticMovement} from '../movement/movement.mjs';
 import {createServerSyntheticMovementPolicy} from '../movement/server-policy.mjs';
+import {projectTrainingReference} from './training-reference.mjs';
 
 const KEY = /^[A-Za-z0-9_-]{8,80}$/;
 const TYPES = new Set([
@@ -41,6 +42,7 @@ function project(row, matchId, actor) {
   if (row.game_revision !== state.commandSession.phaseState.revision) throw new Error('COMMAND_REVISION_MISMATCH');
   const view = projectCommandSession(state.commandSession, actor);
   return {matchId, status: 'ACTIVE', board: structuredClone(state.board),
+    trainingReference:projectTrainingReference(state),
     movedUnitIds: Array.isArray(state.movedUnitIds) ? [...state.movedUnitIds] : null, ...view};
 }
 
