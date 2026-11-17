@@ -375,7 +375,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           const result=previewBaseMovementOnBoard({
             unitType:boundType??profileSelect?.value,
             origin:inspectedCell,
-            occupiedCells:view.board.map(u=>({col:u.col,row:u.row}))
+            occupiedCells:view.board.map(u=>({col:u.col,row:u.row})),
+            terrain:training?terrainCells:null
           });
           profileCells=result.reachable;
           const firing=previewBaseRangedOnBoard({
@@ -424,7 +425,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
               : '';
           const ranged=result.rangedReach===null?'sin disparo a distancia base':
             'alcance base de disparo '+result.rangedReach+' hex.';
-          profileStatus.textContent=`Ancients base, ${boundType?'tipo declarado por el servidor para entrenamiento':'tipo HIPOTÉTICO elegido manualmente'}: ${result.unitType.replaceAll('_',' ').toLowerCase()}; máximo ${result.maxSteps} pasos; ${profileCells.length} destinos geométricos sin aplicar restricciones de terreno; ${ranged}. ${firingMessage}${targetMessage}${terrainNote} Verde: movimiento y combate según perfil; azul: movimiento; naranja: carga condicional; contorno rojo continuo: corredor sin bloqueos detectados; rojo discontinuo: obstáculo. NO verifica líderes, órdenes ni reglas completas de escenario. NO autoriza movimientos ni ataques.`;
+          profileStatus.textContent=`Ancients base, ${boundType?'tipo declarado por el servidor para entrenamiento':'tipo HIPOTÉTICO elegido manualmente'}: ${result.unitType.replaceAll('_',' ').toLowerCase()}; máximo ${result.maxSteps} pasos; ${profileCells.length} destinos ${result.terrainApplied?'con comprobación parcial del terreno de entrenamiento':'geométricos sin datos de terreno'}; ${ranged}. ${firingMessage}${targetMessage}${terrainNote} Verde: movimiento y combate según perfil; azul: movimiento; naranja: carga condicional; contorno rojo continuo: corredor sin bloqueos detectados; rojo discontinuo: obstáculo. NO verifica líderes, órdenes ni reglas completas de escenario. NO autoriza movimientos ni ataques.`;
         } catch {
           profileStatus.textContent='Selecciona un tipo de tropa válido del juego base.';
         }
