@@ -577,6 +577,9 @@ test('public ranged hint outlines rival without submitting synthetic combat',asy
      canCommit:false,candidates:[{attackerId:'synthetic-a',
        targetId:'synthetic-b',diceAfterTerrain:1,attackerSteps:1}]}});
  assert.equal(cell(ui.svg,5,5).classes.has('hex-training-ranged-hint'),true);
+ assert.equal(ui.svg.children[0].children.some(n=>
+   n.tag==='line'&&n.attrs.class==='training-ranged-corridor'&&
+   n.attrs['pointer-events']==='none'),true);
  assert.match(cell(ui.svg,5,5).attrs['aria-label'],/no autoriza ataque/);
  assert.match(overview.textContent,/ninguna autoriza ataques/);
  assert.deepEqual(sent,[]);
