@@ -66,7 +66,8 @@ function project(row, actor) {
   return {
     matchId: row.id, revision: row.game_revision, status: state.status,
     turn: state.turn, you: actor, board: structuredClone(state.board),
-    trainingReference:projectTrainingReference(state),
+    ...(Object.hasOwn(state,'trainingReference')
+      ? {trainingReference:projectTrainingReference(state)} : {}),
     yourHand: structuredClone(state.hands[actor]),
     opponentCardCount: state.hands[actor === 'A' ? 'B' : 'A'].length
   };
