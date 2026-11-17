@@ -37,7 +37,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     orderableUnitIds=[], selectedOrderUnitIds=[],
     inspectionCell=null, movedUnitIds=[], profileCells=[],
     rangedTargets=[],inspectionTarget=null,losBlockerCells=[],terrainCells=[],
-    unitTypes={},trainingDestinations=[]}={}) {
+    unitTypes={},trainingDestinations=[],trainingShotTargetIds=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -136,6 +136,13 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   const terrainByCell=new Map(terrainCells.map(t=>[key(t),t.kind]));
   if(terrainByCell.size!==terrainCells.length)
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const combatTargetsForViewer=id=>units.has(id)&&units.get(id).side!==viewer&&
+    combatTargetIds.includes(id);
+  if(!Array.isArray(trainingShotTargetIds)||trainingShotTargetIds.length>117||
+      new Set(trainingShotTargetIds).size!==trainingShotTargetIds.length||
+      trainingShotTargetIds.some(id=>typeof id!=='string'||!combatTargetsForViewer(id)))
+    throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
+  const trainingShots=new Set(trainingShotTargetIds);
   const moved=new Set(movedUnitIds);
   const orderable=new Set(orderableUnitIds);
   const ordered=new Set(selectedOrderUnitIds);
@@ -159,6 +166,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const orderableOwn=unit?.side===viewer && orderable.has(unit.id);
     const chosenOrder=orderableOwn && ordered.has(unit.id);
     const rivalTarget=unit?.side!==viewer && combatTargets.has(unit?.id);
+    const trainingShot=Boolean(rivalTarget && trainingShots.has(unit.id));
     const chosenTarget=rivalTarget && selectedTargetId===unit.id;
     const alreadyMoved=!!unit && unit.side===viewer && moved.has(unit.id);
     const inspected=inspectionCell && key(inspectionCell)===key(cell);
@@ -173,7 +181,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${knownUnitType ? `, tipo de entrenamiento ${knownUnitType}` : ''}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_TRAINING_TERRAIN'?', referencia de disparo bloqueada por terreno sintético':rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin bloqueos detectados; líderes desconocidos' : ''}${terrainKind ? `, terreno del ejercicio: ${terrainKind}` : ''}${trainingSteps ? `, destino orientativo de entrenamiento a ${trainingSteps} pasos, pendiente de validación por el servidor` : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}${viewBlocker ? ', celda que bloquea el corredor provisional' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${knownUnitType ? `, tipo de entrenamiento ${knownUnitType}` : ''}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_TRAINING_TERRAIN'?', referencia de disparo bloqueada por terreno sintético':rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin bloqueos detectados; líderes desconocidos' : ''}${terrainKind ? `, terreno del ejercicio: ${terrainKind}` : ''}${trainingShot ? ', referencia de tiro orientativo de entrenamiento, no autoriza ataque' : ''}${trainingSteps ? `, destino orientativo de entrenamiento a ${trainingSteps} pasos, pendiente de validación por el servidor` : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}${viewBlocker ? ', celda que bloquea el corredor provisional' : ''}`,
       'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget || inspected || focusedTarget)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -182,6 +190,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     if (orderableOwn) hex.classList.add('hex-orderable');
     if (chosenOrder) hex.classList.add('hex-order-selected');
     if (rivalTarget) hex.classList.add('hex-combat-selectable');
+    if (trainingShot)hex.classList.add('hex-training-ranged-hint');
     if (chosenTarget) hex.classList.add('hex-combat-selected');
     if (alreadyMoved) hex.classList.add('hex-already-moved');
     if (inspected) hex.classList.add('hex-inspected');
@@ -382,6 +391,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     let orderableUnitIds=[],selectedOrderUnitIds=[];
     let profileCells=[],rangedTargets=[],losBlockerCells=[];
     let trainingDestinations=[];
+    let trainingShotTargetIds=[];
+    let trainingShotCandidates=[];
     const boardValid=Array.isArray(view?.board);
     const training=view?.trainingReference?.kind==='SYNTHETIC_ANCIENTS_TRAINING_V1'?
       view.trainingReference:null;
@@ -390,6 +401,18 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     const profileSteps=draftType&&Object.hasOwn(BASE_MOVEMENT_PROFILES,draftType)?
       BASE_MOVEMENT_PROFILES[draftType].maxSteps:null;
     const movedPublic=Array.isArray(view?.movedUnitIds)?view.movedUnitIds:[];
+    const trainingShots=view?.trainingRangedHints;
+    if(trainingShots?.status==='REFERENCE_ONLY'&&
+       Array.isArray(trainingShots.candidates)&&
+       trainingShots.candidates.length<=117*117&&boardValid&&
+       view.phase==='COMBAT'&&view.actingSide===view.you){
+      trainingShotCandidates=trainingShots.candidates.filter(shot=>
+        shot&&typeof shot.attackerId==='string'&&typeof shot.targetId==='string'&&
+        Number.isSafeInteger(shot.diceAfterTerrain)&&shot.diceAfterTerrain>=0&&
+        view.board.some(u=>u.id===shot.attackerId&&u.side===view.you)&&
+        view.board.some(u=>u.id===shot.targetId&&u.side!==view.you));
+      trainingShotTargetIds=[...new Set(trainingShotCandidates.map(s=>s.targetId))];
+    }
     let trainingDraftHint=null;
     if(editable && draft?.path.length&&!inspecting){
       try {trainingDraftHint=previewTrainingMovementDraft(view,draft);}
@@ -409,8 +432,11 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       const header=scenario&&scenario.official===false
         ? `Escenario de entrenamiento «${scenario.title}» · ${scenario.rulesetVersion} · No oficial. Condición de victoria ilustrativa; el motor no la aplica. `
         : '';
+      const firingSummary=trainingShots?.status==='REFERENCE_ONLY'
+        ? ` ${trainingShotCandidates.length} parejas de tiro calculadas por perfil, terreno y línea de visión; ninguna autoriza ataques ni registra dados.`
+        : '';
       overviewPanel.textContent=!boardValid?'Sin tablero cargado':
-        `${header}Bando ${view.you} · Turno ${view.turn} · Debe actuar ${view.actingSide} · Fase ${view.phase} · Revisión ${view.revision}. ${own.length} unidades propias (${used} movidas), ${enemy.length} rivales.`;
+        `${header}Bando ${view.you} · Turno ${view.turn} · Debe actuar ${view.actingSide} · Fase ${view.phase} · Revisión ${view.revision}. ${own.length} unidades propias (${used} movidas), ${enemy.length} rivales.${firingSummary}`;
     }
     if(profileGroup)profileGroup.hidden=!inspecting||!boardValid;
     const ownInspected=inspectedCell&&boardValid?view.board.find(u=>
@@ -555,7 +581,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
           losBlockerCells:inspecting?losBlockerCells:[],
           terrainCells:boardValid?terrainCells:[],
           unitTypes:training?.unitTypes??{},
-          trainingDestinations:inspecting?[]:trainingDestinations});
+          trainingDestinations:inspecting?[]:trainingDestinations,
+          trainingShotTargetIds:inspecting?[]:trainingShotTargetIds});
     } catch(err) {
       draft=null;keyForRetry=null;autoRoute=false;
       selectedTargetId=null;defenseRetryKey=null;
