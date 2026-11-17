@@ -365,8 +365,12 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
       const own=boardUnits.filter(unit=>unit?.side===view?.you);
       const enemy=boardUnits.filter(unit=>unit?.side!==view?.you);
       const used=own.filter(unit=>movedPublic.includes(unit.id)).length;
+      const scenario=training?.scenario;
+      const header=scenario&&scenario.official===false
+        ? `Escenario de entrenamiento «${scenario.title}» · ${scenario.rulesetVersion} · No oficial. Condición de victoria ilustrativa; el motor no la aplica. `
+        : '';
       overviewPanel.textContent=!boardValid?'Sin tablero cargado':
-        `Bando ${view.you} · Turno ${view.turn} · Debe actuar ${view.actingSide} · Fase ${view.phase} · Revisión ${view.revision}. ${own.length} unidades propias (${used} movidas), ${enemy.length} rivales.`;
+        `${header}Bando ${view.you} · Turno ${view.turn} · Debe actuar ${view.actingSide} · Fase ${view.phase} · Revisión ${view.revision}. ${own.length} unidades propias (${used} movidas), ${enemy.length} rivales.`;
     }
     if(profileGroup)profileGroup.hidden=!inspecting||!boardValid;
     const ownInspected=inspectedCell&&boardValid?view.board.find(u=>
