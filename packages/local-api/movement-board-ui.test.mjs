@@ -569,7 +569,7 @@ test('cavalry shows four-step reach and confirms selected path',async()=>{
 test('public ranged hint outlines rival without submitting synthetic combat',async()=>{
  const ui=fixture(),sent=[],overview=new Node(ui.svg.ownerDocument,'p');
  const board=createMovementBoard({...ui,overviewPanel:overview,
-   onRequestDefense:async id=>sent.push(id)});
+   onConfirm:async()=>{},onRequestDefense:async id=>sent.push(id)});
  board.setView({...view(),phase:'COMBAT',
    board:[{id:'synthetic-a',side:'A',col:2,row:5},
      {id:'synthetic-b',side:'B',col:5,row:5}],
