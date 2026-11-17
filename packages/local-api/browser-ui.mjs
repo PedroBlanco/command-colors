@@ -9,6 +9,7 @@ const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
 const stateText = value => {el('state').textContent = JSON.stringify(value,null,2);};
 let cached = null;
+let rangedCheckContext=null,rangedCheckBusy=false;
 let signedInHandle = null;
 const privateScope = createPrivateViewScope();
 let movementBoard = null;
@@ -117,6 +118,60 @@ const revisionRefresh = createRevisionRefresh({
 });
 revisionRefresh.setPaused(document.hidden);
 
+/** Ranged declarations are public read-only evaluations, not battle commands. */
+function renderRangedCheck() {
+  const enabled=deckActions(cached).includes('check_training_ranged_declaration');
+  const panel=el('board-ranged-check');
+  panel.hidden=!enabled;
+  const attacker=el('board-ranged-attacker'),target=el('board-ranged-target');
+  const result=el('board-ranged-check-result');
+  const context=enabled
+    ? [cached.matchId,cached.you,cached.revision,cached.phase,cached.actingSide].join(':')
+    : null;
+  if(context!==rangedCheckContext) {
+    rangedCheckContext=context;result.textContent='';
+  }
+  const priorAttacker=attacker.value,priorTarget=target.value;
+  const options=(select,units,previous,label)=>{
+    select.replaceChildren();
+    const placeholder=document.createElement('option');
+    placeholder.value='';placeholder.textContent=label;
+    select.appendChild(placeholder);
+    for(const unit of units){
+      const option=document.createElement('option');
+      option.value=unit.id;
+      option.textContent=unit.id+' (col. '+(unit.col+1)+', fila '+(unit.row+1)+')';
+      select.appendChild(option);
+    }
+    select.value=units.some(u=>u.id===previous)?previous:'';
+  };
+  const board=enabled&&Array.isArray(cached.board)?cached.board:[];
+  options(attacker,board.filter(u=>u?.side===cached?.you),priorAttacker,'Elige una unidad propia');
+  options(target,board.filter(u=>u?.side!==cached?.you),priorTarget,'Elige un rival');
+  attacker.disabled=!enabled||rangedCheckBusy;
+  target.disabled=!enabled||rangedCheckBusy;
+  el('board-ranged-check-button').disabled=!enabled||rangedCheckBusy||
+    !attacker.value||!target.value;
+}
+const TRAINING_RANGED_REASONS=Object.freeze({
+  UNIT_NOT_ELIGIBLE:'La unidad atacante no recibió una orden o no pertenece a tu bando.',
+  TARGET_NOT_ELIGIBLE:'El objetivo no es una unidad rival disponible.',
+  NO_BASE_RANGED_WEAPON:'El tipo de tropa no tiene disparo a distancia base.',
+  RANGED_TARGET_ADJACENT:'El objetivo está adyacente: no procede este tiro a distancia.',
+  TARGET_OUT_OF_RANGE:'El objetivo queda fuera del alcance de disparo.',
+  ADJACENT_ENEMY_PREVENTS_RANGED:'Una unidad enemiga adyacente impide disparar.',
+  LINE_OF_SIGHT_BLOCKED:'El corredor de tiro está bloqueado.',
+  WAR_MACHINE_MOVED:'La máquina de guerra no puede disparar después de moverse.',
+  AUXILIA_MOVED_TWO:'Los auxiliares han movido demasiado para disparar.',
+  EXCEEDS_STANDARD_MOVEMENT:'La unidad ha superado su perfil de movimiento.',
+  NO_TRUSTED_MOVEMENT_LEDGER:'Esta partida no conserva un historial fiable de movimiento.',
+  NO_VERSIONED_SCENARIO:'La partida no tiene un escenario de entrenamiento versionado.',
+  WRONG_PHASE:'La comprobación solo está disponible en la fase de combate.',
+  STALE_REVISION:'La partida ha cambiado; consulta su estado actualizado.',
+  NOT_ACTING_PLAYER:'No es tu turno de combate.',
+  INVALID_TRAINING_DECLARATION:'Selecciona una unidad propia y un objetivo rival.'
+});
+
 function renderDeck() {
   const isDeck = cached && typeof cached.phase === 'string';
   const options = isDeck ? deckActions(cached) : [];
@@ -169,6 +224,7 @@ function renderDeck() {
     ? `Mazo de prueba · fase ${cached.phase} · turno ${cached.turn} · debe actuar ${cached.actingSide}`
     : 'El mazo de prueba aún no está inicializado';
   movementBoard?.setView(cached);
+  renderRangedCheck();
   updatePanels();
 }
 
@@ -518,6 +574,50 @@ action('deck-stand',()=>sendDeck('answer_synthetic_defense',{choice:'STAND'}));
 action('deck-evade',()=>sendDeck('answer_synthetic_defense',{choice:'EVADE'}));
 action('deck-combat',()=>sendDeck('finish_synthetic_combat'));
 action('deck-draw',()=>sendDeck('acknowledge_synthetic_draw'));
+for (const field of ['board-ranged-attacker','board-ranged-target']) {
+  el(field).addEventListener('change',()=>{
+    el('board-ranged-check-result').textContent='';
+    renderRangedCheck();
+  });
+}
+el('board-ranged-check-button').addEventListener('click',async()=>{
+  if(rangedCheckBusy||!cached) return;
+  const matchId=cached.matchId,revision=cached.revision,player=cached.you;
+  const ticket=privateScope.capture();
+  try {
+    if(!deckActions(cached).includes('check_training_ranged_declaration'))
+      throw Error('ACCION_NO_DISPONIBLE');
+    const data={
+      attackerId:el('board-ranged-attacker').value,
+      targetId:el('board-ranged-target').value
+    };
+    const request=deckCommand(cached,'check_training_ranged_declaration',
+      data,crypto.randomUUID().replaceAll('-',''));
+    rangedCheckBusy=true;renderRangedCheck();
+    if(!await confirmCurrentSession(ticket,matchId))return;
+    const response=await api('POST',`/api/matches/${matchId}/commands`,request);
+    if(!privateScope.isCurrent(ticket,matchId)||
+       el('match-id').value.trim()!==matchId||
+       cached?.revision!==revision||cached?.you!==player||
+       el('board-ranged-attacker').value!==data.attackerId||
+       el('board-ranged-target').value!==data.targetId||
+       !deckActions(cached).includes('check_training_ranged_declaration'))return;
+    const report=response.reference;
+    if(response.code!=='TRAINING_RANGED_REFERENCE'||
+       !report||report.attackAuthorized!==false||report.canCommit!==false||
+       report.revision!==revision)
+      throw Error('REFERENCIA_NO_VALIDA');
+    el('board-ranged-check-result').textContent=report.status==='CANDIDATE'
+      ? `Referencia ${data.attackerId} → ${data.targetId}: ${report.distance} hexágonos, ${report.diceAfterTerrain} dados orientativos tras terreno. El ataque NO está autorizado ni se ha registrado.`
+      : `Referencia bloqueada: ${TRAINING_RANGED_REASONS[report.reason]??'No supera las comprobaciones parciales del servidor.'} No se ha registrado un ataque.`;
+  }catch(error){
+    if(privateScope.isCurrent(ticket,matchId)&&cached?.revision===revision)
+      el('board-ranged-check-result').textContent=
+        /^(400|401|403|404|409):/.test(error.message)
+        ? 'No se pudo comprobar la declaración. Verifica tu sesión y actualiza la partida.'
+        : 'Comprobación no disponible. No se ha registrado ningún ataque.';
+  }finally{rangedCheckBusy=false;renderRangedCheck();}
+});
 movementBoard = createMovementBoard({
   svg: el('movement-board'),
   inspectButton:el('board-inspect-toggle'),
@@ -555,6 +655,15 @@ movementBoard = createMovementBoard({
   cardSelect:el('board-card-select'),
   cardButton:el('board-card-play'),
   onPlayCard:(cardRef,key)=>sendDeck('play_synthetic_card',{cardRef},key),
+  onReferenceSelection: (role,id) => {
+    if(!deckActions(cached).includes('check_training_ranged_declaration')||
+       !['attacker','target'].includes(role)||
+       !cached?.board?.some(u=>u?.id===id&&
+         (role==='attacker'?u.side===cached.you:u.side!==cached.you)))return;
+    el(role==='attacker'?'board-ranged-attacker':'board-ranged-target').value=id;
+    el('board-ranged-check-result').textContent='';
+    renderRangedCheck();
+  },
   onRequestDefense: async (unitId,idempotencyKey) => {
     const confirmed=await sendDeck('ask_synthetic_defense',
       {targetUnit:unitId},idempotencyKey);

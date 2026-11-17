@@ -119,10 +119,18 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section id="movement-section" aria-labelledby="movement-title">
 <details id="movement-details"><summary id="movement-title">Tablero hexagonal de laboratorio (13 × 9)</summary>
 <p>Selecciona una unidad propia y toca los hexágonos vecinos para trazar el movimiento.
-Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. También puedes jugar una carta de tu propia mano, terminar movimiento, combate o turno según la fase. Usa «Inspeccionar tablero» para consultar unidades, movimientos realizados y distancias hexagonales. Al seleccionar una unidad propia podrás probar su tipo hipotético de Ancients y después tocar un rival para inspeccionar el alcance y la línea de visión considerando únicamente las unidades visibles. No se conoce el terreno ni los líderes y ninguna marca autoriza un ataque. No son reglas oficiales de Ancients.</p>
+Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen resaltadas y, al elegir una, se indican los hexágonos vecinos. Toca un destino lejano libre para sugerir la ruta geométrica más corta entre casillas desocupadas, o un paso anterior para recortar la ruta. Las marcas no garantizan la legalidad de un movimiento: el servidor decide. La ruta solo se envía cuando la confirmas. Durante la asignación de órdenes sintéticas, toca unidades propias para incluirlas o excluirlas y confirma la selección. En combate sintético, toca una unidad rival y pulsa «Solicitar defensa»; el defensor puede elegir después Mantener posición o Evadir en este mismo panel. También puedes jugar una carta de tu propia mano, terminar movimiento, combate o turno según la fase. Usa «Inspeccionar tablero» para consultar unidades, movimientos realizados y distancias hexagonales. Al seleccionar una unidad propia podrás probar su tipo hipotético de Ancients y después tocar un rival para inspeccionar el alcance y la línea de visión considerando únicamente las unidades visibles. En escenarios sintéticos versionados se conoce el terreno y el tipo de tropa, pero aún faltan líderes y reglas completas; ninguna marca autoriza un ataque. En la fase de combate puedes seleccionar atacante y objetivo en el tablero y solicitar una comprobación explícita que no lanza dados ni altera la partida. No son reglas oficiales de Ancients.</p>
 <div id="movement-viewport"><svg id="movement-board" xmlns="http://www.w3.org/2000/svg"
   role="group" aria-label="Tablero táctico sintético para dos jugadores" viewBox="0 0 510 430"></svg></div>
 <p id="board-overview" aria-live="polite">Sin tablero cargado</p>
+<fieldset id="board-ranged-check" hidden>
+<legend>Comprobar declaración de tiro (solo consulta)</legend>
+<p>Elige una unidad atacante propia y un objetivo rival. El servidor comprueba órdenes, pasos registrados, alcance y línea de visión. No autoriza ataques, no lanza dados y no cambia la partida.</p>
+<label>Unidad atacante<select id="board-ranged-attacker" aria-label="Unidad atacante propia"></select></label>
+<label>Objetivo rival<select id="board-ranged-target" aria-label="Objetivo rival"></select></label>
+<button type="button" id="board-ranged-check-button" disabled>Comprobar en el servidor</button>
+<p id="board-ranged-check-result" role="status" aria-live="polite"></p>
+</fieldset>
 <button type="button" id="board-inspect-toggle" aria-pressed="false" disabled>Inspeccionar tablero</button>
 <p id="board-inspect-info" role="status" aria-live="polite" hidden></p>
 <div id="board-profile-group" hidden>
@@ -142,7 +150,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <option value="ELEPHANT">Elefante</option>
 <option value="HEAVY_CHARIOT">Carro pesado</option>
 </select></label>
-<p class="notice">Terreno del ejercicio: ♣ bosque, ▲ colina, ◇ terreno accidentado. El motor sintético no aplica todavía esas reglas a los movimientos.</p>
+<p class="notice">Terreno del ejercicio: ♣ bosque, ▲ colina, ◇ terreno accidentado. En escenarios versionados el servidor aplica restricciones parciales de movimiento; faltan las reglas completas de Ancients.</p>
 <p id="board-profile-status" role="status" aria-live="polite"></p>
 </div>
 <p id="movement-status" role="status" aria-live="polite">Tablero en espera de una partida.</p>

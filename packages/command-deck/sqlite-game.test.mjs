@@ -381,3 +381,27 @@ test('SQLite persists ranged steps and resets them after the turn',()=>fixture((
  assert.equal(stored.trainingMovementLedger.turn,'B');
  assert.equal(stored.trainingMovementLedger.stepsByUnit['synthetic-a'],0);
 }));
+
+test('SQLite ranged check is read-only and never consumes its command key',()=>fixture(({inst})=>{
+ const cfg=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID),
+   board=cfg.units.map(({id,side,col,row})=>({id,side,col,row}));
+ Object.assign(board[0],{col:2,row:5});Object.assign(board[1],{col:5,row:5});
+ const state=JSON.parse(inst.getRow(MATCH).private_state);
+ state.board=board;state.trainingReference=createTrainingReference(board,cfg.id);
+ inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ inst.store.initialize('A');
+ apply(inst.store,'A','play_synthetic_card',0,{cardRef:inst.store.view('A').yourHand[0]});
+ apply(inst.store,'A','assign_synthetic_orders',1,{unitIds:['synthetic-a']});
+ apply(inst.store,'A','finish_synthetic_movement',2);
+ const before=inst.getRow(MATCH),keys=inst.db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,
+   events=inst.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n;
+ const r=inst.store.dispatch(command('A','check_training_ranged_declaration',3,
+   {attackerId:'synthetic-a',targetId:'synthetic-b'},'readonly_key_001'));
+ assert.equal(r.reference.diceAfterTerrain,2);
+ assert.equal(r.reference.attackAuthorized,false);
+ assert.deepEqual(inst.getRow(MATCH),before);
+ assert.equal(inst.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,events);
+ assert.equal(inst.db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,keys);
+ assert.equal(inst.store.dispatch(command('A','finish_synthetic_combat',3,{},
+   'readonly_key_001')).code,'APPLIED');
+}));

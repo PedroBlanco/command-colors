@@ -122,3 +122,24 @@ test('HTTP: a match without deck retains legacy demo-turn behavior',()=>lab(asyn
   const denied=await h.call('POST',`${url}/deck/initialize`,tokens.alice,{});
   assert.equal(denied.status,409);
 }));
+
+test('HTTP ranged check ignores forged context and preserves match revision',()=>lab(async start=>{
+ const h=await start(),{tokens,url,matchId}=await setupLab(h),db=h.service.unsafeTestDatabase();
+ const state=JSON.parse(db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId).private_state);
+ Object.assign(state.board[0],{col:2,row:5});Object.assign(state.board[1],{col:5,row:5});
+ db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),matchId);
+ const init=await h.call('POST',`${url}/deck/initialize`,tokens.alice,{});
+ await command(h,url,tokens.alice,'play_synthetic_card',0,{cardRef:init.data.state.yourHand[0]});
+ await command(h,url,tokens.alice,'assign_synthetic_orders',1,{unitIds:['synthetic-a']});
+ await command(h,url,tokens.alice,'finish_synthetic_movement',2);
+ const before=db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId),
+   count=db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n;
+ const arg={attackerId:'synthetic-a',targetId:'synthetic-b',actor:'B',movedSteps:9};
+ const r=await command(h,url,tokens.alice,'check_training_ranged_declaration',3,arg);
+ assert.equal(r.data.reference.diceAfterTerrain,2);
+ assert.equal(r.data.reference.attackAuthorized,false);
+ assert.deepEqual(db.prepare('SELECT private_state,game_revision FROM matches WHERE id=?').get(matchId),before);
+ assert.equal(db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,count);
+ assert.equal((await command(h,url,tokens.bob,'check_training_ranged_declaration',3,arg)).status,403);
+ assert.equal((await command(h,url,tokens.carol,'check_training_ranged_declaration',3,arg)).status,404);
+}));

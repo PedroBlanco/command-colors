@@ -581,3 +581,15 @@ test('ranged hints draw inert corridors, not combat commands',()=>{
  assert.match(overview.textContent,/ninguna autoriza ataques/);
  assert.deepEqual(sent,[]);
 });
+
+test('selecting public ranged pair does not submit combat',()=>{
+ const ui=fixture(),chosen=[],sent=[];
+ const c=createMovementBoard({...ui,onConfirm:async()=>{},
+   onRequestDefense:async id=>sent.push(id),
+   onReferenceSelection:(role,id)=>chosen.push([role,id])});
+ c.setView({...view(),phase:'COMBAT',
+   trainingRangedHints:{status:'REFERENCE_ONLY',attackAuthorized:false,candidates:[]}});
+ c.select({col:3,row:4});c.select({col:5,row:4});
+ assert.deepEqual(chosen,[['attacker','synthetic-a'],['target','synthetic-b']]);
+ assert.deepEqual(sent,[]);
+});

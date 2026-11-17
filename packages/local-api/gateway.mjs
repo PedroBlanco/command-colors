@@ -265,7 +265,8 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const command={type:body.type,
           expectedRevision:body.expectedRevision,idempotencyKey:body.idempotencyKey,
           cardRef:body.cardRef,unitIds:body.unitIds,unitId:body.unitId,
-          path:body.path,targetUnit:body.targetUnit,choice:body.choice};
+          path:body.path,targetUnit:body.targetUnit,choice:body.choice,
+          attackerId:body.attackerId,targetId:body.targetId};
         const result=typeof store.dispatchForSession==='function'
           ? await store.dispatchForSession({sessionToken:token,...command})
           : await store.dispatch({actor,...command});
@@ -274,7 +275,10 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const commandError=publicReadError(result);
         if(commandError)return reply(res,commandError.status,{code:commandError.code});
         if (result.view && result.view.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
-        return reply(res, result.status, {code: result.code, ...(result.view ? {state: result.view} : {})});
+        return reply(res, result.status, {code: result.code,
+          ...(result.view ? {state: result.view} : {}),
+          ...(result.code==='TRAINING_RANGED_REFERENCE' && result.reference
+            ? {reference: result.reference} : {})});
       }
       return reply(res, 404, {code: 'NOT_FOUND'});
     } catch (error) {

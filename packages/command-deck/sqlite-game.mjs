@@ -14,13 +14,14 @@ import {getTrainingScenario} from './training-scenario.mjs';
 import {screenVersionedTrainingMove,createServerTrainingMovementPolicy} from './training-movement-screen.mjs';
 import {createTrainingMovementLedger,recordTrainingMovementLedger,
   resetTrainingMovementLedger,projectTrainingRangedHints} from './training-ranged-ledger.mjs';
+import {checkTrainingRangedDeclaration} from './training-ranged-declaration.mjs';
 
 const KEY = /^[A-Za-z0-9_-]{8,80}$/;
 const TYPES = new Set([
   'play_synthetic_card', 'assign_synthetic_orders', 'undo_synthetic_orders',
   'finish_synthetic_movement', 'ask_synthetic_defense',
   'answer_synthetic_defense', 'finish_synthetic_combat', 'acknowledge_synthetic_draw',
-  'move_synthetic_unit'
+  'move_synthetic_unit', 'check_training_ranged_declaration'
 ]);
 const SYNTHETIC_CARDS = Object.freeze(Array.from({length: 18}, (_, i) => `synthetic_card_${String(i + 1).padStart(2, '0')}`));
 const deny = (status, code) => ({status, code});
@@ -63,6 +64,9 @@ function semanticCommand(request) {
   if (type === 'ask_synthetic_defense') fields.targetUnit = request.targetUnit;
   if (type === 'answer_synthetic_defense') fields.choice = request.choice;
   if (type === 'move_synthetic_unit') { fields.unitId = request.unitId; fields.path = request.path; }
+  if (type === 'check_training_ranged_declaration') {
+    fields.attackerId = request.attackerId; fields.targetId = request.targetId;
+  }
   return {type, fields};
 }
 
@@ -138,6 +142,18 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
         ? {status: 200, code: 'ALREADY_APPLIED', view: project(row, matchId, actor)}
         : deny(409, 'IDEMPOTENCY_KEY_REUSED');
       if (row.game_revision !== expectedRevision) return {status: 409, code: 'STALE_REVISION', view: project(row, matchId, actor)};
+      // A declaration CHECK is deliberately read-only: consume no command
+      // key, event, game revision, order or battle marker. Membership and
+      // phase data have already been revalidated inside the same transaction.
+      if (semantic.type === 'check_training_ranged_declaration') {
+        const reference=checkTrainingRangedDeclaration(state,{
+          actor,expectedRevision,...semantic.fields
+        });
+        return {status:reference.reason==='NOT_ACTING_PLAYER'?403:200,
+          code:reference.reason==='NOT_ACTING_PLAYER'
+            ?'NOT_ACTING_PLAYER':'TRAINING_RANGED_REFERENCE',
+          ...(reference.reason==='NOT_ACTING_PLAYER'?{}:{reference})};
+      }
       let approvedCommand = {actor, type: semantic.type, expectedRevision, ...semantic.fields};
       // Enforce CCW-013 at the authoritative transaction boundary. Both the
       // board and card profile come from server-owned persistent state, never
