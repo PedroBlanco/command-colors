@@ -5,11 +5,16 @@
  * Compilation does not grant movement, combat or victory authorization.
  */
 import source from '../../scenarios/demo-synthetic.json' with {type:'json'};
+import cavalrySource from '../../scenarios/training-cavalry-synthetic.json' with {type:'json'};
 import {BOARD_COLUMNS,BOARD_ROWS,inBounds} from '../hex-grid/hex.mjs';
 import {ANCIENTS_RULESET,BASE_MOVEMENT_PROFILES} from '../ancients-rules/movement-profile.mjs';
 import {BASE_TERRAIN_TYPES} from '../ancients-rules/terrain-movement.mjs';
 
 export const DEFAULT_TRAINING_SCENARIO_ID='test-synthetic-001';
+export const NEW_MATCH_TRAINING_SCENARIO_ID='test-synthetic-cavalry-002';
+// Keep the old default lookup for callers and persisted fixtures. Only newly
+// created SQLite matches explicitly select the new, independently versioned
+// exercise; this avoids silently rewriting older scenario definitions.
 const FAIL=()=>{throw new TypeError('INVALID_SYNTHETIC_SCENARIO')};
 const plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&
   Object.getPrototypeOf(x)===Object.prototype;
@@ -88,10 +93,12 @@ export function compileTrainingScenario(spec){
   });
 }
 
-/** No caller-controlled selection: only the checked, bundled fixture. */
+/** Fixed server allowlist, never a client-specified scenario pathname. */
 export function getTrainingScenario(id=DEFAULT_TRAINING_SCENARIO_ID){
-  if(id!==DEFAULT_TRAINING_SCENARIO_ID)FAIL();
-  const scenario=compileTrainingScenario(source);
-  if(scenario.id!==id)FAIL(); // detect ID drift between fixture and catalog
+  const fixture=id===DEFAULT_TRAINING_SCENARIO_ID?source:
+    id===NEW_MATCH_TRAINING_SCENARIO_ID?cavalrySource:null;
+  if(fixture===null)FAIL();
+  const scenario=compileTrainingScenario(fixture);
+  if(scenario.id!==id)FAIL(); // reject catalog-to-file ID drift
   return scenario;
 }
