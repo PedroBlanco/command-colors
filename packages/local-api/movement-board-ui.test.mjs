@@ -550,8 +550,8 @@ test('versioned medium infantry cannot submit a two-step synthetic move from boa
  c.select({col:3,row:4});c.select({col:4,row:4});
  assert.equal(ui.confirmButton.disabled,false);
  c.select({col:5,row:4});
- assert.equal(ui.confirmButton.disabled,true);
- assert.match(ui.status.textContent,/supera los pasos/);
+ assert.deepEqual(c.getDraft().path,[{col:4,row:4}]);
+ assert.match(ui.status.textContent,/No existe una ruta compatible/);
  await c.confirm();
- assert.deepEqual(sent,[]);
+ assert.deepEqual(sent.map(s=>s.path),[[{col:4,row:4}]]);
 });
