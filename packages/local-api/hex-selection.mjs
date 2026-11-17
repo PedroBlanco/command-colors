@@ -70,8 +70,12 @@ export function appendMovementHex(view, draft, destination) {
   if (visited.has(key(destination))) throw new Error('HEX_REPETIDO');
   if (distance(last, destination) !== 1) throw new Error('HEX_NO_ADYACENTE');
   if (occupied.has(key(destination))) throw new Error('HEX_OCUPADO');
-  return {unitId: draft.unitId, revision: draft.revision, origin: coordinates(draft.origin),
-    path: [...draft.path.map(coordinates), coordinates(destination)]};
+  const next={unitId: draft.unitId, revision: draft.revision,
+    origin: coordinates(draft.origin),
+    path:[...draft.path.map(coordinates),coordinates(destination)]};
+  const hint=previewTrainingMovementDraft(view,next);
+  if(hint&&!hint.accepted)throw Error(hint.reason);
+  return next;
 }
 
 /** Local undo, with no request to the game server. */
@@ -92,7 +96,12 @@ export function movementDraftFields(view, draft) {
 export function nextMovementHexes(view, draft) {
   const {last, visited, occupied} = checkedDraft(view, draft);
   if (draft.path.length >= 32) return [];
-  return neighbors(last).filter(cell => !visited.has(key(cell)) && !occupied.has(key(cell)));
+  return neighbors(last).filter(cell => {
+    if(visited.has(key(cell))||occupied.has(key(cell)))return false;
+    const next={...draft,path:[...draft.path,coordinates(cell)]};
+    const hint=previewTrainingMovementDraft(view,next);
+    return hint===null||hint.accepted;
+  });
 }
 
 /** Go back to an earlier step (or the origin) without sending any command. */
@@ -123,6 +132,36 @@ export function extendMovementDraftTo(view, draft, destination) {
   const target = key(destination), source = key(last);
   if (visited.has(target)) throw new Error('HEX_REPETIDO');
   if (occupied.has(target)) throw new Error('HEX_OCUPADO');
+  // For a versioned scenario, search the full short *path*, not only the
+  // endpoint. A forest entry or mounted stop may invalidate one shortest
+  // route while another route remains possible. Max steps in base profiles
+  // are <=4, making this bounded breadth-first enumeration inexpensive.
+  if(view?.trainingReference?.kind==='SYNTHETIC_ANCIENTS_TRAINING_V1'&&
+     view.trainingReference.scenario){
+    const seenPath=new Set([draft.path.map(key).join('|')]);
+    const queue=[{at:coordinates(last),path:draft.path.map(coordinates)}];
+    const maxNodes=2000;
+    for(let head=0;head<queue.length&&head<maxNodes;head++){
+      const current=queue[head],used=new Set([key(draft.origin),...current.path.map(key)]);
+      for(const candidate of neighbors(current.at)){
+        const candidateKey=key(candidate);
+        if(used.has(candidateKey)||occupied.has(candidateKey))continue;
+        const path=[...current.path,coordinates(candidate)];
+        if(path.length>32)continue;
+        const proposal={unitId:draft.unitId,revision:draft.revision,
+          origin:coordinates(draft.origin),path};
+        const hint=previewTrainingMovementDraft(view,proposal);
+        if(hint&&!hint.accepted)continue;
+        if(candidateKey===target)return proposal;
+        const pathKey=path.map(key).join('|');
+        if(!seenPath.has(pathKey)){
+          seenPath.add(pathKey);
+          queue.push({at:coordinates(candidate),path});
+        }
+      }
+    }
+    throw Error('TRAINING_ROUTE_UNAVAILABLE');
+  }
   const queue = [coordinates(last)];
   const parents = new Map([[source, null]]);
   const positions = new Map();
