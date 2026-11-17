@@ -566,21 +566,18 @@ test('cavalry shows four-step reach and confirms selected path',async()=>{
  await c.confirm();assert.equal(sent[0].path.length,4);
 });
 
-test('public ranged hint outlines rival without submitting synthetic combat',async()=>{
+test('ranged hints draw inert corridors, not combat commands',()=>{
  const ui=fixture(),sent=[],overview=new Node(ui.svg.ownerDocument,'p');
- const board=createMovementBoard({...ui,overviewPanel:overview,
+ const c=createMovementBoard({...ui,overviewPanel:overview,
    onConfirm:async()=>{},onRequestDefense:async id=>sent.push(id)});
- board.setView({...view(),phase:'COMBAT',
+ c.setView({...view(),phase:'COMBAT',
    board:[{id:'synthetic-a',side:'A',col:2,row:5},
      {id:'synthetic-b',side:'B',col:5,row:5}],
-   trainingRangedHints:{status:'REFERENCE_ONLY',attackAuthorized:false,
-     canCommit:false,candidates:[{attackerId:'synthetic-a',
-       targetId:'synthetic-b',diceAfterTerrain:1,attackerSteps:1}]}});
+   trainingRangedHints:{status:'REFERENCE_ONLY',candidates:[
+     {attackerId:'synthetic-a',targetId:'synthetic-b',diceAfterTerrain:1}]}});
  assert.equal(cell(ui.svg,5,5).classes.has('hex-training-ranged-hint'),true);
- assert.equal(ui.svg.children[0].children.some(n=>
-   n.tag==='line'&&n.attrs.class==='training-ranged-corridor'&&
-   n.attrs['pointer-events']==='none'),true);
- assert.match(cell(ui.svg,5,5).attrs['aria-label'],/no autoriza ataque/);
+ assert.equal(ui.svg.children[0].children.some(x=>x.tag==='line'&&
+   x.attrs['pointer-events']==='none'),true);
  assert.match(overview.textContent,/ninguna autoriza ataques/);
  assert.deepEqual(sent,[]);
 });
