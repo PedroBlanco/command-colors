@@ -536,3 +536,22 @@ test('server training terrain and types replace manual guess only in annotated m
  assert.match(info.textContent,/tipo declarado por el servidor/);
  assert.match(info.textContent,/NO autoriza/);
 });
+
+test('versioned medium infantry cannot submit a two-step synthetic move from board',async()=>{
+ const ui=fixture(),sent=[];
+ const c=createMovementBoard({...ui,onConfirm:async fields=>sent.push(fields)});
+ c.setView({...view(),board:[
+   {id:'synthetic-a',side:'A',col:3,row:4},
+   {id:'synthetic-b',side:'B',col:9,row:2}],
+   trainingReference:{kind:'SYNTHETIC_ANCIENTS_TRAINING_V1',
+     scenario:{id:'test-synthetic-001',official:false},
+     unitTypes:{'synthetic-a':'MEDIUM_INFANTRY','synthetic-b':'LIGHT_INFANTRY'},
+     terrain:[]}});
+ c.select({col:3,row:4});c.select({col:4,row:4});
+ assert.equal(ui.confirmButton.disabled,false);
+ c.select({col:5,row:4});
+ assert.equal(ui.confirmButton.disabled,true);
+ assert.match(ui.status.textContent,/supera los pasos/);
+ await c.confirm();
+ assert.deepEqual(sent,[]);
+});
