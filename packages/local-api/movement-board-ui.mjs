@@ -433,7 +433,11 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
         ? `Escenario de entrenamiento «${scenario.title}» · ${scenario.rulesetVersion} · No oficial. Condición de victoria ilustrativa; el motor no la aplica. `
         : '';
       const firingSummary=trainingShots?.status==='REFERENCE_ONLY'
-        ? ` ${trainingShotCandidates.length} parejas de tiro calculadas por perfil, terreno y línea de visión; ninguna autoriza ataques ni registra dados.`
+        ? ` ${trainingShotCandidates.length} parejas de tiro calculadas por perfil, terreno y línea de visión; ninguna autoriza ataques ni registra dados.`+
+          (trainingShotCandidates.length?
+            ' Referencias: '+trainingShotCandidates.slice(0,6).map(s=>
+              `${s.attackerId} → ${s.targetId}: ${s.diceAfterTerrain} dados orientativos`).join('; ')+
+            (trainingShotCandidates.length>6?' (más resultados omitidos)':'')+'.':'')
         : '';
       overviewPanel.textContent=!boardValid?'Sin tablero cargado':
         `${header}Bando ${view.you} · Turno ${view.turn} · Debe actuar ${view.actingSide} · Fase ${view.phase} · Revisión ${view.revision}. ${own.length} unidades propias (${used} movidas), ${enemy.length} rivales.${firingSummary}`;
