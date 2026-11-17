@@ -91,7 +91,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   if(!Array.isArray(rangedTargets)||rangedTargets.length>117||
       rangedTargets.some(t=>!t||!Number.isSafeInteger(t.col)||
         !Number.isSafeInteger(t.row)||t.col<0||t.col>12||
-        t.row<0||t.row>8||!['BLOCKED_BY_VISIBLE_UNITS',
+        t.row<0||t.row>8||!['BLOCKED_BY_VISIBLE_UNITS','BLOCKED_BY_TRAINING_TERRAIN',
         'NO_VISIBLE_UNIT_OBSTRUCTION'].includes(t.visibleUnitCorridor)))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
   if(!Array.isArray(losBlockerCells)||losBlockerCells.length>117||
@@ -156,7 +156,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin unidades interpuestas; terreno y líderes desconocidos' : ''}${terrainKind ? `, terreno del ejercicio: ${terrainKind}` : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}${viewBlocker ? ', unidad visible que bloquea el corredor hipotético' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}` : ', vacía'}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}${orderableOwn ? ', propia disponible para órdenes' : ''}${chosenOrder ? ', seleccionada para recibir órdenes' : ''}${alreadyMoved ? ', movimiento ya realizado' : ''}${range!==null ? `, distancia geométrica ${range} hexágonos` : ''}${profilePreview ? `, referencia de movimiento base ${profilePreview.steps} pasos, combate ${profilePreview.battle}` : ''}${rangedPreview ? rangedPreview.visibleUnitCorridor==='BLOCKED_BY_TRAINING_TERRAIN'?', referencia de disparo bloqueada por terreno sintético':rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'?', referencia de disparo bloqueada por otra unidad visible':', referencia de disparo sin bloqueos detectados; líderes desconocidos' : ''}${terrainKind ? `, terreno del ejercicio: ${terrainKind}` : ''}${focusedTarget ? ', objetivo de inspección elegido' : ''}${viewBlocker ? ', celda que bloquea el corredor provisional' : ''}`,
       'aria-pressed':String(Boolean(origin || step || chosenOrder || chosenTarget || inspected || focusedTarget)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -174,8 +174,8 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       profilePreview.battle==='POSSIBLE'?'hex-profile-battle':'hex-profile-move'
     );
     if (rangedPreview)hex.classList.add(
-      rangedPreview.visibleUnitCorridor==='BLOCKED_BY_VISIBLE_UNITS'
-        ?'hex-profile-los-blocked':'hex-profile-los-open-unverified'
+      rangedPreview.visibleUnitCorridor==='NO_VISIBLE_UNIT_OBSTRUCTION'
+        ?'hex-profile-los-open-unverified':'hex-profile-los-blocked'
     );
     if (focusedTarget)hex.classList.add('hex-profile-target-focus');
     if (viewBlocker)hex.classList.add('hex-profile-los-obstacle');
