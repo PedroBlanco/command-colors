@@ -5,6 +5,8 @@
  */
 import {distance, inBounds, neighbors} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
+import {assessBaseMovement} from '../ancients-rules/movement-profile.mjs';
+import {assessAncientsTerrainMovement} from '../ancients-rules/terrain-movement.mjs';
 
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const key = cell => `${cell.col},${cell.row}`;
@@ -147,4 +149,37 @@ export function extendMovementDraftTo(view, draft, destination) {
     unitId:draft.unitId,revision:draft.revision,origin:coordinates(draft.origin),
     path:[...draft.path.map(coordinates),...continuation]
   };
+}
+
+/**
+ * Client-side explanation of the conservative VERSIONED server screen.
+ * An optional UI hint, never a command authorization. Legacy or unversioned
+ * lab views retain their existing path-builder behavior.
+ */
+export function previewTrainingMovementDraft(view,draft) {
+  if (view?.trainingReference?.kind!=='SYNTHETIC_ANCIENTS_TRAINING_V1'||
+      !view.trainingReference.scenario) return null;
+  const {unit}=checkedDraft(view,draft);
+  const unitType=view.trainingReference.unitTypes?.[unit.id];
+  if(typeof unitType!=='string'||
+      !Array.isArray(view.trainingReference.terrain))
+    return Object.freeze({accepted:false,reason:'TRAINING_REFERENCE_UNAVAILABLE'});
+  if(draft.path.length===0)
+    return Object.freeze({accepted:false,reason:'EMPTY_TRAINING_PATH'});
+  const profile=assessBaseMovement({unitType,steps:draft.path.length});
+  if(profile.status==='EXCEEDS_STANDARD_PROFILE')
+    return Object.freeze({accepted:false,reason:'TRAINING_TROOP_RANGE_EXCEEDED',
+      unitType});
+  if(profile.status==='CONDITIONAL_CHARGE')
+    return Object.freeze({accepted:false,
+      reason:'TRAINING_CONDITIONAL_CHARGE_UNSUPPORTED',unitType});
+  const ground=assessAncientsTerrainMovement({
+    unitType,origin:draft.origin,path:draft.path,
+    terrain:view.trainingReference.terrain
+  });
+  if(ground.status==='BLOCKED')
+    return Object.freeze({accepted:false,reason:'TRAINING_TERRAIN_RESTRICTED',
+      unitType,terrainReason:ground.reason});
+  return Object.freeze({accepted:true,status:'TRAINING_BASE_MOVEMENT_HINT_ONLY',
+    unitType,attackAuthorized:false,needsFullLegalityCheck:true});
 }
