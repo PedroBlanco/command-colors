@@ -565,3 +565,19 @@ test('cavalry shows four-step reach and confirms selected path',async()=>{
  assert.match(ui.status.textContent,/de 4 máximos/);
  await c.confirm();assert.equal(sent[0].path.length,4);
 });
+
+test('public ranged hint outlines rival without submitting synthetic combat',async()=>{
+ const ui=fixture(),sent=[],overview=new Node(ui.svg.ownerDocument,'p');
+ const board=createMovementBoard({...ui,overviewPanel:overview,
+   onRequestDefense:async id=>sent.push(id)});
+ board.setView({...view(),phase:'COMBAT',
+   board:[{id:'synthetic-a',side:'A',col:2,row:5},
+     {id:'synthetic-b',side:'B',col:5,row:5}],
+   trainingRangedHints:{status:'REFERENCE_ONLY',attackAuthorized:false,
+     canCommit:false,candidates:[{attackerId:'synthetic-a',
+       targetId:'synthetic-b',diceAfterTerrain:1,attackerSteps:1}]}});
+ assert.equal(cell(ui.svg,5,5).classes.has('hex-training-ranged-hint'),true);
+ assert.match(cell(ui.svg,5,5).attrs['aria-label'],/no autoriza ataque/);
+ assert.match(overview.textContent,/ninguna autoriza ataques/);
+ assert.deepEqual(sent,[]);
+});
