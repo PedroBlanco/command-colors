@@ -73,7 +73,12 @@ test('serves only the public browser UI, with restrictive CSP',()=>harness(async
     ['/private-projection.mjs','privateProjectionMatches'],
     ['/revision-refresh.mjs','createRevisionRefresh'],
     ['/hex-selection.mjs','beginMovementDraft'],
-    ['/hex-grid/hex.mjs','polygonPoints']
+    ['/hex-grid/hex.mjs','polygonPoints'],
+    ['/ancients-base-reference.mjs','previewBaseRangedOnBoard'],
+    ['/ancients-rules/movement-profile.mjs','assessBaseMovement'],
+    ['/ancients-rules/ranged-profile.mjs','assessAncientsRangedProfile'],
+    ['/ancients-rules/line-of-sight.mjs','assessAncientsLineOfSight'],
+    ['/ancients-rules/terrain-movement.mjs','assessAncientsTerrainMovement']
   ]) {
     const asset=await call('GET',resource);
     assert.equal(asset.status,200,resource);
