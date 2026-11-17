@@ -356,3 +356,28 @@ test('cavalry four-step commit and five-step rejection are atomic',()=>fixture((
  assert.equal(ok.view.board.find(u=>u.id==='synthetic-cavalry-a').col,5);
  assert.equal(ok.view.revision,3);
 }));
+
+test('SQLite persists ranged steps and resets them after the turn',()=>fixture(({inst})=>{
+ const cfg=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
+ const board=cfg.units.map(({id,side,col,row})=>({id,side,col,row}));
+ Object.assign(board[0],{col:2,row:5});Object.assign(board[1],{col:5,row:5});
+ const s=JSON.parse(inst.getRow(MATCH).private_state);
+ s.board=board;s.trainingReference=createTrainingReference(board,cfg.id);
+ inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(s),MATCH);
+ inst.store.initialize('A');
+ apply(inst.store,'A','play_synthetic_card',0,{cardRef:inst.store.view('A').yourHand[0]});
+ apply(inst.store,'A','assign_synthetic_orders',1,{unitIds:['synthetic-a']});
+ apply(inst.store,'A','move_synthetic_unit',2,
+   {unitId:'synthetic-a',path:[{col:3,row:5}]},'tracked_bow_move_01');
+ apply(inst.store,'A','finish_synthetic_movement',3);
+ const hints=inst.store.view('A').trainingRangedHints;
+ assert.equal(hints.candidates.some(c=>c.targetId==='synthetic-b'&&
+   c.attackerSteps===1&&c.diceAfterTerrain===1),true);
+ assert.equal(hints.attackAuthorized,false);
+ assert.equal(inst.store.view('B').trainingRangedHints.candidates.length,0);
+ apply(inst.store,'A','finish_synthetic_combat',4);
+ apply(inst.store,'A','acknowledge_synthetic_draw',5);
+ const stored=JSON.parse(inst.getRow(MATCH).private_state);
+ assert.equal(stored.trainingMovementLedger.turn,'B');
+ assert.equal(stored.trainingMovementLedger.stepsByUnit['synthetic-a'],0);
+}));

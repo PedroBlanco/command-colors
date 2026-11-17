@@ -12,6 +12,8 @@ import {createServerSyntheticMovementPolicy} from '../movement/server-policy.mjs
 import {projectTrainingReference} from './training-reference.mjs';
 import {getTrainingScenario} from './training-scenario.mjs';
 import {screenVersionedTrainingMove,createServerTrainingMovementPolicy} from './training-movement-screen.mjs';
+import {createTrainingMovementLedger,recordTrainingMovementLedger,
+  resetTrainingMovementLedger,projectTrainingRangedHints} from './training-ranged-ledger.mjs';
 
 const KEY = /^[A-Za-z0-9_-]{8,80}$/;
 const TYPES = new Set([
@@ -46,7 +48,10 @@ function project(row, matchId, actor) {
   return {matchId, status: 'ACTIVE', board: structuredClone(state.board),
     ...(Object.hasOwn(state,'trainingReference')
       ? {trainingReference:projectTrainingReference(state)} : {}),
-    movedUnitIds: Array.isArray(state.movedUnitIds) ? [...state.movedUnitIds] : null, ...view};
+    movedUnitIds: Array.isArray(state.movedUnitIds) ? [...state.movedUnitIds] : null,
+    ...(Object.hasOwn(state,'trainingMovementLedger')
+      ? {trainingRangedHints:projectTrainingRangedHints(state,actor)} : {}),
+    ...view};
 }
 
 function semanticCommand(request) {
@@ -99,6 +104,8 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
       // This is an invented laboratory policy; never accept movement range from HTTP.
       createServerSyntheticMovementPolicy(state.board);
       state.movedUnitIds = [];
+      const ledger=createTrainingMovementLedger(state);
+      if(ledger)state.trainingMovementLedger=ledger;
       db.prepare('UPDATE matches SET private_state=?, lobby_revision=lobby_revision+1 WHERE id=?')
         .run(JSON.stringify(state), matchId);
       const updated = {...row, private_state: JSON.stringify(state)};
@@ -169,16 +176,24 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
           if (!training.accepted) result = {accepted:false,reason:training.reason};
         }
         if (result.accepted) {
+          const nextLedger=recordTrainingMovementLedger(state,approvedCommand.unitId,
+            approvedCommand.path.length);
           state.board = result.nextState.board;
           state.movedUnitIds = result.nextState.movedUnitIds;
+          if(nextLedger)state.trainingMovementLedger=nextLedger;
           state.commandSession.phaseState = result.nextState.phaseState;
           assertCommandSnapshot(state.commandSession);
         }
       } else {
         result = transitionCommandSession(state.commandSession, approvedCommand);
         if (result.accepted) {
+          const nextLedger=semantic.type==='acknowledge_synthetic_draw'?
+            resetTrainingMovementLedger(state,result.nextState.phaseState.turn):null;
           state.commandSession = result.nextState;
-          if (semantic.type === 'acknowledge_synthetic_draw') state.movedUnitIds = [];
+          if (semantic.type === 'acknowledge_synthetic_draw') {
+            state.movedUnitIds = [];
+            if(nextLedger)state.trainingMovementLedger=nextLedger;
+          }
         }
       }
       if (!result.accepted) {
