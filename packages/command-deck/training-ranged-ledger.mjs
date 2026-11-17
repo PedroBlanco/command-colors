@@ -73,8 +73,11 @@ export function recordTrainingMovementLedger(state,unitId,steps){
   const r=readTrainingMovementLedger(state);
   if(!r)return null;
   const unit=state.board.find(u=>u.id===unitId);
-  if(!unit||unit.side!==r.turn||!Number.isSafeInteger(steps)||
-     steps<1||steps>32||r.stepsByUnit[unitId]!==0||
+  const ref=projectTrainingReference(state);
+  const profile=unit&&ref?.unitTypes?.[unit.id]&&
+    BASE_MOVEMENT_PROFILES[ref.unitTypes[unit.id]];
+  if(!unit||unit.side!==r.turn||!profile||!Number.isSafeInteger(steps)||
+     steps<1||steps>profile.maxSteps||r.stepsByUnit[unitId]!==0||
      state.movedUnitIds.includes(unitId))invalid();
   return {...r,stepsByUnit:{...r.stepsByUnit,[unitId]:steps}};
 }
