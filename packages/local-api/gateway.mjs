@@ -24,6 +24,7 @@ const ANCIENTS_REFERENCE_FILE = fileURLToPath(new URL('./ancients-base-reference
 const ANCIENTS_PROFILE_FILE = fileURLToPath(new URL('../ancients-rules/movement-profile.mjs',import.meta.url));
 const ANCIENTS_RANGED_FILE = fileURLToPath(new URL('../ancients-rules/ranged-profile.mjs',import.meta.url));
 const ANCIENTS_LOS_FILE = fileURLToPath(new URL('../ancients-rules/line-of-sight.mjs',import.meta.url));
+const ANCIENTS_TERRAIN_FILE = fileURLToPath(new URL('../ancients-rules/terrain-movement.mjs',import.meta.url));
 // Exact same-origin allowlist: never serve arbitrary repository paths.
 const BROWSER_ASSETS = new Map([
   ['/browser-ui.mjs', CLIENT_FILE],
@@ -37,7 +38,8 @@ const BROWSER_ASSETS = new Map([
   ['/ancients-base-reference.mjs', ANCIENTS_REFERENCE_FILE],
   ['/ancients-rules/movement-profile.mjs', ANCIENTS_PROFILE_FILE],
   ['/ancients-rules/ranged-profile.mjs', ANCIENTS_RANGED_FILE],
-  ['/ancients-rules/line-of-sight.mjs', ANCIENTS_LOS_FILE]
+  ['/ancients-rules/line-of-sight.mjs', ANCIENTS_LOS_FILE],
+  ['/ancients-rules/terrain-movement.mjs', ANCIENTS_TERRAIN_FILE]
 ]);
 
 async function jsonRequest(req) {
