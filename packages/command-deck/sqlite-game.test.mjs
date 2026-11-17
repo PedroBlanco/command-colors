@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createSqliteCommandDeckStore, hasCommandDeck} from './sqlite-game.mjs';
 import {createTrainingReference} from './training-reference.mjs';
+import {getTrainingScenario,NEW_MATCH_TRAINING_SCENARIO_ID} from './training-scenario.mjs';
 
 const MATCH = '123e4567-e89b-42d3-a456-426614174000';
 const initial = () => ({schemaVersion:1,matchId:MATCH,status:'ACTIVE',turn:'A',board:[{id:'unit_1',side:'A',col:3,row:4},{id:'alpha',side:'A',col:4,row:4},
@@ -332,4 +333,26 @@ test('training terrain rejection is atomic and a valid move still commits',()=>f
  assert.equal(inst.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,2);
  assert.equal(inst.store.dispatch(command('A','move_synthetic_unit',2,
    {unitId:'synthetic-a',path:[{col:5,row:4}]},'valid_training_move_01')).code,'APPLIED');
+}));
+
+test('cavalry four-step commit and five-step rejection are atomic',()=>fixture(({inst})=>{
+ const cfg=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
+ const board=cfg.units.map(({id,side,col,row})=>({id,side,col,row}));
+ const state=JSON.parse(inst.getRow(MATCH).private_state);
+ state.board=board;state.trainingReference=createTrainingReference(board,cfg.id);
+ inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ inst.store.initialize('A');
+ apply(inst.store,'A','play_synthetic_card',0,{cardRef:inst.store.view('A').yourHand[0]});
+ apply(inst.store,'A','assign_synthetic_orders',1,{unitIds:['synthetic-cavalry-a']});
+ const path=[{col:2,row:7},{col:3,row:7},{col:4,row:7},{col:5,row:7}];
+ const before=inst.getRow(MATCH);
+ assert.equal(inst.store.dispatch(command('A','move_synthetic_unit',2,
+   {unitId:'synthetic-cavalry-a',path:[...path,{col:6,row:7}]})).code,
+   'MOVEMENT_LIMIT_EXCEEDED');
+ assert.deepEqual(inst.getRow(MATCH),before);
+ const ok=inst.store.dispatch(command('A','move_synthetic_unit',2,
+   {unitId:'synthetic-cavalry-a',path},'cavalry_valid_001'));
+ assert.equal(ok.code,'APPLIED');
+ assert.equal(ok.view.board.find(u=>u.id==='synthetic-cavalry-a').col,5);
+ assert.equal(ok.view.revision,3);
 }));

@@ -10,7 +10,7 @@ import {dirname} from 'node:path';
 import {initializeSchema, CCW_SCHEMA_SQL} from './schema-version.mjs';
 import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqlite-game.mjs';
 import {createTrainingReference, projectTrainingReference} from '../command-deck/training-reference.mjs';
-import {getTrainingScenario} from '../command-deck/training-scenario.mjs';
+import {getTrainingScenario,NEW_MATCH_TRAINING_SCENARIO_ID} from '../command-deck/training-scenario.mjs';
 import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
 import {proposeMovementDraft, projectMovementDraft} from '../ancients-rules/movement-draft-contract.mjs';
@@ -47,14 +47,14 @@ function normalizeHandle(value) {
 function initialState(matchId) {
   // One server-bundled, validated synthetic scenario drives both placement
   // and hand counts. No browser input or official licensed setup is involved.
-  const scenario=getTrainingScenario();
+  const scenario=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
   const board=scenario.units.map(({id,side,col,row})=>({id,side,col,row}));
   const privateHand=side=>Array.from({length:scenario.handSizes[side]},
     (_,index)=>`PRIVATE_${side}_${index+1}`);
   return {
     schemaVersion: 1, matchId, status: 'ACTIVE', turn:scenario.startingSide,
     board,
-    trainingReference:createTrainingReference(board),
+    trainingReference:createTrainingReference(board,scenario.id),
     hands:{A:privateHand('A'),B:privateHand('B')},
     deck:['HIDDEN_FUTURE_CARD']
   };

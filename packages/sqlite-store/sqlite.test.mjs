@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {openSqliteComposition} from './sqlite.mjs';
+import {getTrainingScenario,NEW_MATCH_TRAINING_SCENARIO_ID} from '../command-deck/training-scenario.mjs';
+import {createTrainingReference} from '../command-deck/training-reference.mjs';
 
 const PASSWORD = 'test-only-DO-NOT-USE-in-production-00000';
 async function local(fn, options={}) {
@@ -302,14 +304,12 @@ test('new synthetic matches deploy A and B along opposite long edges, regardless
     const matchId=invite(s,owner,guest,handle);
     const a=s.getStore(matchId).view('A');
     const b=s.getStore(matchId).view('B');
-    assert.equal(a.board.length,2);
+    const scenario=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
+    assert.deepEqual(a.board,scenario.units.map(({id,side,col,row})=>({id,side,col,row})));
     assert.deepEqual(a.board,b.board);
-    assert.ok(a.board.find(unit=>unit.side==='A').row >
-              a.board.find(unit=>unit.side==='B').row);
-    assert.deepEqual(a.board,[
-      {id:'synthetic-a',side:'A',col:3,row:6},
-      {id:'synthetic-b',side:'B',col:9,row:2}
-    ]);
+    assert.equal(a.trainingReference.scenario.id,scenario.id);
+    assert.equal(a.board.filter(u=>u.side==='A').length,2);
+    assert.equal(a.board.filter(u=>u.side==='B').length,2);
     assert.equal(s.invitations.getMatch({sessionToken:owner,matchId}).players[0].side,'A');
     assert.equal(s.invitations.getMatch({sessionToken:guest,matchId}).players[1].side,'B');
   }
@@ -327,11 +327,13 @@ test('previously saved landscape lab match is preserved without silent board mig
     {id:'synthetic-b',side:'B',col:9,row:4}
   ];
   state.board=olderBoard;
+  state.trainingReference=createTrainingReference(olderBoard);
   db.prepare('UPDATE matches SET private_state=? WHERE id=?')
     .run(JSON.stringify(state),matchId);
   s.close();
   const reopened=open();
   assert.deepEqual(reopened.getStore(matchId).view('A').board,olderBoard);
   assert.deepEqual(reopened.getStore(matchId).view('B').board,olderBoard);
+  assert.equal(reopened.getStore(matchId).view('A').trainingReference.scenario.id,'test-synthetic-001');
   assert.equal(reopened.invitations.getMatch({sessionToken:alice,matchId}).status,'READY');
 }));

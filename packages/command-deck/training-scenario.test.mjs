@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import source from '../../scenarios/demo-synthetic.json' with {type:'json'};
-import {getTrainingScenario,compileTrainingScenario} from './training-scenario.mjs';
+import {getTrainingScenario,compileTrainingScenario,NEW_MATCH_TRAINING_SCENARIO_ID} from './training-scenario.mjs';
 
 test('scenario fixture drives the server setup without activating victory',()=>{
  const s=getTrainingScenario();
@@ -20,4 +20,11 @@ test('scenario compiler rejects overlapping deployment and unknown troops',()=>{
  s.units[1].hex={col:9,row:2};
  s.units[1].unitType='UNKNOWN_TROOP';
  assert.throws(()=>compileTrainingScenario(s),/INVALID_SYNTHETIC_SCENARIO/);
+});
+
+test('cavalry exercise preserves the original scenario',()=>{
+ const s=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
+ assert.equal(getTrainingScenario().units.length,2);
+ assert.deepEqual(s.units.filter(u=>u.unitType.endsWith('_CAVALRY')).map(u=>u.unitType),
+   ['LIGHT_CAVALRY','MEDIUM_CAVALRY']);
 });
