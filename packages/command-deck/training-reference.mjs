@@ -21,11 +21,12 @@ export function createTrainingReference(board){
   const scenario=getTrainingScenario();
   if(!Array.isArray(board)||board.length!==scenario.units.length)fail();
   const matching=new Map(scenario.units.map(u=>[u.id,u]));
-  const seen=new Set();
+  const seen=new Set(),positions=new Set();
   for(const unit of board){
     const source=matching.get(unit?.id);
-    if(!source||unit.side!==source.side||!coord(unit)||seen.has(unit.id))fail();
-    seen.add(unit.id);
+    if(!source||unit.side!==source.side||!coord(unit)||
+       seen.has(unit.id)||positions.has(key(unit)))fail();
+    seen.add(unit.id);positions.add(key(unit));
   }
   return {
     kind:TRAINING_REFERENCE_KIND,
