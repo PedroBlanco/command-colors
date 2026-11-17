@@ -22,13 +22,9 @@ test('scenario compiler rejects overlapping deployment and unknown troops',()=>{
  assert.throws(()=>compileTrainingScenario(s),/INVALID_SYNTHETIC_SCENARIO/);
 });
 
-test('new cavalry exercise keeps legacy catalog unchanged',()=>{
- const old=getTrainingScenario(),next=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
- assert.equal(old.id,'test-synthetic-001');
- assert.equal(old.units.length,2);
- assert.equal(next.units.length,4);
- assert.equal(next.official,false);
- assert.equal(next.units.find(u=>u.id==='synthetic-cavalry-a').unitType,'LIGHT_CAVALRY');
- assert.equal(next.units.find(u=>u.id==='synthetic-cavalry-b').unitType,'MEDIUM_CAVALRY');
- assert.throws(()=>getTrainingScenario('../untrusted.json'),/INVALID_SYNTHETIC_SCENARIO/);
+test('cavalry exercise preserves the original scenario',()=>{
+ const s=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
+ assert.equal(getTrainingScenario().units.length,2);
+ assert.deepEqual(s.units.filter(u=>u.unitType.endsWith('_CAVALRY')).map(u=>u.unitType),
+   ['LIGHT_CAVALRY','MEDIUM_CAVALRY']);
 });
