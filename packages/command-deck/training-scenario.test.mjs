@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import source from '../../scenarios/demo-synthetic.json' with {type:'json'};
-import {getTrainingScenario,compileTrainingScenario} from './training-scenario.mjs';
+import {getTrainingScenario,compileTrainingScenario,NEW_MATCH_TRAINING_SCENARIO_ID} from './training-scenario.mjs';
 
 test('scenario fixture drives the server setup without activating victory',()=>{
  const s=getTrainingScenario();
@@ -20,4 +20,15 @@ test('scenario compiler rejects overlapping deployment and unknown troops',()=>{
  s.units[1].hex={col:9,row:2};
  s.units[1].unitType='UNKNOWN_TROOP';
  assert.throws(()=>compileTrainingScenario(s),/INVALID_SYNTHETIC_SCENARIO/);
+});
+
+test('new cavalry exercise keeps legacy catalog unchanged',()=>{
+ const old=getTrainingScenario(),next=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
+ assert.equal(old.id,'test-synthetic-001');
+ assert.equal(old.units.length,2);
+ assert.equal(next.units.length,4);
+ assert.equal(next.official,false);
+ assert.equal(next.units.find(u=>u.id==='synthetic-cavalry-a').unitType,'LIGHT_CAVALRY');
+ assert.equal(next.units.find(u=>u.id==='synthetic-cavalry-b').unitType,'MEDIUM_CAVALRY');
+ assert.throws(()=>getTrainingScenario('../untrusted.json'),/INVALID_SYNTHETIC_SCENARIO/);
 });
