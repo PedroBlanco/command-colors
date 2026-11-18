@@ -153,6 +153,14 @@ function renderRangedCheck() {
   target.disabled=!enabled||rangedCheckBusy;
   el('board-ranged-check-button').disabled=!enabled||rangedCheckBusy||
     !attacker.value||!target.value;
+  const candidate=cached?.trainingRangedHints?.status==='REFERENCE_ONLY'
+    ? cached.trainingRangedHints.candidates?.find(c=>
+        c?.attackerId===attacker.value&&c?.targetId===target.value)
+    : null;
+  el('board-ranged-dice-hint').textContent=candidate&&
+    Number.isSafeInteger(candidate.diceAfterTerrain)&&candidate.diceAfterTerrain>0
+    ? `Referencia del servidor: ${candidate.diceAfterTerrain} dados para esta pareja. No autoriza el ataque.`
+    : 'Selecciona una pareja de tiro orientativa y compruébala antes de registrar dados.';
   const roll=el('board-ranged-roll-mode');
   if(!['DIGITAL','PHYSICAL'].includes(roll.value))roll.value='DIGITAL';
   const physical=roll.value==='PHYSICAL';
