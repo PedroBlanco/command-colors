@@ -266,7 +266,8 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
           expectedRevision:body.expectedRevision,idempotencyKey:body.idempotencyKey,
           cardRef:body.cardRef,unitIds:body.unitIds,unitId:body.unitId,
           path:body.path,targetUnit:body.targetUnit,choice:body.choice,
-          attackerId:body.attackerId,targetId:body.targetId};
+          attackerId:body.attackerId,targetId:body.targetId,
+          mode:body.mode,declaredFaces:body.declaredFaces};
         const result=typeof store.dispatchForSession==='function'
           ? await store.dispatchForSession({sessionToken:token,...command})
           : await store.dispatch({actor,...command});
