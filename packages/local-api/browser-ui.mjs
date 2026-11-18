@@ -164,7 +164,7 @@ function renderRangedCheck() {
     !attacker.value||!target.value;
   const staged=cached?.trainingStagedRangedDice;
   el('board-ranged-roll-result').textContent=staged
-    ? `Tirada registrada (${staged.roll.source==='DIGITAL'?'digital del servidor':'dados físicos declarados'}): ${staged.roll.results.join(', ')}. Coincidencias de color: ${staged.interpretation.matchingColorHits}; banderas pendientes: ${staged.interpretation.flagsPending}; sin efecto a distancia: ${staged.interpretation.misses}. No se han aplicado daños ni retiradas.`
+    ? `Tirada ${staged.attackerId} → ${staged.targetId} registrada (${staged.roll.source==='DIGITAL'?'digital del servidor':'dados físicos declarados'}): ${staged.roll.results.join(', ')}. Coincidencias de color: ${staged.interpretation.matchingColorHits}; banderas pendientes: ${staged.interpretation.flagsPending}; sin efecto a distancia: ${staged.interpretation.misses}. No se han aplicado daños ni retiradas.`
     : '';
 }
 const TRAINING_RANGED_REASONS=Object.freeze({
@@ -252,6 +252,7 @@ function clearMatchPresentation() {
   renderDeck();
 }
 function clearPrivateView() {
+  rangedRollRetry=null;rangedRollBusy=false;
   signedInHandle = null;
   privateScope.reset();
   inspectionSequence++; // invalidate GETs started under an earlier session
@@ -265,6 +266,7 @@ function selectActiveMatch(id) {
   if (privateScope.capture().matchId !== id) {
     closeUpdates();
     inspectionSequence++;
+    rangedRollRetry=null;
     clearMatchPresentation();
   }
   privateScope.selectMatch(id);
