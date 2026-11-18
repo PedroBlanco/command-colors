@@ -130,6 +130,18 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <label>Objetivo rival<select id="board-ranged-target" aria-label="Objetivo rival"></select></label>
 <button type="button" id="board-ranged-check-button" disabled>Comprobar en el servidor</button>
 <p id="board-ranged-check-result" role="status" aria-live="polite"></p>
+<div id="board-ranged-roll-controls">
+<label>Modalidad de dados
+<select id="board-ranged-roll-mode">
+<option value="DIGITAL">Dados digitales (servidor)</option>
+<option value="PHYSICAL">Dados físicos (resultado declarado)</option>
+</select></label>
+<label id="board-ranged-physical-group" hidden>Caras de los dados físicos, separadas por comas
+<input id="board-ranged-physical-faces" placeholder="LIGHT, FLAG, SWORDS" autocomplete="off" maxlength="256"></label>
+<button type="button" id="board-ranged-roll-button" disabled>Registrar tirada de entrenamiento</button>
+<p class="notice">Una tirada por turno de entrenamiento. Los dados quedan registrados, pero no eliminan bloques ni ejecutan retiradas. Una tirada física no puede verificarse automáticamente.</p>
+<p id="board-ranged-roll-result" role="status" aria-live="polite"></p>
+</div>
 </fieldset>
 <button type="button" id="board-inspect-toggle" aria-pressed="false" disabled>Inspeccionar tablero</button>
 <p id="board-inspect-info" role="status" aria-live="polite" hidden></p>
