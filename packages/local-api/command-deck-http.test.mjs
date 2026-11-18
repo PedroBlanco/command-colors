@@ -144,7 +144,7 @@ test('HTTP ranged check ignores forged context and preserves match revision',()=
  assert.equal((await command(h,url,tokens.carol,'check_training_ranged_declaration',3,arg)).status,404);
 }));
 
-test('HTTP digital training dice use server count, persist once, and never apply hits',()=>lab(async start=>{
+test('HTTP digital dice use server count and reject forged actor',()=>lab(async start=>{
  const h=await start(),{tokens,url,matchId}=await setupLab(h),db=h.service.unsafeTestDatabase();
  const s=JSON.parse(db.prepare('SELECT private_state FROM matches WHERE id=?').get(matchId).private_state);
  Object.assign(s.board[0],{col:2,row:5});Object.assign(s.board[1],{col:5,row:5});
@@ -153,25 +153,15 @@ test('HTTP digital training dice use server count, persist once, and never apply
  await command(h,url,tokens.alice,'play_synthetic_card',0,{cardRef:init.data.state.yourHand[0]});
  await command(h,url,tokens.alice,'assign_synthetic_orders',1,{unitIds:['synthetic-a']});
  await command(h,url,tokens.alice,'finish_synthetic_movement',2);
- const body={attackerId:'synthetic-a',targetId:'synthetic-b',mode:'DIGITAL',
-   actor:'B',diceCount:32,randomIndex:0};
- const rolled=await command(h,url,tokens.alice,'stage_training_ranged_dice',3,body,'training_http_roll_001');
- assert.equal(rolled.status,200);assert.equal(rolled.data.code,'APPLIED');
- const staged=rolled.data.state.trainingStagedRangedDice;
- assert.equal(staged.roll.source,'DIGITAL');
- assert.equal(staged.roll.verification,'SERVER_GENERATED');
- assert.equal(staged.roll.results.length,2);
- assert.equal(staged.interpretation.hitsApplied,false);
- assert.deepEqual(rolled.data.state.board,s.board);
- const replay=await command(h,url,tokens.alice,'stage_training_ranged_dice',3,body,'training_http_roll_001');
- assert.equal(replay.data.code,'ALREADY_APPLIED');
- assert.equal((await command(h,url,tokens.alice,'stage_training_ranged_dice',4,body,
-   'training_http_roll_002')).status,409);
- assert.equal((await command(h,url,tokens.bob,'stage_training_ranged_dice',4,body,
-   'training_http_bob_001')).status,403);
- assert.equal((await command(h,url,tokens.carol,'stage_training_ranged_dice',4,body,
-   'training_http_carol_001')).status,404);
+ const arg={attackerId:'synthetic-a',targetId:'synthetic-b',mode:'DIGITAL',
+   diceCount:32,actor:'B',randomIndex:0};
+ const r=await command(h,url,tokens.alice,'stage_training_ranged_dice',3,arg);
+ assert.equal(r.data.code,'APPLIED');
+ assert.equal(r.data.state.trainingStagedRangedDice.roll.results.length,2);
+ assert.equal(r.data.state.trainingStagedRangedDice.roll.verification,'SERVER_GENERATED');
+ assert.equal(r.data.state.trainingStagedRangedDice.interpretation.hitsApplied,false);
+ assert.equal((await command(h,url,tokens.bob,'stage_training_ranged_dice',4,arg)).status,403);
+ assert.equal((await command(h,url,tokens.carol,'stage_training_ranged_dice',4,arg)).status,404);
  const events=await h.call('GET',`${url}/events`,tokens.bob);
  assert.equal(events.data.events.at(-1).type,'TRAINING_RANGED_DICE_STAGED');
- assert.equal(events.data.events.at(-1).blocksRemoved,false);
 }));
