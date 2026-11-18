@@ -10,6 +10,7 @@ const message = value => {el('message').textContent = value;};
 const stateText = value => {el('state').textContent = JSON.stringify(value,null,2);};
 let cached = null;
 let rangedCheckContext=null,rangedCheckBusy=false;
+let rangedRollBusy=false,rangedRollRetry=null;
 let signedInHandle = null;
 const privateScope = createPrivateViewScope();
 let movementBoard = null;
@@ -152,6 +153,19 @@ function renderRangedCheck() {
   target.disabled=!enabled||rangedCheckBusy;
   el('board-ranged-check-button').disabled=!enabled||rangedCheckBusy||
     !attacker.value||!target.value;
+  const roll=el('board-ranged-roll-mode');
+  if(!['DIGITAL','PHYSICAL'].includes(roll.value))roll.value='DIGITAL';
+  const physical=roll.value==='PHYSICAL';
+  el('board-ranged-physical-group').hidden=!physical;
+  roll.disabled=!enabled||rangedRollBusy;
+  el('board-ranged-physical-faces').disabled=!enabled||rangedRollBusy||!physical;
+  el('board-ranged-roll-button').disabled=rangedRollBusy||rangedCheckBusy||
+    !deckActions(cached).includes('stage_training_ranged_dice')||
+    !attacker.value||!target.value;
+  const staged=cached?.trainingStagedRangedDice;
+  el('board-ranged-roll-result').textContent=staged
+    ? `Tirada registrada (${staged.roll.source==='DIGITAL'?'digital del servidor':'dados físicos declarados'}): ${staged.roll.results.join(', ')}. Coincidencias de color: ${staged.interpretation.matchingColorHits}; banderas pendientes: ${staged.interpretation.flagsPending}; sin efecto a distancia: ${staged.interpretation.misses}. No se han aplicado daños ni retiradas.`
+    : '';
 }
 const TRAINING_RANGED_REASONS=Object.freeze({
   UNIT_NOT_ELIGIBLE:'La unidad atacante no recibió una orden o no pertenece a tu bando.',
@@ -580,6 +594,45 @@ for (const field of ['board-ranged-attacker','board-ranged-target']) {
     renderRangedCheck();
   });
 }
+el('board-ranged-roll-mode').addEventListener('change',renderRangedCheck);
+el('board-ranged-physical-faces').addEventListener('input',()=>{
+  rangedRollRetry=null;
+});
+el('board-ranged-roll-button').addEventListener('click',async()=>{
+  if(rangedRollBusy||!cached)return;
+  const matchId=cached.matchId,revision=cached.revision,ticket=privateScope.capture();
+  const fields={
+    attackerId:el('board-ranged-attacker').value,
+    targetId:el('board-ranged-target').value,
+    mode:el('board-ranged-roll-mode').value
+  };
+  try{
+    if(!deckActions(cached).includes('stage_training_ranged_dice'))
+      throw Error('ACCION_NO_DISPONIBLE');
+    if(fields.mode==='PHYSICAL'){
+      fields.declaredFaces=el('board-ranged-physical-faces').value
+        .split(',').map(s=>s.trim().toUpperCase());
+    }
+    const fingerprint=JSON.stringify([matchId,revision,fields]);
+    if(rangedRollRetry?.fingerprint!==fingerprint)
+      rangedRollRetry={fingerprint,key:crypto.randomUUID().replaceAll('-','')};
+    // deckCommand never sends a client-provided dice count, actor, roll ID,
+    // target type or RNG seed. The server rechecks everything transactionally.
+    deckCommand(cached,'stage_training_ranged_dice',fields,rangedRollRetry.key);
+    rangedRollBusy=true;renderRangedCheck();
+    const confirmed=await sendDeck('stage_training_ranged_dice',fields,rangedRollRetry.key);
+    if(confirmed&&privateScope.isCurrent(ticket,matchId)){
+      rangedRollRetry=null;
+      message('Tirada registrada por el servidor. Impactos y retiradas sin aplicar.');
+    }
+  }catch(error){
+    if(privateScope.isCurrent(ticket,matchId)&&cached?.revision===revision)
+      message('Tirada no registrada: '+(
+        ['ACCION_NO_DISPONIBLE','MODO_TIRADA_INVALIDO','CARAS_DADOS_INVALIDAS',
+         'DECLARACION_TIRO_INVALIDA'].includes(error.message)
+          ? error.message : 'verifica la fase, los dados y la sesión.'));
+  }finally{rangedRollBusy=false;renderRangedCheck();}
+});
 el('board-ranged-check-button').addEventListener('click',async()=>{
   if(rangedCheckBusy||!cached) return;
   const matchId=cached.matchId,revision=cached.revision,player=cached.you;
