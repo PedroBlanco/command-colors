@@ -28,7 +28,9 @@ export function deckActions(view) {
       'ask_synthetic_defense','finish_synthetic_combat',
       ...(view.trainingRangedHints?.status==='REFERENCE_ONLY' &&
          view.trainingRangedHints?.attackAuthorized===false
-         ? ['check_training_ranged_declaration'] : [])
+         ? ['check_training_ranged_declaration',
+              ...(view.trainingStagedRangedDice==null
+                ? ['stage_training_ranged_dice'] : [])] : [])
     ],
     DRAW_CARD: ['acknowledge_synthetic_draw']
   };
@@ -66,6 +68,7 @@ export function deckCommand(view, type, data = {}, key) {
       request.unitId = data.unitId;
       request.path = data.path.map(cell => ({col: cell.col, row: cell.row}));
       break;
+    case 'stage_training_ranged_dice':
     case 'check_training_ranged_declaration': {
       const attacker=data.attackerId,target=data.targetId;
       if (!IDENTIFIER.test(attacker) || !IDENTIFIER.test(target) ||
@@ -74,6 +77,18 @@ export function deckCommand(view, type, data = {}, key) {
           !view.board.some(u=>u?.id===target&&u.side!==view.you))
         throw new Error('DECLARACION_TIRO_INVALIDA');
       request.attackerId=attacker;request.targetId=target;
+      if(type==='stage_training_ranged_dice'){
+        if(!['DIGITAL','PHYSICAL'].includes(data.mode))throw Error('MODO_TIRADA_INVALIDO');
+        request.mode=data.mode;
+        if(data.mode==='PHYSICAL'){
+          const faces=['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS'];
+          if(!Array.isArray(data.declaredFaces)||data.declaredFaces.length<1||
+              data.declaredFaces.length>32||
+              !data.declaredFaces.every(face=>faces.includes(face)))
+            throw Error('CARAS_DADOS_INVALIDAS');
+          request.declaredFaces=[...data.declaredFaces];
+        } else if(data.declaredFaces!==undefined) throw Error('CARAS_DADOS_INVALIDAS');
+      }
       break;
     }
     case 'ask_synthetic_defense':
