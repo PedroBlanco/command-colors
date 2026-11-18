@@ -15,13 +15,16 @@ import {screenVersionedTrainingMove,createServerTrainingMovementPolicy} from './
 import {createTrainingMovementLedger,recordTrainingMovementLedger,
   resetTrainingMovementLedger,projectTrainingRangedHints} from './training-ranged-ledger.mjs';
 import {checkTrainingRangedDeclaration} from './training-ranged-declaration.mjs';
+import {prepareStagedTrainingRangedDice,projectStagedTrainingRangedDice} from './training-ranged-dice.mjs';
+import {randomUUID} from 'node:crypto';
 
 const KEY = /^[A-Za-z0-9_-]{8,80}$/;
 const TYPES = new Set([
   'play_synthetic_card', 'assign_synthetic_orders', 'undo_synthetic_orders',
   'finish_synthetic_movement', 'ask_synthetic_defense',
   'answer_synthetic_defense', 'finish_synthetic_combat', 'acknowledge_synthetic_draw',
-  'move_synthetic_unit', 'check_training_ranged_declaration'
+  'move_synthetic_unit', 'check_training_ranged_declaration',
+  'stage_training_ranged_dice'
 ]);
 const SYNTHETIC_CARDS = Object.freeze(Array.from({length: 18}, (_, i) => `synthetic_card_${String(i + 1).padStart(2, '0')}`));
 const deny = (status, code) => ({status, code});
@@ -52,6 +55,8 @@ function project(row, matchId, actor) {
     movedUnitIds: Array.isArray(state.movedUnitIds) ? [...state.movedUnitIds] : null,
     ...(Object.hasOwn(state,'trainingMovementLedger')
       ? {trainingRangedHints:projectTrainingRangedHints(state,actor)} : {}),
+    ...(Object.hasOwn(state,'trainingStagedRangedDice')
+      ? {trainingStagedRangedDice:projectStagedTrainingRangedDice(state)} : {}),
     ...view};
 }
 
@@ -66,6 +71,10 @@ function semanticCommand(request) {
   if (type === 'move_synthetic_unit') { fields.unitId = request.unitId; fields.path = request.path; }
   if (type === 'check_training_ranged_declaration') {
     fields.attackerId = request.attackerId; fields.targetId = request.targetId;
+  }
+  if (type === 'stage_training_ranged_dice') {
+    fields.attackerId=request.attackerId;fields.targetId=request.targetId;
+    fields.mode=request.mode;fields.declaredFaces=request.declaredFaces;
   }
   return {type, fields};
 }
@@ -177,7 +186,22 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
         return {status: 409, code: 'UNDO_NOT_AVAILABLE_AFTER_MOVEMENT', view: project(row, matchId, actor)};
       }
       let result;
-      if (semantic.type === 'move_synthetic_unit') {
+      if(semantic.type==='stage_training_ranged_dice'){
+        const staged=prepareStagedTrainingRangedDice(state,approvedCommand,{
+          rollId:'training_'+randomUUID()
+        });
+        if(!staged.accepted){
+          const code=staged.reason;
+          return {status:code==='NOT_ACTING_PLAYER'?403:
+            code==='TRAINING_DICE_ALREADY_STAGED'?409:400,code};
+        }
+        // Only the public, audited dice capture is a game event. The board,
+        // hands, defence choice, and synthetic COMBAT phase remain unchanged.
+        state.trainingStagedRangedDice=staged.staged;
+        state.commandSession.phaseState.revision+=1;
+        assertCommandSnapshot(state.commandSession);
+        result={accepted:true,events:[staged.event]};
+      } else if (semantic.type === 'move_synthetic_unit') {
         // Older laboratory snapshots without tracking must fail closed.
         if (!Array.isArray(state.movedUnitIds)) return deny(409, 'MOVEMENT_STATE_UNAVAILABLE');
         result = transitionSyntheticMovement({
@@ -209,6 +233,9 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
           if (semantic.type === 'acknowledge_synthetic_draw') {
             state.movedUnitIds = [];
             if(nextLedger)state.trainingMovementLedger=nextLedger;
+            // A training roll belongs to one turn and is already audited in
+            // the public event stream; it cannot enter the next turn.
+            delete state.trainingStagedRangedDice;
           }
         }
       }
