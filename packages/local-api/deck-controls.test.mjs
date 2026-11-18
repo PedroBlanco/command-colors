@@ -85,25 +85,16 @@ test('ranged reference request sends only public attacker/target and current rev
  assert.equal(deckActions({...view,actingSide:'B'}).includes('check_training_ranged_declaration'),false);
 });
 
-test('staging dice sends only mode and physical faces, never count, actor or seed',()=>{
+test('staged dice request excludes forged actor, count and RNG',()=>{
  const v={...baseline(),phase:'COMBAT',
    board:[{id:'archer_a',side:'A'},{id:'rival_b',side:'B'}],
    trainingRangedHints:{status:'REFERENCE_ONLY',attackAuthorized:false}};
- assert.equal(deckActions(v).includes('stage_training_ranged_dice'),true);
- const physical=deckCommand(v,'stage_training_ranged_dice',{
+ const r=deckCommand(v,'stage_training_ranged_dice',{
    attackerId:'archer_a',targetId:'rival_b',mode:'PHYSICAL',
-   declaredFaces:['MEDIUM','FLAG'],diceCount:32,actor:'B',randomIndex:0
- },KEY);
- assert.deepEqual(physical,{
-   type:'stage_training_ranged_dice',expectedRevision:0,idempotencyKey:KEY,
-   attackerId:'archer_a',targetId:'rival_b',mode:'PHYSICAL',
-   declaredFaces:['MEDIUM','FLAG']
- });
- assert.equal(Object.hasOwn(deckCommand(v,'stage_training_ranged_dice',{
-   attackerId:'archer_a',targetId:'rival_b',mode:'DIGITAL'},KEY),'declaredFaces'),false);
- assert.throws(()=>deckCommand(v,'stage_training_ranged_dice',{
-   attackerId:'archer_a',targetId:'rival_b',mode:'PHYSICAL',
-   declaredFaces:['INVALID']},KEY),/CARAS_DADOS_INVALIDAS/);
- assert.equal(deckActions({...v,trainingStagedRangedDice:{roll:{}}}).includes(
+   declaredFaces:['MEDIUM','FLAG'],actor:'B',diceCount:32},KEY);
+ assert.deepEqual(r,{type:'stage_training_ranged_dice',expectedRevision:0,
+   idempotencyKey:KEY,attackerId:'archer_a',targetId:'rival_b',
+   mode:'PHYSICAL',declaredFaces:['MEDIUM','FLAG']});
+ assert.equal(deckActions({...v,trainingStagedRangedDice:{}}).includes(
    'stage_training_ranged_dice'),false);
 });
