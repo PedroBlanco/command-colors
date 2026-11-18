@@ -405,3 +405,31 @@ test('SQLite ranged check is read-only and never consumes its command key',()=>f
  assert.equal(inst.store.dispatch(command('A','finish_synthetic_combat',3,{},
    'readonly_key_001')).code,'APPLIED');
 }));
+
+test('SQLite stages physical dice once without applying casualties',()=>fixture(({inst})=>{
+ const cfg=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
+ const board=cfg.units.map(({id,side,col,row})=>({id,side,col,row}));
+ Object.assign(board[0],{col:2,row:5});Object.assign(board[1],{col:5,row:5});
+ const state=JSON.parse(inst.getRow(MATCH).private_state);
+ state.board=board;state.trainingReference=createTrainingReference(board,cfg.id);
+ inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ inst.store.initialize('A');
+ apply(inst.store,'A','play_synthetic_card',0,{cardRef:inst.store.view('A').yourHand[0]});
+ apply(inst.store,'A','assign_synthetic_orders',1,{unitIds:['synthetic-a']});
+ apply(inst.store,'A','finish_synthetic_movement',2);
+ const args={attackerId:'synthetic-a',targetId:'synthetic-b',mode:'PHYSICAL',
+   declaredFaces:['MEDIUM','FLAG']};
+ const rolled=inst.store.dispatch(command('A','stage_training_ranged_dice',3,
+   args,'staged_roll_001'));
+ assert.equal(rolled.code,'APPLIED');
+ assert.equal(rolled.view.trainingStagedRangedDice.roll.verification,'PLAYER_DECLARED');
+ assert.equal(rolled.view.trainingStagedRangedDice.interpretation.matchingColorHits,1);
+ assert.deepEqual(rolled.view.board,board);
+ assert.equal(inst.store.dispatch(command('A','stage_training_ranged_dice',3,
+   args,'staged_roll_001')).code,'ALREADY_APPLIED');
+ assert.equal(inst.store.dispatch(command('A','stage_training_ranged_dice',4,
+   args,'second_roll_002')).code,'TRAINING_DICE_ALREADY_STAGED');
+ apply(inst.store,'A','finish_synthetic_combat',4);
+ apply(inst.store,'A','acknowledge_synthetic_draw',5);
+ assert.equal(inst.store.view('B').trainingStagedRangedDice,undefined);
+}));

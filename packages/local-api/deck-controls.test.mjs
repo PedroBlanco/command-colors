@@ -84,3 +84,17 @@ test('ranged reference request sends only public attacker/target and current rev
    {attackerId:'enemy_b',targetId:'bow_a'},KEY),/DECLARACION_TIRO_INVALIDA/);
  assert.equal(deckActions({...view,actingSide:'B'}).includes('check_training_ranged_declaration'),false);
 });
+
+test('staged dice request excludes forged actor, count and RNG',()=>{
+ const v={...baseline(),phase:'COMBAT',
+   board:[{id:'archer_a',side:'A'},{id:'rival_b',side:'B'}],
+   trainingRangedHints:{status:'REFERENCE_ONLY',attackAuthorized:false}};
+ const r=deckCommand(v,'stage_training_ranged_dice',{
+   attackerId:'archer_a',targetId:'rival_b',mode:'PHYSICAL',
+   declaredFaces:['MEDIUM','FLAG'],actor:'B',diceCount:32},KEY);
+ assert.deepEqual(r,{type:'stage_training_ranged_dice',expectedRevision:0,
+   idempotencyKey:KEY,attackerId:'archer_a',targetId:'rival_b',
+   mode:'PHYSICAL',declaredFaces:['MEDIUM','FLAG']});
+ assert.equal(deckActions({...v,trainingStagedRangedDice:{}}).includes(
+   'stage_training_ranged_dice'),false);
+});
