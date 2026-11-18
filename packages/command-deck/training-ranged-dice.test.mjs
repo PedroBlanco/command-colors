@@ -30,7 +30,10 @@ test('physical training roll stages only interpreted faces, never battle effects
  assert.deepEqual(project(state),result.staged);
  assert.equal(prepare(state,args,{rollId:'training_roll_002'}).reason,
    'TRAINING_DICE_ALREADY_STAGED');
- state.trainingStagedRangedDice.interpretation.matchingColorHits=9;
+ state.trainingStagedRangedDice={
+   ...state.trainingStagedRangedDice,
+   interpretation:{...state.trainingStagedRangedDice.interpretation,matchingColorHits:9}
+ };
  assert.throws(()=>project(state),/INVALID_TRAINING_DICE_STATE/);
 });
 
