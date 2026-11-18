@@ -405,3 +405,43 @@ test('SQLite ranged check is read-only and never consumes its command key',()=>f
  assert.equal(inst.store.dispatch(command('A','finish_synthetic_combat',3,{},
    'readonly_key_001')).code,'APPLIED');
 }));
+
+test('staged physical ranged dice are durable and never change blocks or authorize combat',()=>fixture(({inst})=>{
+ const cfg=getTrainingScenario(NEW_MATCH_TRAINING_SCENARIO_ID);
+ const board=cfg.units.map(({id,side,col,row})=>({id,side,col,row}));
+ Object.assign(board[0],{col:2,row:5});Object.assign(board[1],{col:5,row:5});
+ const state=JSON.parse(inst.getRow(MATCH).private_state);
+ state.board=board;state.trainingReference=createTrainingReference(board,cfg.id);
+ inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(state),MATCH);
+ inst.store.initialize('A');
+ apply(inst.store,'A','play_synthetic_card',0,{cardRef:inst.store.view('A').yourHand[0]});
+ apply(inst.store,'A','assign_synthetic_orders',1,{unitIds:['synthetic-a']});
+ apply(inst.store,'A','finish_synthetic_movement',2);
+ const fields={attackerId:'synthetic-a',targetId:'synthetic-b',
+   mode:'PHYSICAL',declaredFaces:['MEDIUM','FLAG']};
+ const rejected=inst.store.dispatch(command('A','stage_training_ranged_dice',3,
+   {...fields,declaredFaces:['UNKNOWN','FLAG']},'invalid_physical_faces_001'));
+ assert.equal(rejected.code,'INVALID_TRAINING_DICE_FACES');
+ const row=inst.getRow(MATCH);
+ const rolled=inst.store.dispatch(command('A','stage_training_ranged_dice',3,
+   fields,'staged_physical_roll_001'));
+ assert.equal(rolled.code,'APPLIED');
+ assert.equal(rolled.view.revision,4);
+ assert.equal(rolled.view.trainingStagedRangedDice.roll.verification,'PLAYER_DECLARED');
+ assert.equal(rolled.view.trainingStagedRangedDice.interpretation.matchingColorHits,1);
+ assert.equal(rolled.view.trainingStagedRangedDice.interpretation.flagsPending,1);
+ assert.deepEqual(rolled.view.board,row&&board);
+ assert.equal(rolled.view.trainingStagedRangedDice.interpretation.hitsApplied,false);
+ assert.equal(rolled.view.trainingStagedRangedDice.interpretation.combatResolved,false);
+ const repeated=inst.store.dispatch(command('A','stage_training_ranged_dice',3,
+   fields,'staged_physical_roll_001'));
+ assert.equal(repeated.code,'ALREADY_APPLIED');
+ const blocked=inst.store.dispatch(command('A','stage_training_ranged_dice',4,
+   fields,'second_physical_roll_002'));
+ assert.equal(blocked.code,'TRAINING_DICE_ALREADY_STAGED');
+ assert.equal(inst.getRow(MATCH).game_revision,4);
+ apply(inst.store,'A','finish_synthetic_combat',4);
+ apply(inst.store,'A','acknowledge_synthetic_draw',5);
+ assert.equal(inst.store.view('B').trainingStagedRangedDice,undefined);
+ assert.equal(inst.getRow(MATCH).game_revision,6);
+}));
