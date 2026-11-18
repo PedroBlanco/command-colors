@@ -9,6 +9,8 @@
  */
 import {checkTrainingRangedDeclaration} from './training-ranged-declaration.mjs';
 import {projectTrainingReference} from './training-reference.mjs';
+import {readTrainingMovementLedger} from './training-ranged-ledger.mjs';
+import {precheckAncientsRangedAttack} from '../ancients-rules/ranged-precheck.mjs';
 import {captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice} from '../ancients-rules/battle-dice.mjs';
 
 const fail=code=>{throw new TypeError(code);};
@@ -35,6 +37,22 @@ export function projectStagedTrainingRangedDice(state){
       !state.board.some(u=>u.id===s.attackerId&&u.side===s.turn)||
       !state.board.some(u=>u.id===s.targetId&&u.side!==s.turn)||
       s.roll?.actor!==s.turn)
+    fail('INVALID_TRAINING_DICE_STATE');
+  // The historic roll is validated against the same persisted unit types,
+  // movement steps, terrain and attacker order used at its creation. A roll
+  // with a forged count or target cannot be treated as an audit record.
+  const history=readTrainingMovementLedger(state);
+  if(!history||!['COMBAT','DRAW_CARD'].includes(phase.phase)||
+      !Array.isArray(phase.orderedUnits)||
+      !phase.orderedUnits.includes(s.attackerId))
+    fail('INVALID_TRAINING_DICE_STATE');
+  const verified=precheckAncientsRangedAttack({
+    units:state.board.map(u=>({...u,type:ref.unitTypes[u.id]})),
+    leaders:[],terrain:ref.terrain,
+    attackerId:s.attackerId,targetId:s.targetId,
+    movedSteps:history.stepsByUnit[s.attackerId]
+  });
+  if(verified.status!=='CANDIDATE'||verified.diceAfterTerrain!==s.roll?.diceCount)
     fail('INVALID_TRAINING_DICE_STATE');
   const type=ref.unitTypes[s.targetId];
   let recomputed;
