@@ -5,7 +5,7 @@ import {resolve, dirname, join} from 'node:path';
 import {createServer} from 'node:net';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const tests = [
+export const LOCAL_TEST_FILES = Object.freeze([
   'packages/hex-grid/hex.test.mjs', 'spikes/004/server.test.mjs',
   'packages/access-control/access.test.mjs', 'packages/match-store/store.test.mjs',
   'packages/local-api/gateway.test.mjs', 'packages/local-api/compose.test.mjs',
@@ -15,6 +15,7 @@ const tests = [
   'packages/local-api/browser-gateway.test.mjs',
   'packages/local-api/browser-sqlite-smoke.test.mjs',
   'scripts/check-browser-lab.test.mjs',
+  'scripts/check-test-inventory.test.mjs',
   'scripts/browser-lab.launcher.test.mjs',
   'packages/local-api/revision-stream.test.mjs',
   'packages/local-api/browser-ui.test.mjs',
@@ -27,9 +28,15 @@ const tests = [
   'packages/local-api/browser-deck-ui.test.mjs',
   'packages/local-api/command-deck-sse.test.mjs',
   'packages/dice-roller/dice.test.mjs',
+<<<<<<< HEAD
   'packages/order-validator/validator.test.mjs',
   'packages/order-validator/server-context.test.mjs'
 ];
+=======
+  'packages/order-validator/validator.test.mjs'
+]);
+const tests = LOCAL_TEST_FILES;
+>>>>>>> origin/main
 
 function nodeSupported() {
   const [major, minor] = process.versions.node.split('.').map(Number);
