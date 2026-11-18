@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {checkLocalLab} from './check-browser-lab.mjs';
+import {checkLocalLab, LOCAL_TEST_FILES} from './check-browser-lab.mjs';
+import {verifyTestInventory} from './check-test-inventory.mjs';
 
 test('diagnóstico es de solo lectura, no crea base ni directorios', async() => {
  const root=await mkdtemp(join(tmpdir(), 'ccw-preflight-'));
@@ -12,7 +13,7 @@ test('diagnóstico es de solo lectura, no crea base ni directorios', async() => 
    assert.equal(result.ok,false);
    assert.ok(result.failures.some(x=>x.includes('Faltan')));
    assert.ok(result.warnings.some(x=>x.includes('No existe base')));
-   assert.equal(result.tests,27);
+   assert.equal(result.tests,LOCAL_TEST_FILES.length);
  } finally {await rm(root,{recursive:true,force:true});}
 });
 
@@ -24,4 +25,10 @@ test('diagnóstico rechaza puerto ocupado y puerto inseguro', async()=>{
    const invalid=await checkLocalLab({rootDir:root,portValue:'80',checkPort:async()=>true,sqliteCheck:false});
    assert.ok(invalid.failures.some(x=>x.includes('1024')));
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('el manifiesto completo coincide con todos los archivos locales',()=>{
+ const inventory=verifyTestInventory();
+ assert.equal(inventory.ok,true,JSON.stringify(inventory));
+ assert.equal(inventory.actual,LOCAL_TEST_FILES.length);
 });
