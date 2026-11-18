@@ -36,7 +36,8 @@ export function projectStagedTrainingRangedDice(state){
       !id(s.attackerId)||!id(s.targetId)||
       !state.board.some(u=>u.id===s.attackerId&&u.side===s.turn)||
       !state.board.some(u=>u.id===s.targetId&&u.side!==s.turn)||
-      s.roll?.actor!==s.turn)
+      s.roll?.actor!==s.turn||
+      !id(s.roll?.rollId)||!s.roll.rollId.startsWith('training_'))
     fail('INVALID_TRAINING_DICE_STATE');
   // The historic roll is validated against the same persisted unit types,
   // movement steps, terrain and attacker order used at its creation. A roll
@@ -77,6 +78,9 @@ export function prepareStagedTrainingRangedDice(state,request,{rollId}={}){
   const reference=checkTrainingRangedDeclaration(state,request);
   if(reference.status!=='CANDIDATE')
     return {accepted:false,reason:reference.reason};
+  if(!Number.isSafeInteger(reference.diceAfterTerrain)||
+      reference.diceAfterTerrain<1||reference.diceAfterTerrain>32)
+    return {accepted:false,reason:'TRAINING_NO_RANGED_DICE'};
   const {actor,mode,declaredFaces}=request;
   if(mode!=='DIGITAL'&&mode!=='PHYSICAL')
     return {accepted:false,reason:'INVALID_TRAINING_DICE_MODE'};
