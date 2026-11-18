@@ -48,7 +48,8 @@ function finalizeSnapshotJournal(path) {
 }
 
 async function fsyncFile(path) {
-  const f = await open(path, 'r');
+  // Windows fsync needs a writable handle; r+ preserves the existing contents.
+  const f = await open(path, 'r+');
   try {await f.sync();}
   finally {await f.close();}
 }
