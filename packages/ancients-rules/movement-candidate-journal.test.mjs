@@ -1,0 +1,186 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {CANDIDATE_JOURNAL_KIND,buildAncientsCandidateJournal as build,
+  verifyAncientsCandidateJournal as verify} from './movement-candidate-journal.mjs';
+
+const matchId='123e4567-e89b-42d3-a456-426614174000';
+const at=(col,row)=>({col,row});
+const unit=(id,side,col,row,type='HEAVY_INFANTRY')=>({id,side,col,row,type});
+const leader=(id,side,col,row)=>({id,side,col,row});
+const action=(kind,id,...path)=>({kind,id,path:path.map(([col,row])=>at(col,row))});
+const first=()=>action('LEADER','captain',[2,5]);
+const second=()=>action('UNIT','front',[3,4]);
+const fixture=()=>({
+  matchId,actor:'A',baseRevision:2,
+  units:[unit('front','A',2,4,'LIGHT_INFANTRY'),
+    unit('reserve','A',2,6),unit('foe','B',10,4)],
+  leaders:[leader('captain','A',2,4),leader('foeLeader','B',10,4)],
+  orderedUnitIds:['front','reserve'],
+  orderedLeaderIds:['captain'],terrain:[],
+  actions:[first(),second()]
+});
+
+test('candidate journal contains sequential evidence, never movement permission',()=>{
+  const input=fixture(),before=structuredClone(input);
+  const r=build(input);
+  assert.equal(r.status,'CANDIDATE_EVIDENCE');
+  assert.equal(r.reason,null);
+  assert.equal(r.journal.kind,CANDIDATE_JOURNAL_KIND);
+  assert.equal(r.journal.matchId,matchId);
+  assert.equal(r.journal.baseRevision,2);
+  assert.equal(r.journal.entries.length,2);
+  assert.deepEqual(r.journal.entries.map(e=>e.sequence),[1,2]);
+  assert.deepEqual(r.journal.entries.map(e=>e.pieceKind),['LEADER','UNIT']);
+  assert.deepEqual(r.journal.entries.map(e=>e.pieceId),['captain','front']);
+  assert.equal(r.journal.entries[0].detachedFromUnit,'front');
+  assert.equal(r.journal.entries[1].leaderCarried,null);
+  assert.equal(r.journal.entries[0].previousDigest,r.journal.contextDigest);
+  assert.equal(r.journal.entries[1].previousDigest,r.journal.entries[0].digest);
+  assert.equal(r.journal.finalDigest,r.journal.entries[1].digest);
+  assert.match(r.journal.finalDigest,/^[a-f0-9]{64}$/);
+  assert.equal(r.journal.movementAuthorized,false);
+  assert.equal(r.journal.attackAuthorized,false);
+  assert.equal(r.journal.stateChanged,false);
+  assert.equal(r.journal.needsFullLegalityCheck,true);
+  assert.deepEqual(input,before);
+});
+
+test('journal replay matches only trusted matching scenario, orders and actions',()=>{
+  const input=fixture(),r=build(input);
+  assert.equal(verify({...input,journal:r.journal}),true);
+  assert.equal(verify({...input,actor:'B',journal:r.journal}),false);
+  assert.equal(verify({...input,baseRevision:3,journal:r.journal}),false);
+  assert.equal(verify({...input,orderedUnitIds:['front'],journal:r.journal}),false);
+  assert.equal(verify({...input,actions:[first()],journal:r.journal}),false);
+});
+
+test('editing even one path hex or step breaks verification',()=>{
+  const input=fixture(),r=build(input),altered=structuredClone(r.journal);
+  altered.entries[0].path[0].col=3;
+  assert.equal(verify({...input,journal:altered}),false);
+  const altered2=structuredClone(r.journal);
+  altered2.entries[1].digest='a'.repeat(64);
+  assert.equal(verify({...input,journal:altered2}),false);
+  const altered3=structuredClone(r.journal);
+  altered3.finalDigest='b'.repeat(64);
+  assert.equal(verify({...input,journal:altered3}),false);
+});
+
+test('inserting private or unauthorized extra fields in the journal is rejected',()=>{
+  const input=fixture(),r=build(input);
+  assert.equal(verify({...input,journal:{...r.journal,privateHand:['secret']}}),false);
+  assert.equal(verify({...input,journal:{...r.journal,
+    entries:r.journal.entries.map(e=>({...e,cardInstanceId:'secret'}))}}),false);
+  assert.equal(verify({...input,journal:null}),false);
+  assert.equal(verify({...input,journal:[]}),false);
+});
+
+test('board and terrain changes alter the evidence even if the move remains a candidate',()=>{
+  const input=fixture(),journal=build(input).journal;
+  assert.equal(verify({...input,terrain:[{col:9,row:8,kind:'HILL'}],
+    journal}),false);
+  const withExtra={...input,units:[...input.units,unit('remote','B',9,8)]};
+  assert.equal(build(withExtra).status,'CANDIDATE_EVIDENCE');
+  assert.equal(verify({...withExtra,journal}),false);
+});
+
+test('equivalent ordering of unrelated board pieces and orders gives deterministic digest',()=>{
+  const input=fixture(),firstBuild=build(input);
+  const permuted={
+    ...input,units:[...input.units].reverse(),
+    leaders:[...input.leaders].reverse(),
+    orderedUnitIds:[...input.orderedUnitIds].reverse(),
+    actions:input.actions.map(a=>({path:a.path.map(c=>({row:c.row,col:c.col})),
+      id:a.id,kind:a.kind}))
+  };
+  const secondBuild=build(permuted);
+  assert.deepEqual(secondBuild.journal,firstBuild.journal);
+  assert.equal(verify({...permuted,journal:firstBuild.journal}),true);
+});
+
+test('blocked move never creates partial trace or hash-chain entries',()=>{
+  const input=fixture();
+  const blocked=build({...input,actions:[second(),first()]});
+  assert.equal(blocked.status,'BLOCKED');
+  assert.equal(blocked.reason,'LEADER_ALREADY_MOVED');
+  assert.equal(blocked.step,1);
+  assert.equal(blocked.journal,null);
+  assert.equal(blocked.movementAuthorized,false);
+  assert.equal(blocked.stateChanged,false);
+  assert.equal(verify({...input,actions:[second(),first()],
+    journal:build(input).journal}),false);
+});
+
+test('invalid actor, revision, id, or untrusted input cannot produce evidence',()=>{
+  const input=fixture();
+  for(const patch of [
+    {matchId:'bogus'}, {actor:'BADDY'}, {baseRevision:-1},
+    {baseRevision:1.2}, {actions:[]},
+    {orderedLeaderIds:['foeLeader']},
+    {actions:[{...first(),path:[{col:2,row:5,actor:'B'}]}]}
+  ]) assert.throws(()=>build({...input,...patch}),/INVALID_CANDIDATE_JOURNAL_SCOPE|INVALID_SEQUENCE_CONTEXT/);
+});
+
+test('journal, nested paths and entries are frozen against accidental edits',()=>{
+  const input=fixture(),r=build(input),journal=r.journal;
+  for(const target of [journal,journal.entries,journal.entries[0],
+    journal.entries[0].path,journal.entries[0].path[0],journal.entries[1].from])
+    assert.equal(Object.isFrozen(target),true);
+  assert.throws(()=>{journal.entries[0].path[0].col=12;},TypeError);
+  assert.deepEqual(input.actions[0].path,[at(2,5)]);
+});
+
+test('digest is native SHA-256 over the prior digest and canonical move tuple',()=>{
+  const input=fixture(),r=build(input);
+  const firstEntry=r.journal.entries[0];
+  const expected=createHash('sha256').update(JSON.stringify([
+    firstEntry.previousDigest,1,'LEADER','captain',[2,4],[[2,5]],[2,5],
+    null,null,'front',null
+  ])).digest('hex');
+  assert.equal(firstEntry.digest,expected);
+});
+
+
+test('context digest orders mixed-case piece identities by codepoint, not system locale',()=>{
+  const input=fixture();
+  input.units.push(unit('ZuluExtra','B',9,8),unit('alphaExtra','B',9,7));
+  input.leaders.push(leader('BravoExtra','B',8,8));
+  const journal=build(input).journal;
+  const byCodepoint=(a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0;
+  const u=input.units.map(u=>[u.id,u.side,u.col,u.row,u.type]).sort(byCodepoint);
+  const l=input.leaders.map(l=>[l.id,l.side,l.col,l.row]).sort(byCodepoint);
+  const expected=createHash('sha256').update(JSON.stringify([
+    CANDIDATE_JOURNAL_KIND,matchId,'A',2,u,l,
+    ['front','reserve'],['captain'],[]
+  ])).digest('hex');
+  assert.equal(journal.contextDigest,expected);
+  assert.equal(verify({...input,journal}),true);
+});
+
+test('reordered JSON journal properties are equivalent without waiving strict evidence',()=>{
+  const input=fixture(),original=build(input).journal;
+  // Simulates independent JSON serializers for a stored/replayed audit log.
+  const reordered=JSON.parse(JSON.stringify(original),(_key,value)=>
+    value!==null&&typeof value==='object'&&!Array.isArray(value)
+      ?Object.fromEntries(Object.entries(value).reverse()):value);
+  assert.notEqual(JSON.stringify(reordered),JSON.stringify(original));
+  assert.equal(verify({...input,journal:reordered}),true);
+  assert.deepEqual(build(input).journal,original);
+  // Structural comparison must still reject additions, omissions and
+  // any attempt to upgrade hypothetical evidence into authorization.
+  assert.equal(verify({...input,journal:{...reordered,privateHand:['secret']}}),false);
+  assert.equal(verify({...input,journal:{...reordered,movementAuthorized:true}}),false);
+  const missing=structuredClone(reordered);
+  delete missing.entries[0].previousDigest;
+  assert.equal(verify({...input,journal:missing}),false);
+  const tampered=structuredClone(reordered);
+  tampered.entries[0].path[0].row=6;
+  assert.equal(verify({...input,journal:tampered}),false);
+});
+
+test('journal verification rejects non-JSON prototypes instead of trusting them',()=>{
+  const input=fixture(),journal=build(input).journal;
+  const other=Object.assign(Object.create(null),structuredClone(journal));
+  assert.equal(verify({...input,journal:other}),false);
+});
