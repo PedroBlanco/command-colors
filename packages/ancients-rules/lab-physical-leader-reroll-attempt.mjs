@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {evaluateLabLeaderDiceGate} from './lab-leader-dice-gate.mjs';
 import {inspectLabLeaderRerollAttempt,LAB_LEADER_REROLL_ATTEMPT_KIND,leaderRerollId}
   from './lab-leader-reroll-attempt-contract.mjs';
+import {inspectLabLeaderRerollReviewState} from './lab-leader-reroll-review-state.mjs';
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const FACES=new Set(['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS']);
@@ -57,7 +58,8 @@ export function makeLabPhysicalLeaderRerollAttemptCommand({inTransaction,row,pre
       const consentRevision=agreement.revision+2;
       const attempt=saved.rerollAttempt;
       if(replay) {
-        const check=inspectLabLeaderRerollAttempt({attempt,reservationId,
+        // An exact retry must remain valid even after the opponent reviewed it.
+        const check=inspectLabLeaderRerollReviewState({attempt,reservationId,
           originalRollDigestSha256:agreement.rollDigestSha256,attackerSide:side,
           diceCount:originalRoll.diceCount,consentRevision,currentRevision:entry.revision});
         if(!check || replay.committed_revision!==attempt.createdRevision)
