@@ -380,3 +380,36 @@ El inventario pasa a **61 suites**. La fuente acredita **39/39
 pruebas nativas** de módulos aislados (repetidas cinco veces),
 pero **seis pruebas del adaptador con módulos reales siguen pendientes**
 de ejecución nativa y no se ha ejecutado la regresión global.
+
+## Comprobación de líder ficticia tras impactos aplicados — integración de #73
+
+Se completa el flujo aislado de laboratorio `CCRL`:
+**dados oficiales de previsualización → aplicación de bloques
+ficticios (#155) → registro provisional de baja de líder**.
+
+El nuevo comando interno `stageLeaderCasualtyPreview()` está
+disponible únicamente desde el constructor explícitamente habilitado
+`openLabOnlyDirectHitCommit`. Exige estado de fixture
+`labFixtureOnly:true` y marcador
+`LAB_DIRECT_HITS_APPLIED_FIXTURE`, que los impactos ya se hayan
+confirmado, revisión coincidente, misma reserva y resumen del tablero
+posterior a los impactos verificado por SHA-256.
+La cantidad de dados se deriva del estado persistido: **1** al
+desaparecer la unidad, **2** cuando sobrevive. La tirada adicional
+queda separada de la inicial, es idempotente y transaccional;
+su evento no revela caras ni unidades.
+
+**No se mata ni mueve al líder:** la operación almacena exclusivamente
+un pronóstico `LEADER_CASUALTY_PREVIEW_ONLY` y nunca confirma
+`combatResolved` ni `leaderRemoved`. No toca partidas CCWB,
+API HTTP, manos ni estandartes. Las tiradas físicas son
+`PLAYER_DECLARED` y todavía no se verifican bilateralmente.
+
+[Documento sobre comprobación de líder en fixture](59-lider-tras-impactos-sqlite-fixture.md).
+Se importa el módulo y tres blobs adicionales de #73 con
+SHA Git idénticos. La PR #72, que anticipaba el dado de líder
+**antes de aplicar impactos**, permanece cerrada y no se integra.
+Manifiesto consolidado: **63 suites**. La fuente #73 registra
+**13/13** pruebas aisladas nativas con dobles, pero seis pruebas
+de integración añadidas aún no han sido ejecutadas con los módulos
+reales. La regresión integral combinada sigue pendiente.
