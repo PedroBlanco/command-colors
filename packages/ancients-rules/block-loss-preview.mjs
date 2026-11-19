@@ -49,7 +49,7 @@ export function previewBaseAncientsRangedBlockLoss({unitType, blocksRemaining,
 
   return Object.freeze({
     kind:'BASE_RANGED_BLOCK_LOSS_PREVIEW', unitType, maxBlocks,
-    originalBlocks:blocksRemaining, matchingColorHits, diceCount,
+    originalBlocks:blocksRemaining, matchingColorHits, diceCount, leaderAttached,
     blocksToRemove, excessHits, remainingBlocks, unitWouldBeEliminated,
     possibleVictoryBanner:unitWouldBeEliminated ? 1 : 0,
     flagsRolled:flagsPending, effectiveFlagsPending, flagsNoLongerApplicable,

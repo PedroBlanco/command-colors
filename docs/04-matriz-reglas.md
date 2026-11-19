@@ -321,3 +321,30 @@ dependencias ya en `main` coinciden por SHA Git. El inventario incluye
 ahora **57 suites** (56 existentes más una). La rama fuente registra
 **143/143** casos focalizados correctos en ocho suites Ancients; no se
 ha ejecutado la regresión integral del nuevo commit.
+
+## Planificador provisional de resolución posterior al disparo — integración de #70
+
+Se incorpora `ranged-resolution-sequence.mjs`: genera un **itinerario
+orientativo, no ejecutable** desde pérdidas de bloques persistidas y
+previsualizadas por CCRL (#153). Propone en orden impactos futuros,
+comprobación de líder una sola vez, posible evasión, decisión del
+defensor ante banderas y moral, retirada y puerta de finalización;
+no presupone cuántas banderas se ignoran ni autoriza la batalla.
+
+El cálculo previo `block-loss-preview.mjs` conserva la información
+verificada del líder incluso sin impactos directos. La captura de
+dados de baja de líder es **distinta** de la tirada inicial de combate,
+con resultados digitales o transcripciones físicas expresamente
+provisionales. El laboratorio incluye una consulta de checklist de
+solo lectura sobre el snapshot y revisión de #153.
+**No se cambian las cartas, el tablero, las vidas, los estandartes,
+las fases oficiales, HTTP ni el almacenamiento principal CCWB.**
+
+[Documento de secuencia y límites](57-secuencia-posdisparo-ancients.md).
+Se importan seis blobs originales de código/pruebas de #70;
+el manifiesto pasa a **58 suites únicas**.
+La PR fuente documenta **32/32 pruebas nativas correctas** del módulo
+puro, pero seis casos de integración de checklist aún no se han
+ejecutado con el árbol completo. La regresión integral Windows
+anterior solo acredita el commit #152 (56 suites); #153 y esta
+integración necesitan nueva comprobación conjunta.
