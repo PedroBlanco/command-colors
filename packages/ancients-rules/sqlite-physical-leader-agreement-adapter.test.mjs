@@ -86,8 +86,15 @@ test('leader-dispute and leader-confirmation cannot be changed by the other acto
   assert.equal(adapter.reviewLabPhysicalLeaderDice(review(id,'DISPUTE',
     {expectedRevision:9,idempotencyKey:'physical_approve_review_02'})).code,
     'PHYSICAL_AGREEMENT_ALREADY_RECORDED');
+  // The old revision is rejected before the actor-specific agreement guard.
   assert.equal(adapter.reviewLabPhysicalLeaderDice(review(id,'DISPUTE',
-    {sessionUserId:'alice'})).code,'PHYSICAL_AGREEMENT_UNAVAILABLE');
+    {sessionUserId:'alice'})).code,'STALE_REVISION');
+  // With the current revision, the initiating actor still cannot approve or
+  // change the opponent-only physical-dice decision.
+  assert.equal(adapter.reviewLabPhysicalLeaderDice(review(id,'DISPUTE',
+    {sessionUserId:'alice',expectedRevision:9,
+      idempotencyKey:'physical_approve_review_other_actor'})).code,
+    'PHYSICAL_AGREEMENT_UNAVAILABLE');
 }));
 
 test('digital leader rolls cannot be put through physical approval',()=>fixture(({adapter,id})=>{
