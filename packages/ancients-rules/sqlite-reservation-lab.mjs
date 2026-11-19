@@ -5,12 +5,13 @@
  * No HTTP gateway, combat resolution, or official authorization is included.
  */
 import {DatabaseSync} from 'node:sqlite';
-import {randomUUID} from 'node:crypto';
+import {randomUUID, createHash} from 'node:crypto';
 import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {generateDigitalRoll, recordPhysicalRoll} from '../dice-roller/dice.mjs';
 import {captureBaseAncientsRangedDice, interpretBaseAncientsRangedDice} from './battle-dice.mjs';
 import {createRangedDicePlan, classifyRangedDicePlan} from './dice-plan.mjs';
+import {deriveStagedAncientsRangedBlockLoss} from './ranged-block-snapshot.mjs';
 
 const APP_ID = 0x4343524c; // 'CCRL', distinct from the main CCWB SQLite app_id.
 const KEY = /^[a-zA-Z0-9_-]{8,80}$/;
@@ -251,7 +252,13 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
       marker.kind=planKind==='OFFICIAL_PREVIEW'
         ? 'RANGED_DICE_STAGED_OFFICIAL_PREVIEW' : 'RANGED_DICE_STAGED_SYNTHETIC';
       marker.stagedDice=roll;
-      if (interpretation) marker.previewInterpretation=interpretation;
+      if (interpretation) {
+        marker.previewInterpretation=interpretation;
+        // Bind a future read-only preview to the exact board bytes at dice staging.
+        // Older captures without this marker stay readable by the old APIs, but
+        // cannot be treated as block-loss snapshots without explicit attestation.
+        marker.boardSnapshotSha256=createHash('sha256').update(entry.board_json).digest('hex');
+      }
       const revision=entry.revision+1;
       turnState.revision=revision;
       if (update.run(revision,JSON.stringify(turnState),matchId,entry.revision).changes!==1)
@@ -269,6 +276,48 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
     });
   }
 
+  /**
+   * Read one same-revision, server-owned snapshot of the original ranged roll,
+   * target's remaining blocks and attached leaders. NO board write/event occurs.
+   * This is deliberately NOT an HTTP handler or a battle resolution endpoint.
+   */
+  function previewStagedBlockLoss(request = {}) {
+    const allowed = ['matchId','sessionUserId','reservationId','expectedRevision'];
+    if (!request || typeof request !== 'object' || Array.isArray(request) ||
+        Object.keys(request).some(key => !allowed.includes(key)))
+      return denied(400,'INVALID_PREVIEW_REQUEST');
+    const {matchId,sessionUserId,reservationId,expectedRevision} = request;
+    if (!MATCH.test(String(matchId)) || typeof sessionUserId!=='string' || !sessionUserId ||
+        !MATCH.test(String(reservationId)) || !Number.isSafeInteger(expectedRevision) ||
+        expectedRevision < 0) return denied(400,'INVALID_PREVIEW_REQUEST');
+    return inTransaction(() => {
+      const entry=row.get(matchId);
+      const side=entry && sideFor(entry,sessionUserId);
+      if (!side) return denied(404,'NOT_FOUND');
+      if (entry.revision!==expectedRevision) return denied(409,'STALE_REVISION');
+      const turnState=JSON.parse(entry.turn_json);
+      if (turnState.revision!==entry.revision) throw new Error('LAB_REVISION_MISMATCH');
+      const marker=turnState.pendingCombat;
+      if (!marker || marker.actor!==side || marker.reservationId!==reservationId ||
+          marker.kind!=='RANGED_DICE_STAGED_OFFICIAL_PREVIEW' ||
+          typeof marker.boardSnapshotSha256!=='string' ||
+          marker.boardSnapshotSha256!==createHash('sha256').update(entry.board_json).digest('hex'))
+        return denied(409,'PREVIEW_NOT_AVAILABLE');
+      let preview;
+      try {
+        preview=deriveStagedAncientsRangedBlockLoss({
+          turnState,board:JSON.parse(entry.board_json),sessionSide:side,
+          reservationId,expectedRevision
+        });
+      } catch {
+        // Do not disclose which board, dice or leader field is inconsistent.
+        return denied(409,'PREVIEW_NOT_AVAILABLE');
+      }
+      return Object.freeze({status:200,code:'BLOCK_LOSS_PREVIEW',revision:entry.revision,
+        preview,attackAuthorized:false,combatResolved:false,boardMutated:false});
+    });
+  }
+
   /** Restricted test-only inspection; intentionally not part of a network API. */
   const inspectFixture = ({matchId,sessionUserId} = {}) => {
     const entry=row.get(matchId);
@@ -277,7 +326,7 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
       events:events.all(matchId).map(x=>JSON.parse(x.payload))};
   };
   let closed=false;
-  return Object.freeze({seedFixture,reserve,cancel,stageDice,inspectFixture,
+  return Object.freeze({seedFixture,reserve,cancel,stageDice,previewStagedBlockLoss,inspectFixture,
     unsafeTestDatabase:()=>db,
     close:()=>{if (!closed) {db.close();closed=true;}}});
 }
