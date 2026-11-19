@@ -116,3 +116,28 @@ Contrato técnico de privacidad: cambio de cuenta/partida → `private-view-scop
 ## Sincronización de revisiones SSE con reintentos (I4, PR #52)
 
 Trazabilidad técnica: aviso SSE de contadores → `revision-refresh.notice()` → obtención de proyección autenticada → reconocimiento **solo tras GET exitoso**; fallo o resultado descartado → reintento acotado. Se cubren duplicados, desorden, pestañas ocultas, SSE cerrado, cambios de cuenta y partida. **12/12 pruebas Node nativas** de coordinador y **22/22 callbacks V8 simulados** de interfaz; aún sin batería HTTP global. No implementa movimiento reglamentario ni reemplaza la autorización del servidor. [Especificación](42-reintentos-sse-i4.md).
+
+## Precomprobaciones aisladas de Ancients básico — integración #53, #54, #57 y #59
+
+**R-05/R-06/R-07: parciales, no completadas.** Este bloque añade contratos puros,
+sin conexión con la mutación transaccional del laboratorio: perfiles ordinarios
+de 13 tipos de tropa, examen de ruta hexagonal y ocupación, terreno bosque/colina/
+accidentado y límites ordinarios de dados por terreno. Todos los resultados
+conservan `needsFullLegalityCheck: true`; `CANDIDATE` no autoriza una acción y
+`maxDice: null` no representa combate ilimitado.
+
+Módulos y trazabilidad en [perfiles](43-perfiles-movimiento-ancients-base.md),
+[trayectorias](44-precomprobacion-ruta-ancients.md),
+[terreno](46-terreno-ancients-basico.md) y
+[dados/terreno](47-limites-dados-terreno-ancients.md).
+Se importan los blobs de código y pruebas publicados en las PR de origen,
+conservando sus SHA; `hex-grid/hex.mjs` coincide exactamente con `main`.
+Las correcciones Windows/SQLite de #55 **no** se reimportan porque la base ya
+dispone de correcciones equivalentes y debe conservarlas.
+
+El inventario actual incorpora **44 suites** (39 previas más 5), incluido
+`check-test-inventory.test.mjs` y los controles de privacidad/SSE.
+Los ensayos nativos registrados en las PR fuente son evidencia histórica de
+los módulos sin modificaciones; **no acreditan una regresión completa de esta
+integración**. Antes de activar reglas oficiales deben validarse contra edición,
+erratas, escenarios y excepciones, con autorización exclusivamente del servidor.
