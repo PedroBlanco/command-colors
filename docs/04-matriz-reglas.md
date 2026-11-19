@@ -413,3 +413,40 @@ Manifiesto consolidado: **63 suites**. La fuente #73 registra
 **13/13** pruebas aisladas nativas con dobles, pero seis pruebas
 de integración añadidas aún no han sido ejecutadas con los módulos
 reales. La regresión integral combinada sigue pendiente.
+
+## Acuerdo y puerta de revisión de dados físicos de líder — consolidación de #74 y #75
+
+La operación interna `reviewLabPhysicalLeaderDice()` de los
+**fixtures CCRL** permite que el otro participante marque una
+transcripción física de la comprobación de líder como `CONFIRM`
+o `DISPUTE`. El actor original no puede validar sus propios dados
+y un tercero no puede consultar o cambiar los registros. La revisión
+queda guardada con `BEGIN IMMEDIATE`, revisión e idempotencia,
+vinculada por SHA-256 a la tirada y al tablero posterior a impactos.
+Ni la confirmación ni la impugnación modifican las caras o aplican
+bajas. `CONFIRM` es un **acuerdo humano**, no una prueba objetiva
+del resultado físico.
+
+`readLabLeaderDiceGate()` constituye una **consulta sin escritura**:
+distingue `DIGITAL_SERVER_CAPTURED`,
+`PHYSICAL_AWAITING_OPPONENT`, `PHYSICAL_OPPONENT_CONFIRMED`
+y `PHYSICAL_DISPUTED`. Devuelve estados no sensibles, sin
+caras, líderes, resultados privados ni valores de impacto.
+Una impugnación bloquea la continuación. Incluso un resultado
+confirmado mantiene `combatAuthorized:false`,
+`leaderCasualtyApplied:false` y `combatResolved:false`.
+
+Se mantiene la triple separación: partidas oficiales **sin conectar**,
+almacén principal `CCWB` sin cambios y funciones **solo en el
+adaptador CCRL con doble opt-in**. No se crean endpoints HTTP,
+autorizaciones de combate ni despliegues.
+
+Referencias: [acuerdo físico](60-acuerdo-dados-fisicos-lider-ancients.md)
+y [puerta de revisión](61-puerta-revision-dados-lider.md).
+Se importan exactamente los blobs Git de #74 y #75; se preserva
+la prueba del inventario de `main` (que no figuraba en las ramas
+históricas), por lo que el inventario queda en **66 suites**.
+En las fuentes constan **17/17** pruebas nativas de acuerdo y
+**37/37** pruebas conjuntas de acuerdo y puerta, pero las pruebas
+del adaptador completo y la regresión de las 66 suites todavía
+no se han ejecutado en este commit.
