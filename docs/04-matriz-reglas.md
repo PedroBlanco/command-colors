@@ -160,3 +160,23 @@ Se preserva el inventario previo y se suman **3 suites**: 47 en total.
 Las **41 pruebas focalizadas** documentadas en #62 no acreditan una regresión
 integral de esta integración. El servidor deberá verificar fase, cartas, órdenes,
 historial de movimiento y estado antes de habilitar combates.
+
+## Guarda no ejecutable de turno y órdenes para el disparo — integración de #63
+
+Contrato parcial de *Ancients* 3.ª edición (2009), separado explícitamente del
+sistema de turnos `synthetic-phases-v1`. El módulo
+`combat-turn-guard.mjs` comprueba turno, fase, revisión, pertenencia,
+unidad ordenada, batalla resuelta, decisión pendiente y registro de movimiento
+servidor. `ranged-turn-precheck.mjs` lo compone con las verificaciones
+de LOS y alcance de #146, sin permitir ataques, tirar dados ni mutar partidas.
+
+**`CANDIDATE` no autoriza combate:** toda salida conserva
+`attackAuthorized:false` y `needsFullLegalityCheck:true`; tampoco valida
+cartas, líderes, escenarios o excepciones. Solo puede recibir estado de turno
+y tablero del servidor, nunca de la petición HTTP.
+
+Fuente: [documentación de guardas](50-guardas-turno-ordenes-disparo-ancients.md).
+Se importan exactamente cuatro blobs originales (dos módulos y dos suites),
+con dependencias coincidentes byte a byte con `main`.
+El manifiesto pasa a **49 suites**. La fuente de #63 documentó 31 casos
+V8 correctos, que no sustituyen ejecución nativa Node ni regresión integral.
