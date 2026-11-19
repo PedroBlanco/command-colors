@@ -658,3 +658,47 @@ Evidencia de fuente #90: **52/52** pruebas nativas PASS
 para el filtro, adaptador y composición en Node 22.16.0.
 Se conserva su SHA Git exacto, pero **no se ha ejecutado aún
 la regresión conjunta de las 79 suites en este commit**.
+
+## Cierre de vías HTTP/SSE y TOCTOU del diario de sección — SEC-001, #91–#93
+
+**Corrección de seguridad necesaria después de conectar el modo
+experimental al almacén CCWB en #162.** Una ruta HTTP genérica podía
+llamar a `view(actor)` y construir la vista privada de la mano del
+laboratorio `LAB_ONLY`; el flujo de eventos o una suscripción SSE
+también podían entrar por la interfaz genérica sin una denegación
+atómica del modo experimental. La ausencia de una ruta nueva del
+laboratorio **no bastaba** para aislar sus datos.
+
+La composición CCWB expone `viewForSession()` y
+`publicEventsForSession()` que reúnen **sesión activa, pertenencia,
+selección de modo y lectura** bajo una instantánea SQLite/WAL
+consistente. Rechazan `SECTION_LAB_INTERNAL_ONLY` **antes de crear
+proyecciones de manos**. El gateway y cada tick del stream SSE
+utilizan estos contratos, y cierran o deniegan el stream al pasar
+a modo privado. La lectura genérica de eventos también verifica el
+modo en su propio snapshot; nunca devuelve objetos privados.
+
+Las operaciones de partida, invitación, mazo sintético y comandos
+genéricos **revalidan sesión/membresía bajo `BEGIN IMMEDIATE`**.
+La inicialización y el despacho del mazo sintético comprueban en
+la misma transacción que no exista `ancientsSectionHistoryLab`;
+una fila mixta falla cerrada antes de proyectar manos. Esto impide
+carreras entre la comprobación previa y la modificación de SQLite.
+
+Se incorporan los **blobs de seguridad corregidos de #93**, que
+incluyen los parches de #91 y #92, preservando todas las mejoras
+anteriores de la interfaz y SSE (verificación de diferencia acotada)
+y sin importar antiguos ficheros de navegador, backup o PowerShell.
+Se añaden dos suites HTTP/SSE de aislamiento y se amplían suites
+existentes de SQLite, gateway y mazo: **81 suites únicas** en
+el inventario de `main`.
+
+Documentación: [aislamiento HTTP](72-limite-http-laboratorio-ancients.md),
+[exclusión del mazo sintético](73-exclusion-atomica-mazo-laboratorio.md)
+y [lecturas SQLite/WAL atómicas](74-lecturas-publicas-snapshot-sqlite.md).
+La fuente #91 documentó 54 casos SQLite y 10 HTTP focales,
+con suites HTTP+SQLite reales pendientes; #93 verificó casos
+focales y añadió comprobaciones integradas aún no ejecutadas.
+**La regresión integral de 81 suites y pruebas nativas Windows del
+nuevo commit siguen pendientes.** No se ha desplegado el laboratorio
+ni se permite su acceso por rutas HTTP.

@@ -139,3 +139,28 @@ test('API: bloquea proyección de un almacén asociado a otra partida',()=>{
     assert.equal(JSON.stringify([read.body,write.body]).includes('OTHER_MATCH_PRIVATE'),false);
   },services);
 });
+
+
+test('API: deck initialization never exposes another match private hand',()=>{
+  const services=fixture();
+  let initialized=0;
+  services.getStore=async()=>({
+    initializeCommandDeckForSession:async({sessionToken})=>{
+      initialized++;
+      assert.equal(sessionToken,A);
+      return {status:201,code:'DECK_INITIALIZED',view:{
+        matchId:'00000000-0000-4000-8000-000000000000',
+        yourHand:['OTHER_MATCH_PRIVATE_DECK']
+      }};
+    },
+    initializeCommandDeck:()=>{throw Error('UNSAFE_ACTOR_BASED_INIT')}
+  });
+  return withApi(async({request})=>{
+    await createReady(request);
+    const result=await request('POST',`/api/matches/${MATCH}/deck/initialize`,A,{});
+    assert.equal(result.status,503);
+    assert.deepEqual(result.body,{code:'SERVICE_UNAVAILABLE'});
+    assert.equal(JSON.stringify(result.body).includes('OTHER_MATCH_PRIVATE_DECK'),false);
+    assert.equal(initialized,1);
+  },services);
+});
