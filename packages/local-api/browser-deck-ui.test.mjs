@@ -440,3 +440,92 @@ test('old SSE callbacks do not interfere with the newly subscribed match',()=>wi
  assert.equal(c.requests.length,before);
  assert.equal(c.element('connection').textContent,'Avisos de partida conectados');
 }));
+
+test('changed cookie blocks a legacy deck initialization from the previous player',()=>withBrowser(async c=>{
+ await loginReady(c);
+ assert.equal(c.element('deck-initialize').disabled,false);
+ const previous=c.requests.filter(r=>r.path===`/api/matches/${MATCH}/deck/initialize`).length;
+ c.state.handle='bob'; // another tab changed the shared cookie without a visibility event
+ await c.element('deck-initialize').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/deck/initialize`).length,previous);
+ assert.equal(c.state.initialized,false);
+ assert.equal(c.element('match-id').value,'');
+ assert.equal(c.element('state').textContent,'null');
+ assert.equal(c.element('deck-panel').hidden,true);
+}));
+
+test('changed cookie blocks invitation and demo turn commands before HTTP mutation',()=>withBrowser(async c=>{
+ await loginReady(c);
+ c.state.handle='bob';
+ await c.element('invite').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/invitations`).length,0);
+ assert.equal(c.element('invite-token').textContent,'—');
+ assert.equal(c.element('match-id').value,'');
+ // Explicit login is required after detecting an external cookie switch.
+ c.element('handle').value='alice';
+ await loginReady(c);
+ assert.equal(c.element('match-id').value,MATCH);
+ c.state.handle='bob';
+ await c.element('turn').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/commands` && r.body?.type==='pass_demo_turn').length,0);
+ assert.equal(c.element('state').textContent,'null');
+}));
+
+test('changed cookie blocks new match creation and private event reads',()=>withBrowser(async c=>{
+ await loginReady(c);
+ c.state.handle='bob';
+ await c.element('events').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path===`/api/matches/${MATCH}/events`).length,0);
+ assert.equal(c.element('state').textContent,'null');
+ c.element('handle').value='alice';
+ await loginReady(c);
+ assert.equal(c.element('match-id').value,MATCH);
+ const before=c.requests.filter(r=>r.path==='/api/matches' && r.method==='POST').length;
+ c.state.handle='bob';
+ await c.element('create').dispatch('click');
+ assert.equal(c.requests.filter(r=>r.path==='/api/matches' && r.method==='POST').length,before);
+ assert.equal(c.element('match-id').value,'');
+}));
+
+test('late invitation token is not revealed after a same-match cookie change',()=>{
+ let enter,release;
+ const entered=new Promise(done=>enter=done),gate=new Promise(done=>release=done);
+ return withBrowser(async c=>{
+   await loginReady(c);
+   c.element('invitee').value='bob';
+   const waiting=c.element('invite').dispatch('click');
+   await entered;
+   c.state.handle='bob';
+   release();
+   await waiting;
+   assert.equal(c.element('invite-token').textContent,'—');
+   assert.equal(c.element('state').textContent,'null');
+   assert.equal(c.element('match-id').value,'');
+ },{onInvite:async()=>{enter();await gate;}});
+});
+
+test('late event response is not rendered after the shared cookie changes',()=>withBrowser(async c=>{
+ await loginReady(c);
+ const originalFetch=globalThis.fetch;
+ let enter,release;
+ const entered=new Promise(done=>enter=done),gate=new Promise(done=>release=done);
+ globalThis.fetch=async(path,options={})=>{
+   if(path===`/api/matches/${MATCH}/events`){
+     enter();await gate;
+     return {ok:true,status:200,json:async()=>[{event:'SYNTHETIC_PRIVATE_TEST_DATA'}]};
+   }
+   return originalFetch(path,options);
+ };
+ try{
+   const waiting=c.element('events').dispatch('click');
+   await entered;
+   c.state.handle='bob';
+   release();
+   await waiting;
+   assert.equal(c.element('state').textContent,'null');
+   assert.equal(c.element('match-id').value,'');
+ } finally {
+   globalThis.fetch=originalFetch;
+   release?.();
+ }
+}));

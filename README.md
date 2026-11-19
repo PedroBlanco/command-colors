@@ -316,3 +316,9 @@ focalizadas e informes TAP sin utilizar WSL ni GitHub Actions.
 
 Las cifras indicadas en apartados históricos corresponden a sus
 respectivas ramas y no acreditan la regresión de esta integración.
+
+## Recuperación de avisos SSE tras errores HTTP (I4, PR #52)
+
+El navegador conserva los avisos de revisión hasta haber obtenido con éxito la nueva proyección privada. Si una consulta falla, la reintenta con espera progresiva y un límite de 48 segundos; los avisos se agrupan mientras una petición está pendiente o la pestaña está oculta. Cambiar de cuenta o partida cancela los reintentos y bloquea los callbacks tardíos de conexiones anteriores.
+
+**Verificación:** nuevo coordinador `revision-refresh`: **12/12 pruebas nativas con Node.js 22.16.0**, hashes Git idénticos y evidencia TAP con SHA-256. Interfaz simulada: **22/22 callbacks en V8**, no equivalente a Node ni a HTTP real. El manifiesto contiene **38 suites**, sin regresión integral ni validación móvil. [Nota técnica y evidencia](docs/42-reintentos-sse-i4.md). La PR #52 depende de #51 y queda en borrador; `main` no cambia.
