@@ -272,3 +272,24 @@ con dependencias inalteradas; la rama original documenta **89/89**
 pruebas focalizadas nativas correctas, repetidas cinco veces.
 El inventario pasa a **55 suites**, pero no se ha ejecutado su
 regresión global conjunta en esta integración.
+
+## Previsualización pura de pérdidas de bloques y líderes pendientes — #68
+
+El módulo `block-loss-preview.mjs` recibe el número de bloques restante
+**desde estado servidor fiable**, el tipo de unidad, la interpretación
+previa de dados oficiales y la posición real de líderes asociados.
+Calcula pérdidas **potenciales**, impactos sobrantes, bloques restantes,
+posible eliminación, banderas aún aplicables y necesidad de comprobar
+la supervivencia del líder. No presupone que una unidad tenga su número
+original de bloques ni convierte una eliminación hipotética en estandarte.
+
+**Sin efectos ejecutables:** `hitsApplied:false`,
+`bannerAwarded:false`, `flagsResolved:false`,
+`boardMutated:false`, `combatResolved:false`.
+No cambia SQLite, HTTP ni fichas de partida; el resultado debe vincularse
+en el futuro al mismo snapshot y a una secuencia autorizada.
+
+[Explicación y límites](55-perdida-bloques-disparos-ancients.md).
+Importados los mismos dos blobs de #68 y sus dependencias coincidentes,
+con **24 pruebas nativas correctas documentadas en la fuente**.
+Manifiesto de integración: **56 suites**; falta regresión integral conjunta.
