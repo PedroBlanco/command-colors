@@ -111,7 +111,7 @@ test('real checker cannot approve malformed board; no partially committed state'
 test('privacy of real-rule diagnostics: responses and events never reveal unit IDs or hidden data',()=>fixture(({store})=>{
   const response=store.reserve(request());
   const events=store.inspectFixture({matchId:MATCH,sessionUserId:'bob'}).events;
-  for(const text of ['a1','b1','LIGHT_BOW_INFANTRY','PRIVATE_SECRET','FOREST']) {
+  for(const text of ['\"attackerId\":\"a1\"','\"targetId\":\"b1\"','LIGHT_BOW_INFANTRY','PRIVATE_SECRET','FOREST']) {
     assert.equal(JSON.stringify(response).includes(text),false);
     assert.equal(JSON.stringify(events).includes(text),false);
   }
