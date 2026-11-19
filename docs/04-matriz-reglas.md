@@ -598,3 +598,63 @@ y [diario privado CCHL](61-diario-cartas-seccion-ancients.md).
 Las ramas fuente documentaron **19/19** pruebas de cribado y
 **52/52** en la batería nativa conjunta de #83/#84.
 No se atribuye una regresión global sobre este nuevo `main`.
+
+## Puente experimental de cartas/órdenes CCWB y previsualización de movimientos — #85–#90
+
+El diario privado de cartas de sección de #161 se enlaza al **esquema
+CCWB v1 existente**, sin migraciones y **solo como modo de
+laboratorio interno** excluyente de las partidas sintéticas.
+Las manos, cartas, historial de comandos y claves permanecen en
+`matches.private_state`; `game_events` publica únicamente
+proyecciones sanitizadas. Se comprueban replay privado, firmas
+versionadas e idempotencia del diario antes de servir datos o
+aceptar órdenes, distinguiendo expresamente registros antiguos
+`LEGACY_UNBOUND` con menores garantías.
+
+La composición en `packages/sqlite-store/sqlite.mjs` deriva la
+identidad de sesiones CCWB vivas y de su pertenencia al encuentro.
+Para las mutaciones experimentales **revalida la sesión dentro de
+`BEGIN IMMEDIATE`**, cerrando la ventana entre autenticación
+previa y escritura. Las consultas privadas de movimiento usan
+una instantánea WAL de lectura para ligar sesión, revisión y
+diario. El despacho genérico responde
+`SECTION_LAB_INTERNAL_ONLY` en ese modo; el despacho
+experimental no tiene ruta HTTP. Las partidas sintéticas
+preexistentes conservan su flujo habitual.
+
+`staged-movement-preflight.mjs` compara la ruta candidata con
+las órdenes registradas, el tablero/sector histórico y perfiles
+de unidades y terreno **aportados por código servidor**, no por
+el cliente. Devuelve siempre `movementAuthorized:false`,
+`attackAuthorized:false` y `stateChanged:false`:
+**no ejecuta movimiento ni ataque**, no valida cartas especiales,
+sectores oficiales o escenarios completos.
+
+Las funciones de inicialización del modo experimental,
+`trustedSetup` y `precheckExperimentalSectionMovement`
+**no deben conectarse al HTTP ni aceptar contexto de escenario
+proporcionado por clientes**. El fichero SQLite es el principal
+CCWB pero las funciones de laboratorio permanecen internas,
+sin despliegue. Los eventos privados iniciales **no** deben
+proyectarse a usuarios de otro bando.
+
+Se importa exclusivamente el código de la **rama corregida #90**
+(incorpora #85–#89), que ya incluye el guard de sesión en
+transacción y protección de las claves de idempotencia.
+Se omiten expresamente ficheros antiguos y ajenos al bloque
+(HTTP, respaldo, PowerShell, inventarios heredados).
+Conservadas las 73 suites previas y añadidas seis: **79 suites**,
+todas previstas en el manifiesto canónico de main.
+
+Documentos del bloque:
+[puente CCWB](62-puente-ccwb-diario-cartas-ancients.md),
+[sesión y membresía](67-autoridad-sesion-historial-seccion-ancients.md),
+[idempotencia](68-vinculacion-idempotencia-diario-ancients.md),
+[guardia transaccional](69-revalidacion-sesion-transaction-ccwb.md),
+[preflight de movimiento](70-preflight-movimiento-ordenes-ancients.md)
+y [lectura privada](71-previsualizacion-privada-movimiento-ancients.md).
+
+Evidencia de fuente #90: **52/52** pruebas nativas PASS
+para el filtro, adaptador y composición en Node 22.16.0.
+Se conserva su SHA Git exacto, pero **no se ha ejecutado aún
+la regresión conjunta de las 79 suites en este commit**.
