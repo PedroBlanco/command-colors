@@ -87,9 +87,9 @@ test('cookie mode: cannot forge actor and keeps private revisions through defens
  const key=(name,rev)=>`lab_${name}_${String(rev).padStart(4,'0')}`;
  let rev=1;
  async function command(cookie,type,fields={}){const x=await call('POST',`${path}/commands`,{cookie,body:{type,expectedRevision:rev,idempotencyKey:key(type,rev),...fields}});assert.equal(x.status,200,type+JSON.stringify(x.data));rev++;return x.data.state}
- await command(alice,'assign_synthetic_orders',{unitIds:['unit_a']});
+ await command(alice,'assign_synthetic_orders',{unitIds:['synthetic-a']});
  await command(alice,'finish_synthetic_movement');
- const blocked=await command(alice,'ask_synthetic_defense',{targetUnit:'unit_b'});
+ const blocked=await command(alice,'ask_synthetic_defense',{targetUnit:'synthetic-b'});
  assert.equal(blocked.actingSide,'B');
  const refused=await call('POST',`${path}/commands`,{cookie:alice,body:{type:'answer_synthetic_defense',choice:'STAND',expectedRevision:rev,idempotencyKey:key('wrong_defense',rev)}});
  assert.equal(refused.status,403);
@@ -102,4 +102,53 @@ test('cookie mode: cannot forge actor and keeps private revisions through defens
  assert.equal(b.turn,'B');assert.equal(b.revision,rev);
  assert.equal(JSON.stringify(b).includes('drawPile'),true); // only count, not secret sequence
  assert.equal('drawPile' in b,false);
+}));
+
+
+test('cookie/SQLite: server checks units and rejects forged orders without persisting events',()=>withLab(async({service,call,prepare})=>{
+ const {id,alice,bob}=await prepare(),path=`/api/matches/${id}`;
+ assert.equal((await call('POST',`${path}/deck/initialize`,{cookie:alice,body:{}})).status,201);
+ const initial=(await call('GET',path,{cookie:alice})).data.state;
+ assert.equal((await call('POST',`${path}/commands`,{cookie:alice,body:{
+   type:'play_synthetic_card',cardRef:initial.yourHand[0],expectedRevision:0,idempotencyKey:'order_card_0001'
+ }})).status,200);
+ const send=async(cookie,key,unitIds,extra={})=>call('POST',`${path}/commands`,{cookie,body:{
+   type:'assign_synthetic_orders',expectedRevision:1,idempotencyKey:key,unitIds,...extra
+ }});
+ const attempts=[
+   [['synthetic-b'],'UNIT_NOT_ELIGIBLE'],
+   [['unknown_unit'],'UNIT_NOT_ELIGIBLE'],
+   [['synthetic-a','synthetic-a'],'INVALID_ORDER_COMMAND'],
+   [['synthetic-a','synthetic-b','unknown_unit'],'ORDER_LIMIT_EXCEEDED']
+ ];
+ for(let i=0;i<attempts.length;i++){
+   const [unitIds,code]=attempts[i];
+   const result=await send(alice,`invalid_order_${i+1000}`,unitIds);
+   assert.equal(result.status,400);
+   assert.equal(result.data.code,code);
+   assert.equal(result.data.state.revision,1);
+ }
+ const forged=await send(alice,'forged_data_0001',['not_on_board'],{
+   actor:'A',cardProfiles:{[initial.yourHand[0]]:{maxUnits:117,allowedSectors:['left']}},
+   units:[{id:'not_on_board',side:'A',col:3,row:4}],sectorMembership:{'3,4':['left']}
+ });
+ assert.equal(forged.status,400);assert.equal(forged.data.code,'UNIT_NOT_ELIGIBLE');
+ const enemy=await send(bob,'enemy_orders_01',['synthetic-a']);
+ assert.equal(enemy.status,403);
+ assert.equal(enemy.data.code,'NOT_ACTING_PLAYER');
+ const row=service.unsafeTestDatabase().prepare(
+   'SELECT game_revision FROM matches WHERE id=?').get(id);
+ assert.equal(row.game_revision,1);
+ assert.equal(service.unsafeTestDatabase().prepare(
+   'SELECT COUNT(*) AS n FROM game_events WHERE match_id=?').get(id).n,1);
+ const legal=await send(alice,'legal_order_0001',['synthetic-a']);
+ assert.equal(legal.status,200);assert.equal(legal.data.code,'APPLIED');
+ assert.equal(legal.data.state.phase,'MOVEMENT');
+ const repeated=await send(alice,'legal_order_0001',['synthetic-a']);
+ assert.equal(repeated.status,200);assert.equal(repeated.data.code,'ALREADY_APPLIED');
+ const changed=await send(alice,'legal_order_0001',[]);
+ assert.equal(changed.status,409);assert.equal(changed.data.code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal((await call('GET',path,{cookie:bob})).data.state.revision,2);
+ assert.equal(service.unsafeTestDatabase().prepare(
+   'SELECT COUNT(*) AS n FROM game_events WHERE match_id=?').get(id).n,2);
 }));

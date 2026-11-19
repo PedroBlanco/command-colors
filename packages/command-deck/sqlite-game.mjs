@@ -5,6 +5,8 @@
  * The HTTP gateway MUST derive actor from an authenticated participant.
  */
 import {createCommandSession, assertCommandSnapshot, projectCommandSession, transitionCommandSession} from './deck.mjs';
+import {validateSyntheticOrderAssignment} from '../order-validator/validator.mjs';
+import {createServerSyntheticOrderContext} from '../order-validator/server-context.mjs';
 
 const KEY = /^[A-Za-z0-9_-]{8,80}$/;
 const TYPES = new Set([
@@ -93,9 +95,24 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
         ? {status: 200, code: 'ALREADY_APPLIED', view: project(row, matchId, actor)}
         : deny(409, 'IDEMPOTENCY_KEY_REUSED');
       if (row.game_revision !== expectedRevision) return {status: 409, code: 'STALE_REVISION', view: project(row, matchId, actor)};
-      const result = transitionCommandSession(state.commandSession, {
-        actor, type: semantic.type, expectedRevision, ...semantic.fields
-      });
+      let approvedCommand = {actor, type: semantic.type, expectedRevision, ...semantic.fields};
+      // Enforce CCW-013 at the authoritative transaction boundary. Both the
+      // board and card profile come from server-owned persistent state, never
+      // the request. Wrong-phase commands still use the normal phase reducer.
+      if (semantic.type === 'assign_synthetic_orders' &&
+          state.commandSession.phaseState.phase === 'ASSIGN_ORDERS') {
+        const checked = validateSyntheticOrderAssignment(
+          state.commandSession, approvedCommand,
+          createServerSyntheticOrderContext(state.board, state.commandSession.activeCard)
+        );
+        if (!checked.accepted) {
+          const code = checked.reason;
+          return {status: code === 'NOT_ACTING_PLAYER' ? 403 : code === 'STALE_REVISION' ? 409 : 400,
+            code, view: project(row, matchId, actor)};
+        }
+        approvedCommand = checked.command;
+      }
+      const result = transitionCommandSession(state.commandSession, approvedCommand);
       if (!result.accepted) {
         const code = result.reason;
         return {status: code === 'NOT_ACTING_PLAYER' ? 403 : code === 'STALE_REVISION' ? 409 : 400,
