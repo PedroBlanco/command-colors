@@ -268,3 +268,49 @@ test('separate matches isolate revisions, public events and private command deck
   assert.equal(inst.db.prepare('SELECT count(*) n FROM game_commands WHERE match_id=?').get(otherId).n,0);
   assert.equal(other.view('A').yourHand.length,2);
 }));
+
+
+test('CCWB deck: lab activation just before BEGIN IMMEDIATE blocks deck setup without writes',()=>fixture(({inst,connect})=>{
+  const other=connect(),original=inst.db.exec;
+  let injected=false;
+  try {
+    inst.db.exec=(sql,...args)=>{
+      if(sql==='BEGIN IMMEDIATE'&&!injected) {
+        injected=true;
+        const row=other.getRow(MATCH),state=JSON.parse(row.private_state);
+        state.ancientsSectionHistoryLab={testOnly:true};
+        other.db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+          .run(JSON.stringify(state),MATCH);
+      }
+      return original.call(inst.db,sql,...args);
+    };
+    const result=inst.store.initialize('A');
+    assert.deepEqual(result,{status:409,code:'SECTION_LAB_MODE_ACTIVE'});
+    assert.equal(injected,true);
+  } finally {inst.db.exec=original;}
+  const row=inst.getRow(MATCH),state=JSON.parse(row.private_state);
+  assert.equal(Object.hasOwn(state,'commandSession'),false);
+  assert.equal(Object.hasOwn(state,'ancientsSectionHistoryLab'),true);
+  assert.equal(row.game_revision,0);
+  assert.equal(inst.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,0);
+  assert.equal(inst.db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,0);
+  assert.equal(inst.db.isTransaction,false);
+}));
+
+test('CCWB deck: corrupt mixed-mode row cannot dispatch or project private cards',()=>fixture(({inst})=>{
+  assert.equal(inst.store.initialize('A').status,201);
+  const row=inst.getRow(MATCH),state=JSON.parse(row.private_state);
+  state.ancientsSectionHistoryLab={testOnly:true};
+  inst.db.prepare('UPDATE matches SET private_state=? WHERE id=?')
+    .run(JSON.stringify(state),MATCH);
+  const before=inst.getRow(MATCH);
+  const commandResult=inst.store.dispatch(command('A','play_synthetic_card',0,
+    {cardRef:state.commandSession.hands.A[0]},'mixed_mode_refused_001'));
+  assert.deepEqual(commandResult,{status:409,code:'SECTION_LAB_INTERNAL_ONLY'});
+  assert.throws(()=>inst.store.view('A'),/COMMAND_DECK_LAB_MODE_CONFLICT/);
+  assert.throws(()=>inst.store.view('B'),/COMMAND_DECK_LAB_MODE_CONFLICT/);
+  assert.deepEqual(inst.getRow(MATCH),before);
+  assert.equal(inst.db.prepare('SELECT COUNT(*) AS n FROM game_events').get().n,0);
+  assert.equal(inst.db.prepare('SELECT COUNT(*) AS n FROM game_commands').get().n,0);
+  assert.equal(inst.db.isTransaction,false);
+}));

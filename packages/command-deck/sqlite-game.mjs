@@ -34,6 +34,8 @@ export function hasCommandDeck(row) {
 function project(row, matchId, actor) {
   if (!['A', 'B'].includes(actor)) return null;
   const state = getPrivateState(row, matchId);
+  // A mixed command-deck/section-lab record must never project a hand.
+  if (Object.hasOwn(state, 'ancientsSectionHistoryLab')) throw new Error('COMMAND_DECK_LAB_MODE_CONFLICT');
   if (!Object.hasOwn(state, 'commandSession')) throw new Error('COMMAND_DECK_NOT_INITIALIZED');
   assertCommandSnapshot(state.commandSession);
   if (row.game_revision !== state.commandSession.phaseState.revision) throw new Error('COMMAND_REVISION_MISMATCH');
@@ -64,11 +66,20 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
     throw new TypeError('INVALID_DECK_DEPENDENCIES');
   }
   function view(actor) { return project(getRow(matchId), matchId, actor); }
-  function initialize(actor) {
+  function initialize(actor, authGuard = null) {
     if (actor !== 'A') return deny(403, 'FORBIDDEN');
     return atomic(() => {
+      // An authenticated HTTP caller must still be live after the write lock.
+      if (authGuard) {
+        const allowed = authGuard();
+        if (allowed !== true) return allowed;
+      }
       const row = getRow(matchId);
       const state = getPrivateState(row, matchId);
+      // The initial out-of-transaction preflight can race a second SQLite
+      // connection activating the private section lab. Recheck AFTER BEGIN
+      // IMMEDIATE, before touching the ordinary deck or game tables.
+      if (Object.hasOwn(state, 'ancientsSectionHistoryLab')) return deny(409, 'SECTION_LAB_MODE_ACTIVE');
       if (row.game_revision !== 0 || Object.hasOwn(state, 'commandSession')) return deny(409, 'DECK_ALREADY_STARTED');
       // Server-owned scenario-independent placeholder: never trust card IDs/sizes from a browser.
       const session = createCommandSession({cardIds: SYNTHETIC_CARDS, handSizes: {A: 2, B: 3}});
@@ -82,7 +93,7 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
       return {status: 201, code: 'DECK_INITIALIZED', view: project(updated, matchId, actor)};
     });
   }
-  function dispatch(request = {}) {
+  function dispatch(request = {}, authGuard = null) {
     const {actor, expectedRevision, idempotencyKey} = request;
     if (!['A', 'B'].includes(actor)) return deny(403, 'FORBIDDEN');
     const semantic = semanticCommand(request);
@@ -92,8 +103,13 @@ export function createSqliteCommandDeckStore({db, matchId, getRow, atomic}) {
     // request key for another card, order or decision must be rejected.
     const signature = JSON.stringify([semantic.type, expectedRevision, semantic.fields]);
     return atomic(() => {
+      if (authGuard) {
+        const allowed = authGuard();
+        if (allowed !== true) return allowed;
+      }
       const row = getRow(matchId);
       const state = getPrivateState(row, matchId);
+      if (Object.hasOwn(state, 'ancientsSectionHistoryLab')) return deny(409, 'SECTION_LAB_INTERNAL_ONLY');
       if (!Object.hasOwn(state, 'commandSession')) return deny(409, 'DECK_NOT_INITIALIZED');
       assertCommandSnapshot(state.commandSession);
       if (state.commandSession.phaseState.revision !== row.game_revision) throw new Error('COMMAND_REVISION_MISMATCH');

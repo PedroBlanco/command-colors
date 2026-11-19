@@ -79,7 +79,9 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/sqlite-section-ccwb-bridge.test.mjs',
   'packages/ancients-rules/staged-movement-preflight.test.mjs',
   'packages/sqlite-store/ancients-section-history.test.mjs',
-  'packages/sqlite-store/section-mutation-session-guard.test.mjs'
+  'packages/sqlite-store/section-mutation-session-guard.test.mjs',
+  'packages/local-api/revision-stream-lab-isolation.test.mjs',
+  'packages/local-api/section-history-http-isolation.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 
