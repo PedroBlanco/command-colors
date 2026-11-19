@@ -14,6 +14,7 @@ import {createRangedDicePlan, classifyRangedDicePlan} from './dice-plan.mjs';
 import {deriveStagedAncientsRangedBlockLoss} from './ranged-block-snapshot.mjs';
 import {planBaseAncientsRangedResolution} from './ranged-resolution-sequence.mjs';
 import {preflightStagedAncientsRangedHits} from './ranged-hit-commit-preflight.mjs';
+import {screenBaseAncientsSectionCardOrders} from './section-card-order-screen.mjs';
 
 const APP_ID = 0x4343524c; // 'CCRL', distinct from the main CCWB SQLite app_id.
 const KEY = /^[a-zA-Z0-9_-]{8,80}$/;
@@ -372,6 +373,48 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
     });
   }
 
+  /**
+   * Read-only diagnostic of an optional SERVER-ONLY order provenance fixture.
+   * It NEVER authorizes a card; deck/event and sector-map authenticity are
+   * still unverified. Private hand and unit identifiers never leave this API.
+   */
+  function previewSectionOrderProof(request = {}) {
+    const allowed=['matchId','sessionUserId','expectedRevision'];
+    if (!request || typeof request!=='object' || Array.isArray(request) ||
+        Object.keys(request).some(key=>!allowed.includes(key)))
+      return denied(400,'INVALID_SECTION_ORDER_REQUEST');
+    const {matchId,sessionUserId,expectedRevision}=request;
+    if (!MATCH.test(String(matchId)) || typeof sessionUserId!=='string' ||
+        !sessionUserId || !Number.isSafeInteger(expectedRevision) ||
+        expectedRevision<0) return denied(400,'INVALID_SECTION_ORDER_REQUEST');
+    return inTransaction(()=>{
+      const entry=row.get(matchId);
+      const side=entry && sideFor(entry,sessionUserId);
+      if (!side) return denied(404,'NOT_FOUND');
+      if (entry.revision!==expectedRevision) return denied(409,'STALE_REVISION');
+      const turnState=JSON.parse(entry.turn_json);
+      if (turnState.revision!==entry.revision)
+        throw new Error('LAB_REVISION_MISMATCH');
+      const proof=turnState.sectionOrderProof;
+      if (!proof || typeof proof!=='object' || Array.isArray(proof))
+        return denied(409,'SECTION_ORDER_PROOF_UNAVAILABLE');
+      let screened;
+      try {
+        screened=screenBaseAncientsSectionCardOrders({
+          turnState,sessionSide:side,expectedRevision,
+          handAtPlay:proof.handAtPlay,cardPlay:proof.cardPlay,
+          orderSnapshot:proof.orderSnapshot
+        });
+      } catch {return denied(409,'SECTION_ORDER_PROOF_UNAVAILABLE');}
+      if (screened.status!=='CANDIDATE')
+        return denied(409,'SECTION_ORDER_PROOF_UNAVAILABLE');
+      return Object.freeze({status:200,code:'SECTION_ORDERS_SCREENED',
+        revision:entry.revision,screening:screened,
+        cardPlayAuthorized:false,ordersAuthorized:false,
+        attackAuthorized:false,boardMutated:false});
+    });
+  }
+
   /** Restricted test-only inspection; intentionally not part of a network API. */
   const inspectFixture = ({matchId,sessionUserId} = {}) => {
     const entry=row.get(matchId);
@@ -380,7 +423,7 @@ export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode
       events:events.all(matchId).map(x=>JSON.parse(x.payload))};
   };
   let closed=false;
-  return Object.freeze({seedFixture,reserve,cancel,stageDice,previewStagedBlockLoss,previewResolutionChecklist,preflightDirectHits,inspectFixture,
+  return Object.freeze({seedFixture,reserve,cancel,stageDice,previewStagedBlockLoss,previewResolutionChecklist,preflightDirectHits,previewSectionOrderProof,inspectFixture,
     unsafeTestDatabase:()=>db,
     close:()=>{if (!closed) {db.close();closed=true;}}});
 }

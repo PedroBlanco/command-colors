@@ -558,3 +558,43 @@ Documentación histórica:
 Las ocho pruebas puras originales solo acreditaron ejecución en
 un arnés V8 aislado; las pruebas SQLite nuevas y la regresión
 consolidada todavía necesitan ejecución nativa completa.
+
+## Cartas de sección ordinarias y diario reconstruible — integración #83/#84
+
+Nuevo cribado puro `section-card-order-screen.mjs` de las nueve
+cartas ordinarias de sección de *Ancients*: comprueba cantidades de
+órdenes, identificadores, bando, líderes y posiciones **en el instante
+de asignar órdenes**, a partir de una instantánea histórica del
+servidor. No valida la autenticidad del mazo, geometría oficial de
+sectores ni cartas especiales; siempre
+`cardPlayAuthorized:false`, `ordersAuthorized:false`,
+`attackAuthorized:false`. La lectura privada opcional
+`previewSectionOrderProof()` en CCRL devuelve únicamente una
+criba sanitizada y no modifica el tablero ni el servidor de partidas.
+
+Se añade el **laboratorio independiente CCHL**: nuevo SQLite
+`application_id=0x4343484c` separado de CCRL y CCWB, que mantiene
+un diario reconstruible de reparto, juego de cartas, asignación de
+órdenes y fin de turno **solo experimental**. Los comandos se
+autentican por identidad del código servidor y usan `BEGIN IMMEDIATE`,
+revisión e idempotencia. Antes de leer o escribir se reconstruye
+la historia y se coteja con los eventos, comandos y estado
+persistidos. La vista de cada jugador contiene **solo su propia
+mano** y el número de cartas del adversario; los eventos privados
+del diario, incluido el estado inicial, **nunca** deben enviarse a
+ninguna ruta HTTP. `END_EXPERIMENTAL_TURN` omite el combate y no
+se utilizará en partidas oficiales.
+
+Se importan módulos y pruebas originales de #83 y #84,
+manteniendo SHA Git; el cribado CCRL se añade de forma **selectiva**
+sobre el código de `main` sin sobrescribir el preflight de #160 ni
+la corrección de reintentos posterior a impactos del fixture.
+Se conservan todas las pruebas existentes y se añaden cinco
+casos SQLite de cribado de órdenes y **tres suites nuevas**:
+inventario total **73 suites únicas**.
+
+Documentación: [cartas y órdenes](60-cartas-seccion-ordenes-ancients.md)
+y [diario privado CCHL](61-diario-cartas-seccion-ancients.md).
+Las ramas fuente documentaron **19/19** pruebas de cribado y
+**52/52** en la batería nativa conjunta de #83/#84.
+No se atribuye una regresión global sobre este nuevo `main`.
