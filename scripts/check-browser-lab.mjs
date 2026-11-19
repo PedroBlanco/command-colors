@@ -28,15 +28,10 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/local-api/browser-deck-ui.test.mjs',
   'packages/local-api/command-deck-sse.test.mjs',
   'packages/dice-roller/dice.test.mjs',
-<<<<<<< HEAD
   'packages/order-validator/validator.test.mjs',
   'packages/order-validator/server-context.test.mjs'
-];
-=======
-  'packages/order-validator/validator.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
->>>>>>> origin/main
 
 function nodeSupported() {
   const [major, minor] = process.versions.node.split('.').map(Number);
