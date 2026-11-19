@@ -204,3 +204,26 @@ El manifiesto se amplía a **51 suites**. La rama fuente documenta **33/33
 pruebas Node nativas correctas** para el laboratorio, pero esta integración
 requiere regresión conjunta antes de dar por validada su convivencia.
 **R-04/R-06 y la autorización de combate oficial siguen pendientes.**
+
+## Captura sintética de dados posteriores a la reserva — integración de #65
+
+El laboratorio SQLite `CCRL` amplía la reserva de criba de #148 con
+`stageDice()`: registro atómico de tiradas **digitales** generadas por
+el servidor o transcripciones **físicas** declaradas por el jugador,
+con revisión, idempotencia y conservación del resultado en reintentos.
+Tras registrar los dados se impide cancelar la reserva original; no se
+aplican bajas, banderas, retiradas, efectos de cartas ni cambios de tablero.
+La modalidad física **no** supone aceptación bilateral.
+
+**Advertencia reglamentaria:** las caras `RED/BLUE/FLAG/RED` de esta
+fase son inventadas para el laboratorio y no tienen correspondencia con
+los seis símbolos oficiales de *Ancients*. La interfaz de juego y
+`CCWB` no usan este contrato, ni se añade una ruta HTTP.
+`attackAuthorized:false` y `combatResolved:false` siguen vigentes.
+
+[Documento de dados sintéticos y reserva](52-registro-dados-sinteticos-reserva-ancients.md).
+Se importan los mismos blobs de #65 (módulo SQLite, nueva suite y ajuste
+de test de privacidad), conservando las dependencias idénticas de #148 y
+`dice-roller/dice.mjs`. Inventario: **52 suites**. La rama fuente
+documentó **47/47** casos nativos focalizados correctos; queda pendiente
+regresión completa del nuevo commit y examen de concurrencia multiproceso.
