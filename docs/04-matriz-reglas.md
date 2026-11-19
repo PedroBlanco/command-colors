@@ -520,3 +520,41 @@ blobs Git de #78. Se conserva la suite de auditoría que ya existe en
 **69 suites**. La fuente documenta **110/110 pruebas nativas**
 en batería local ampliada; la suite exacta de 14 casos del nuevo
 archivo y la regresión global del árbol consolidado quedan pendientes.
+
+## Preflight de impactos con revalidación de alcance, LOS y terreno — #81/#82
+
+Nuevo módulo puro `ranged-hit-commit-preflight.mjs`: recibe una
+instantánea fiable de turno, tablero y dados de previsualización
+de Ancients, recalcula pérdidas y secuencia pendiente, y **repite**
+los controles actuales de alcance, movimiento registrado, adyacencia
+enemiga, línea de visión, terreno y cantidad oficial de dados.
+El plan recién calculado debe coincidir exactamente con el plan
+persistido y el tablero debe conservar su huella original.
+Una preselección reglamentaria positiva **no** autoriza atacar.
+
+El laboratorio CCRL añade el método **solo de lectura**
+`preflightDirectHits()`. Lee la misma revisión SQLite bajo
+`BEGIN IMMEDIATE`, comprueba sesión, propiedad de la reserva y
+SHA-256 del `board_json`; no escribe bloques, turnos, eventos,
+cartas, manos ni claves de idempotencia. Oculta las causas detalladas
+del rechazo al llamador. El resultado devuelve siempre
+`commitPermitted:false`, `attackAuthorized:false`,
+`fullRulesValidated:false` y `boardMutated:false`.
+No se incorpora esta consulta al servidor HTTP ni al almacén CCWB.
+
+**Integración selectiva importante:** se conservó el
+`sqlite-reservation-lab.mjs` de `main` y **solo** se añadió
+el import, la nueva función y su exportación. No se sobrescribe
+la corrección más reciente de reintentos de dados tras impactos
+ficticios; la rama antigua #82 carecía de ella.
+Los 12 casos SQLite adicionales se añaden al final de la suite
+preexistente sin suprimir pruebas de fases posteriores.
+Se importan el módulo y sus ocho pruebas originales con SHA Git
+idénticos a #82. Inventario: **70 suites únicas**.
+
+Documentación histórica:
+[preflight de impactos](58-preflight-impactos-ancients.md) y
+[revalidación postdisparo](59-revalidacion-posdisparo-snapshot.md).
+Las ocho pruebas puras originales solo acreditaron ejecución en
+un arnés V8 aislado; las pruebas SQLite nuevas y la regresión
+consolidada todavía necesitan ejecución nativa completa.
