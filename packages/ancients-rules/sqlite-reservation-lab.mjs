@@ -9,14 +9,14 @@ import {randomUUID} from 'node:crypto';
 import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {generateDigitalRoll, recordPhysicalRoll} from '../dice-roller/dice.mjs';
+import {captureBaseAncientsRangedDice, interpretBaseAncientsRangedDice} from './battle-dice.mjs';
+import {createRangedDicePlan, classifyRangedDicePlan} from './dice-plan.mjs';
 
 const APP_ID = 0x4343524c; // 'CCRL', distinct from the main CCWB SQLite app_id.
 const KEY = /^[a-zA-Z0-9_-]{8,80}$/;
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const MATCH = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const denied = (status, code) => Object.freeze({status, code});
-// Invented laboratory symbols; these are NOT the official Ancients die faces.
-const LAB_DIE_FACES = Object.freeze(['RED', 'BLUE', 'FLAG', 'RED']);
 const schema = `
  CREATE TABLE lab_matches (
    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, guest_id TEXT NOT NULL,
@@ -36,9 +36,10 @@ const schema = `
 const expectedTables = ['lab_commands','lab_events','lab_matches'];
 
 /** Only accepts empty SQLite files or previously marked CCRL v1 databases. */
-export function openAncientsReservationLab({file, checkDeclaration} = {}) {
+export function openAncientsReservationLab({file, checkDeclaration, dicePlanMode = 'SYNTHETIC'} = {}) {
   if (typeof file !== 'string' || !file || file === ':memory:' ||
-      typeof checkDeclaration !== 'function') throw new TypeError('INVALID_LAB_OPTIONS');
+      typeof checkDeclaration !== 'function' ||
+      !['SYNTHETIC','OFFICIAL_PREVIEW'].includes(dicePlanMode)) throw new TypeError('INVALID_LAB_OPTIONS');
   mkdirSync(dirname(file), {recursive:true});
   const db = new DatabaseSync(file);
   try {
@@ -126,9 +127,7 @@ export function openAncientsReservationLab({file, checkDeclaration} = {}) {
       if (!screened || screened.status!=='CANDIDATE' || screened.attackAuthorized!==false ||
           screened.needsFullLegalityCheck!==true) return denied(409,'DECLARATION_REJECTED');
       const reservationId=randomUUID(),revision=entry.revision+1;
-      const count=screened.ranged?.diceAfterTerrain;
-      const dicePlan=Number.isSafeInteger(count) && count>=1 && count<=32
-        ? {diceCount:count,dieFaces:[...LAB_DIE_FACES]} : null;
+      const dicePlan=createRangedDicePlan({mode:dicePlanMode,screening:screened,board,targetId});
       turnState.pendingCombat={kind:'RANGED_SCREENING_ONLY',actor:side,
         attackerId,targetId,reservationId,fullValidationRequired:true,dicePlan};
       turnState.revision=revision;
@@ -213,45 +212,60 @@ export function openAncientsReservationLab({file, checkDeclaration} = {}) {
       if (replay) {
         if (replay.signature!==signature) return denied(409,'IDEMPOTENCY_KEY_REUSED');
         const saved=turnState.pendingCombat;
-        if (!saved || saved.kind!=='RANGED_DICE_STAGED_SYNTHETIC' ||
+        if (!saved || !['RANGED_DICE_STAGED_SYNTHETIC','RANGED_DICE_STAGED_OFFICIAL_PREVIEW'].includes(saved.kind) ||
             saved.reservationId!==reservationId || saved.actor!==side || !saved.stagedDice)
           return denied(409,'DICE_REPLAY_UNAVAILABLE');
         return Object.freeze({status:200,code:'ALREADY_STAGED',revision:replay.committed_revision,
-          reservationId,roll:structuredClone(saved.stagedDice),attackAuthorized:false,
-          combatResolved:false});
+          reservationId,roll:structuredClone(saved.stagedDice),
+          ...(saved.kind==='RANGED_DICE_STAGED_OFFICIAL_PREVIEW'
+            ? {interpretation:structuredClone(saved.previewInterpretation),previewOnly:true} : {}),
+          attackAuthorized:false,combatResolved:false});
       }
       if (entry.revision!==expectedRevision) return denied(409,'STALE_REVISION');
       const marker=turnState.pendingCombat;
       if (!marker || marker.kind!=='RANGED_SCREENING_ONLY' || marker.actor!==side ||
           marker.reservationId!==reservationId || marker.fullValidationRequired!==true)
         return denied(409,'RESERVATION_NOT_STAGEABLE');
-      // Only the real Ancients checker supplies the positive count at reserve.
+      // Plans are server-owned, versioned and checked before any random draw.
+      // Unknown or forged snapshots fail closed instead of becoming official.
       const plan=marker.dicePlan;
-      if (!plan || !Number.isSafeInteger(plan.diceCount) || plan.diceCount<1 ||
-          plan.diceCount>32 || JSON.stringify(plan.dieFaces)!==JSON.stringify(LAB_DIE_FACES))
-        return denied(409,'DICE_PLAN_UNAVAILABLE');
+      const planKind=classifyRangedDicePlan(plan);
+      if (!planKind) return denied(409,'DICE_PLAN_UNAVAILABLE');
       const spec={rollId:'roll_'+reservationId.replaceAll('-',''),actor:side,
         diceCount:plan.diceCount,dieFaces:plan.dieFaces};
-      // Invalid declared faces are client errors, never an accepted stage.
-      let roll;
+      let roll,interpretation;
       try {
-        roll=mode==='DIGITAL' ? generateDigitalRoll(spec) : recordPhysicalRoll(spec,faces);
+        if (planKind==='OFFICIAL_PREVIEW') {
+          roll=captureBaseAncientsRangedDice({rollId:spec.rollId,actor:side,
+            diceCount:plan.diceCount,mode,
+            ...(mode==='PHYSICAL' ? {declaredFaces:faces} : {})});
+          interpretation=interpretBaseAncientsRangedDice({
+            roll,targetUnitType:plan.targetUnitType,expectedDiceCount:plan.diceCount});
+        } else {
+          roll=mode==='DIGITAL' ? generateDigitalRoll(spec) : recordPhysicalRoll(spec,faces);
+        }
       } catch (error) {
         if (error instanceof TypeError) return denied(400,'INVALID_DICE_DECLARATION');
         throw error;
       }
-      marker.kind='RANGED_DICE_STAGED_SYNTHETIC';
+      marker.kind=planKind==='OFFICIAL_PREVIEW'
+        ? 'RANGED_DICE_STAGED_OFFICIAL_PREVIEW' : 'RANGED_DICE_STAGED_SYNTHETIC';
       marker.stagedDice=roll;
+      if (interpretation) marker.previewInterpretation=interpretation;
       const revision=entry.revision+1;
       turnState.revision=revision;
       if (update.run(revision,JSON.stringify(turnState),matchId,entry.revision).changes!==1)
         throw new Error('LAB_CONCURRENT_UPDATE');
       // Intentionally do not publish the faces, unit identifiers or roll ID.
       eventInsert.run(matchId,revision,JSON.stringify({sequence:revision,
-        type:'RANGED_DICE_STAGED_SYNTHETIC',side,source:mode,diceCount:plan.diceCount}));
+        type:planKind==='OFFICIAL_PREVIEW' ? 'RANGED_DICE_STAGED_OFFICIAL_PREVIEW' : 'RANGED_DICE_STAGED_SYNTHETIC',
+        side,source:mode,diceCount:plan.diceCount}));
       commandInsert.run(matchId,side,idempotencyKey,signature,reservationId,revision);
-      return Object.freeze({status:200,code:'DICE_STAGED_SYNTHETIC',revision,reservationId,
-        roll:structuredClone(roll),attackAuthorized:false,combatResolved:false});
+      return Object.freeze({status:200,code:planKind==='OFFICIAL_PREVIEW'
+          ? 'DICE_STAGED_OFFICIAL_PREVIEW' : 'DICE_STAGED_SYNTHETIC',revision,reservationId,
+        roll:structuredClone(roll),
+        ...(interpretation ? {interpretation:structuredClone(interpretation),previewOnly:true} : {}),
+        attackAuthorized:false,combatResolved:false});
     });
   }
 

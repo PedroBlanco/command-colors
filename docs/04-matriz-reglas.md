@@ -248,3 +248,27 @@ al generador sintético ya almacenado en CCRL y no añade ninguna ruta HTTP.
 Se incorpora una suite adicional (inventario **53**). La rama origen
 documenta **16 casos nuevos nativos correctos**, con SHA Git idénticos;
 no equivale a regresión integral de esta integración.
+
+## Planes versionados de previsualización de dados oficiales en CCRL — #67
+
+Se integra una ampliación **exclusiva del laboratorio SQLite CCRL**.
+`dice-plan.mjs` distingue el plan heredado `SYNTHETIC_RANGED_V1`
+y el plan `ANCIENTS_BASE_RANGED_PREVIEW_V1`, con esquema versionado y
+lectura que falla ante tipos, caras, cantidades o campos incompatibles.
+Los registros sintéticos antiguos **no se convierten** a resultados
+oficiales. La elección del plan es del código servidor: el cliente
+no puede establecer distribución, tipo de objetivo ni cantidad de dados.
+
+El adaptador `openOfficialAncientsRangedPreviewLab()` conserva el
+plan y una interpretación preliminar de impactos por color y banderas
+en la misma transacción `BEGIN IMMEDIATE`, con revisión e idempotencia.
+El resultado es una **previsualización**, no una autorización de disparo,
+aplicación de bloques o retirada. El almacenamiento `CCWB`, HTTP,
+cuentas reales y manos privadas no cambian.
+
+[Contrato y límites](54-plan-versionado-dados-oficiales-sqlite.md).
+Se importan exactamente los cinco blobs de código/pruebas de #67,
+con dependencias inalteradas; la rama original documenta **89/89**
+pruebas focalizadas nativas correctas, repetidas cinco veces.
+El inventario pasa a **55 suites**, pero no se ha ejecutado su
+regresión global conjunta en esta integración.
