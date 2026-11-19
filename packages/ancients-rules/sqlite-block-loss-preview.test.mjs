@@ -308,3 +308,63 @@ test('SQLite: staged official dice carry a board digest without changing the sch
   assert.deepEqual(db.prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name")
     .all().map(x=>x.name),['lab_commands','lab_events','lab_matches']);
 }));
+
+test('SQLite: checklist derives the next phase from a single stored revision',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  const result=store.previewResolutionChecklist(preview(id));
+  assert.equal(result.code,'RANGED_RESOLUTION_CHECKLIST');
+  assert.equal(result.revision,6);
+  assert.deepEqual(result.checklist.steps.map(s=>s.kind),[
+    'APPLY_DIRECT_HITS','DEFENDER_MORALE_CHOICE',
+    'RESOLVE_RETREAT_OR_BLOCK_LOSS','AUTHORITATIVE_FINALIZATION']);
+  assert.equal(result.checklist.combatResolved,false);
+}));
+
+test('SQLite: attached leader requires a two-dice check before morale review',()=>fixture(({store})=>{
+  const id=reserveAndStage(store),result=store.previewResolutionChecklist(preview(id));
+  assert.equal(result.code,'RANGED_RESOLUTION_CHECKLIST');
+  assert.equal(result.checklist.blockLoss.leaderAttached,true);
+  assert.deepEqual(result.checklist.steps.map(s=>s.kind),[
+    'APPLY_DIRECT_HITS','LEADER_CASUALTY_CHECK','DEFENDER_MORALE_CHOICE',
+    'RESOLVE_RETREAT_OR_BLOCK_LOSS','AUTHORITATIVE_FINALIZATION']);
+  assert.equal(result.checklist.steps[1].diceCount,2);
+},{leaders:attached()}));
+
+test('SQLite: elimination of unit with attached leader schedules potential evade',()=>fixture(({store})=>{
+  const id=reserveAndStage(store),result=store.previewResolutionChecklist(preview(id));
+  assert.equal(result.code,'RANGED_RESOLUTION_CHECKLIST');
+  assert.deepEqual(result.checklist.steps.map(s=>s.kind),[
+    'APPLY_DIRECT_HITS','LEADER_CASUALTY_CHECK',
+    'LEADER_EVADE_IF_SURVIVES','AUTHORITATIVE_FINALIZATION']);
+  assert.equal(result.checklist.steps[1].diceCount,1);
+},{blocksRemaining:1,leaders:attached()}));
+
+test('SQLite: flag-only dice defer any leader check to possible retreat block loss',()=>fixture(({store})=>{
+  const id=reserveAndStage(store,['FLAG','SWORDS']);
+  const result=store.previewResolutionChecklist(preview(id));
+  assert.equal(result.code,'RANGED_RESOLUTION_CHECKLIST');
+  assert.deepEqual(result.checklist.steps.map(s=>s.kind),[
+    'DEFENDER_MORALE_CHOICE','RESOLVE_RETREAT_OR_BLOCK_LOSS',
+    'LEADER_CHECK_IF_RETREAT_CAUSES_BLOCK_LOSS','AUTHORITATIVE_FINALIZATION']);
+  assert.equal(result.checklist.steps[2].maximumChecksForThisCombat,1);
+},{leaders:attached()}));
+
+test('SQLite: checklist enforces private actor, revision and valid snapshot guards',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  assert.equal(store.previewResolutionChecklist(preview(id,{sessionUserId:'mallory'})).code,'NOT_FOUND');
+  assert.equal(store.previewResolutionChecklist(preview(id,{sessionUserId:'bob'})).code,'PREVIEW_NOT_AVAILABLE');
+  assert.equal(store.previewResolutionChecklist(preview(id,{expectedRevision:5})).code,'STALE_REVISION');
+  assert.equal(store.previewResolutionChecklist(preview(id,{matchingColorHits:20})).code,'INVALID_PREVIEW_REQUEST');
+}));
+
+test('SQLite: planning is idempotent and cannot append events or alter a board',()=>fixture(({store})=>{
+  const id=reserveAndStage(store),db=store.unsafeTestDatabase();
+  const before=db.prepare('SELECT board_json,turn_json,revision FROM lab_matches').get();
+  const eventsBefore=db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n;
+  const first=store.previewResolutionChecklist(preview(id));
+  const again=store.previewResolutionChecklist(preview(id));
+  assert.deepEqual(first,again);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n,eventsBefore);
+  assert.deepEqual(db.prepare('SELECT board_json,turn_json,revision FROM lab_matches').get(),before);
+  assert.equal(first.boardMutated,false);
+}));
