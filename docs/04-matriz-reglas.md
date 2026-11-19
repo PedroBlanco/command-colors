@@ -450,3 +450,39 @@ En las fuentes constan **17/17** pruebas nativas de acuerdo y
 **37/37** pruebas conjuntas de acuerdo y puerta, pero las pruebas
 del adaptador completo y la regresión de las 66 suites todavía
 no se han ejecutado en este commit.
+
+## Dos consentimientos y declaración física alternativa — consolidación #76 y #77
+
+Tras una **impugnación de dados físicos de líder** en el laboratorio
+independiente `CCRL`, la operación `voteLabLeaderReroll()` guarda
+un voto por cada participante (`CONSENT_REROLL` o `REFUSE_REROLL`),
+con identidad del servidor, revisión, clave idempotente, historial
+del resultado original y transacción `BEGIN IMMEDIATE`.
+La negativa de cualquiera impide considerar una nueva tirada.
+El acuerdo de ambos **no** vuelve a lanzar dados por sí solo.
+
+Con dos consentimientos se permite una **única** nueva transcripción
+física en `declareLabPhysicalLeaderReroll()`: recibe solo las caras
+declaradas, deriva del estado servidor el jugador, número de dados,
+modalidad e identificador nuevo, y la conserva por separado.
+La tirada previa, su impugnación y los dos votos **permanecen
+inalterados**. La segunda transcripción continúa **pendiente de
+confirmación por el adversario**. Nunca se convierte automáticamente
+en resultado vigente ni elimina líderes.
+
+La puerta de revisión sigue comunicando
+`PHYSICAL_DISPUTED`, `disputeBlocksContinuation:true`,
+`rerollAllowed:false`, `combatAuthorized:false` y
+`combatResolved:false`, incluso si ambos votan o ya existe una
+declaración nueva. Los eventos compartidos son mínimos, sin
+caras, líder o ID de reserva; las operaciones están confinadas al
+adaptador con doble opt-in de `CCRL`. No se modifica `CCWB`,
+ni se añaden rutas HTTP.
+
+Documentación: [votos bilaterales](62-consentimiento-bilateral-repeticion-dados.md)
+y [segunda declaración](63-redeclaracion-fisica-consentida-lider.md).
+Se importan blobs de #76 y #77, con firmas Git idénticas. Las
+ramas fuente acreditan 61/61 y 84/84 pruebas nativas focalizadas;
+**no equivalen a regresión conjunta de esta integración**.
+El inventario conserva la suite especial de verificación de
+`main`, ausente de las ramas antiguas, y pasa a **68 suites**.
