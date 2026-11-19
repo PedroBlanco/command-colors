@@ -80,6 +80,8 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/leader-movement-preflight.test.mjs',
   'packages/ancients-rules/leader-unit-sequence-preflight.test.mjs',
   'packages/ancients-rules/movement-candidate-journal.test.mjs',
+  'packages/ancients-rules/clear-lab-movement-reducer.test.mjs',
+  'packages/ancients-rules/movement-commit-intent-screen.test.mjs',
   'packages/ancients-rules/staged-movement-preflight.test.mjs',
   'packages/sqlite-store/ancients-section-history.test.mjs',
   'packages/sqlite-store/section-mutation-session-guard.test.mjs',
