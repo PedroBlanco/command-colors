@@ -227,3 +227,24 @@ de test de privacidad), conservando las dependencias idénticas de #148 y
 `dice-roller/dice.mjs`. Inventario: **52 suites**. La rama fuente
 documentó **47/47** casos nativos focalizados correctos; queda pendiente
 regresión completa del nuevo commit y examen de concurrencia multiproceso.
+
+## Captura e interpretación aisladas de los dados oficiales de disparo (#66)
+
+Se introduce `battle-dice.mjs` como **módulo puro e independiente**
+del dado de laboratorio de #149. El catálogo del básico de *Ancients*
+3.ª edición (2009) contiene seis caras equiprobables: `LIGHT`,
+`MEDIUM`, `HEAVY`, `LEADER`, `FLAG` y `SWORDS`. Contra unidades
+en disparo ordinario, una cara de símbolo del objetivo es un impacto
+**potencial**; `FLAG` queda pendiente de resolver por reglas de retirada;
+`LEADER` y `SWORDS` no producen impacto a distancia contra unidades.
+Las unidades con borde blanco siguen el color de su figura.
+
+Referencia de reglas: *GMT Games, Ancients Living Rules, 3.ª edición (2009)*
+y [documentación del intérprete](53-dados-oficiales-disparo-ancients.md).
+No se autorizan ataques, pérdidas, banderas, ni combate contra líderes solos;
+`attackAuthorized:false`, `combatResolved:false`,
+`hitsApplied:false`, `flagsResolved:false`. Este módulo **no sustituye**
+al generador sintético ya almacenado en CCRL y no añade ninguna ruta HTTP.
+Se incorpora una suite adicional (inventario **53**). La rama origen
+documenta **16 casos nuevos nativos correctos**, con SHA Git idénticos;
+no equivale a regresión integral de esta integración.
