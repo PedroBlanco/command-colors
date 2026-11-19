@@ -368,3 +368,122 @@ test('SQLite: planning is idempotent and cannot append events or alter a board',
   assert.deepEqual(db.prepare('SELECT board_json,turn_json,revision FROM lab_matches').get(),before);
   assert.equal(first.boardMutated,false);
 }));
+
+test('SQLite: preflight proposes precise direct-hit delta without committing',()=>fixture(({store})=>{
+  const id=reserveAndStage(store),db=store.unsafeTestDatabase();
+  const before=db.prepare('SELECT revision,turn_json,board_json FROM lab_matches').get();
+  const events=db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n;
+  const result=store.preflightDirectHits(preview(id));
+  assert.equal(result.code,'DIRECT_HITS_PREFLIGHT');
+  assert.equal(result.proposal.previousBlocks,3);
+  assert.equal(result.proposal.proposedBlocksAfterHits,2);
+  assert.equal(result.proposal.proposedBlocksRemoved,1);
+  assert.equal(result.proposal.matchRevision,6);
+  assert.equal(result.proposal.proposedNextRevision,7);
+  assert.equal(result.proposal.commitPermitted,false);
+  assert.equal(result.proposal.attackAuthorized,false);
+  assert.equal(result.proposal.boardMutated,false);
+  assert.deepEqual(db.prepare('SELECT revision,turn_json,board_json FROM lab_matches').get(),before);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n,events);
+}));
+
+test('SQLite: last block with attached leader proposes check but no removal or banner',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  const p=store.preflightDirectHits(preview(id)).proposal;
+  assert.equal(p.proposedBlocksAfterHits,0);
+  assert.equal(p.unitWouldBeEliminated,true);
+  assert.equal(p.leaderCheckRequired,true);
+  assert.equal(p.leaderCheckDiceCount,1);
+  assert.equal(p.proposedNextPhase,'LEADER_CASUALTY_CHECK');
+  assert.equal(p.unitRemoved,false);
+  assert.equal(p.leaderRemoved,false);
+  assert.equal(p.victoryBannerAwarded,false);
+},{blocksRemaining:1,leaders:attached()}));
+
+test('SQLite: surviving unit without leader with flags proposes defender morale',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  const p=store.preflightDirectHits(preview(id)).proposal;
+  assert.equal(p.proposedNextPhase,'DEFENDER_MORALE_CHOICE');
+  assert.equal(p.flagsStillPending,1);
+  assert.equal(p.leaderCheckRequired,false);
+}));
+
+test('SQLite: no direct hits still yields an uncommittable, non-mutating preflight',()=>fixture(({store})=>{
+  const id=reserveAndStage(store,['FLAG','SWORDS']);
+  const p=store.preflightDirectHits(preview(id)).proposal;
+  assert.equal(p.proposedBlocksRemoved,0);
+  assert.equal(p.previousBlocks,p.proposedBlocksAfterHits);
+  assert.equal(p.commitPermitted,false);
+  assert.equal(p.proposedNextPhase,'DEFENDER_MORALE_CHOICE');
+}));
+
+test('SQLite: preflight blocks unauthorized user, stale revision and caller-supplied blocks',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  assert.equal(store.preflightDirectHits(preview(id,{sessionUserId:'mallory'})).code,'NOT_FOUND');
+  assert.equal(store.preflightDirectHits(preview(id,{sessionUserId:'bob'})).code,'PREFLIGHT_UNAVAILABLE');
+  assert.equal(store.preflightDirectHits(preview(id,{expectedRevision:5})).code,'STALE_REVISION');
+  assert.equal(store.preflightDirectHits(preview(id,{blocksRemaining:0})).code,'INVALID_PREVIEW_REQUEST');
+}));
+
+test('SQLite: altered board after staging fails closed and does not advance revision',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyBoard:b=>b.units[1].blocksRemaining=1});
+  const p=store.preflightDirectHits(preview(id));
+  assert.equal(p.code,'PREFLIGHT_UNAVAILABLE');
+  assert.equal(store.inspectFixture({matchId:MATCH,sessionUserId:'alice'}).revision,6);
+}));
+
+test('SQLite: preflight rechecks range/LOS/dice on the saved revision',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  const p=store.preflightDirectHits(preview(id));
+  assert.equal(p.code,'DIRECT_HITS_PREFLIGHT');
+  assert.equal(p.proposal.screeningRechecked,true);
+  assert.equal(p.proposal.recheckedDiceCount,2);
+  assert.equal(p.proposal.commandCardValidated,false);
+  assert.equal(p.proposal.scenarioExceptionsChecked,false);
+  assert.equal(p.proposal.commitPermitted,false);
+}));
+
+test('SQLite: privileged re-attestation cannot conceal a target moved out of range',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyBoard:b=>{b.units[1].col=11;},attestBoard:true});
+  assert.equal(store.previewStagedBlockLoss(preview(id)).status,200);
+  assert.equal(store.preflightDirectHits(preview(id)).code,'PREFLIGHT_UNAVAILABLE');
+}));
+
+test('SQLite: privileged re-attestation cannot conceal a new adjacent enemy',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyBoard:b=>b.units.push({
+    id:'enemy_adjacent',side:'B',type:'LIGHT_INFANTRY',col:3,row:4,
+    blocksRemaining:4
+  }),attestBoard:true});
+  assert.equal(store.previewStagedBlockLoss(preview(id)).status,200);
+  assert.equal(store.preflightDirectHits(preview(id)).code,'PREFLIGHT_UNAVAILABLE');
+}));
+
+test('SQLite: forest cap change invalidates the original two-die plan',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyBoard:b=>b.terrain.push({col:5,row:4,kind:'FOREST'}),
+    attestBoard:true});
+  assert.equal(store.previewStagedBlockLoss(preview(id)).status,200);
+  assert.equal(store.preflightDirectHits(preview(id)).code,'PREFLIGHT_UNAVAILABLE');
+}));
+
+test('SQLite: tampered moved steps fail even if the board SHA has not changed',()=>fixture(({store})=>{
+  const id=reserveAndStage(store);
+  mutate(store,{modifyTurn:t=>{t.movedStepsByUnit.a1=3;}});
+  assert.equal(store.previewStagedBlockLoss(preview(id)).status,200);
+  assert.equal(store.preflightDirectHits(preview(id)).code,'PREFLIGHT_UNAVAILABLE');
+}));
+
+test('SQLite: re-screened preflight remains read-only across repeated invocations',()=>fixture(({store})=>{
+  const id=reserveAndStage(store),db=store.unsafeTestDatabase();
+  const before=db.prepare('SELECT revision,board_json,turn_json FROM lab_matches').get();
+  const events=db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n;
+  const commands=db.prepare('SELECT COUNT(*) AS n FROM lab_commands').get().n;
+  const p=store.preflightDirectHits(preview(id));
+  assert.deepEqual(store.preflightDirectHits(preview(id)),p);
+  assert.deepEqual(db.prepare('SELECT revision,board_json,turn_json FROM lab_matches').get(),before);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_events').get().n,events);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lab_commands').get().n,commands);
+}));
