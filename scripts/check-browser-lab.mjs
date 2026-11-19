@@ -29,7 +29,16 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/local-api/command-deck-sse.test.mjs',
   'packages/dice-roller/dice.test.mjs',
   'packages/order-validator/validator.test.mjs',
-  'packages/order-validator/server-context.test.mjs'
+  'packages/order-validator/server-context.test.mjs',
+  'packages/movement/movement.test.mjs',
+  'packages/movement/server-policy.test.mjs',
+  'packages/command-deck/movement-sqlite.test.mjs',
+  'packages/local-api/movement-revision-sse.test.mjs',
+  'packages/local-api/movement-controls.test.mjs',
+  'packages/local-api/hex-selection.test.mjs',
+  'packages/local-api/movement-board-ui.test.mjs',
+  'packages/local-api/private-view-scope.test.mjs',
+  'packages/local-api/private-projection.test.mjs'
 ]);
 const tests = LOCAL_TEST_FILES;
 

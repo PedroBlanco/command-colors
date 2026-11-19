@@ -31,7 +31,7 @@ async function withBrowser(run) {
     else if(path==='/api/session' && options.method==='DELETE'){state.login=false;response={ok:true};status=200;}
     else if(path==='/api/session' && state.login){response={authenticated:true,handle:'alice'};status=200;}
     else if(path==='/api/matches' && options.method==='POST'){response={matchId:MATCH};status=201;}
-    else if(path===`/api/matches/${MATCH}` && state.login){response={status:state.lobby,players:[{side:'A',handle:'alice'}],
+    else if(path===`/api/matches/${MATCH}` && state.login){response={matchId:MATCH,status:state.lobby,players:state.lobby==='READY'?[{side:'A',handle:'alice'},{side:'B',handle:'bob'}]:[{side:'A',handle:'alice'}],
       ...(state.lobby==='READY'?{state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:[]}}:{})};status=200;}
     else if(path===`/api/matches/${MATCH}/commands` && state.login){state.revision++;response={code:'APPLIED'};status=200;}
     return {ok:status<400,status,json:async()=>response};

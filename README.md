@@ -15,16 +15,13 @@ git fetch origin
 git switch main
 git pull --ff-only
 node scripts/check-browser-lab.mjs
-node scripts/check-test-inventory.mjs
 .\scripts\test-local.ps1
 node scripts/browser-lab.mjs
 ```
 
-La auditoría del inventario se ejecuta automáticamente desde `test-local.ps1`; la invocación independiente es opcional. Para enumerar las suites: `node scripts/list-test-files.mjs`. No se incorpora el motor reglamentario experimental. Véase [inventario de pruebas de main](docs/66-inventario-pruebas-main.md).
-
 El servidor escucha **solo en `http://127.0.0.1:8788/`**. La primera vez crea dos usuarios ficticios (`alice` y `bob`) y muestra contraseñas aleatorias **una sola vez**. Usar dos perfiles de navegador distintos y nunca copiar credenciales o bases SQLite a GitHub. No usar WSL ni es necesario instalar un VPS o ejecutar Actions.
 
-El tablero SVG de la [PR #27](https://github.com/PedroBlanco/command-colors/pull/27) continúa **separado, pendiente de validación visual**. La [guía de primera validación](docs/18-guia-primera-validacion.md) explica cómo probarlo sin mezclar ramas. La batería local de esta rama contempla ahora **28 suites**, incluida la auditoría de su inventario; en incrementos anteriores pasaron 99 pruebas de I2 y 15 del módulo sintético de fases por separado. **La regresión conjunta de 28 suites y el lanzador PowerShell siguen pendientes de comprobación en Windows.**
+El tablero SVG de la [PR #27](https://github.com/PedroBlanco/command-colors/pull/27) continúa **separado, pendiente de validación visual**. La [guía de primera validación](docs/18-guia-primera-validacion.md) explica cómo probarlo sin mezclar ramas. La batería local contempla ahora **18 suites**; en incrementos anteriores pasaron 99 pruebas de I2 y 15 del módulo sintético de fases por separado. **La batería conjunta de 18 suites y la interfaz visual deben verificarse en Windows.**
 
 ## Decisiones confirmadas
 
@@ -226,3 +223,96 @@ node --test packages/order-validator/validator.test.mjs
 En el laboratorio local, el procesador de `assign_synthetic_orders` valida ahora dentro de la transacción SQLite las unidades seleccionadas frente al tablero privado persistido en el servidor y una política ficticia de cartas. Rechaza identificadores inexistentes, ajenos, duplicados, órdenes excesivas y acciones fuera de fase/revisión sin crear eventos ni avanzar el estado. Las peticiones web **no pueden** suministrar perfiles de cartas, sectores o unidades de confianza. En el ejemplo: `synthetic-a` es la unidad de A y `synthetic-b` la de B; máximo ficticio de dos unidades por orden y sectores artificiales que se solapan en columnas 4 y 8. **No son reglas de Ancients**.
 
 Las 6 pruebas nuevas del generador del contexto y 11 anteriores del validador pasaron juntas localmente con Node.js 22.16.0; la nueva prueba HTTP/SQLite del flujo completo está incluida en la suite existente **sin ejecución confirmada todavía**. El conjunto general incorpora ahora **28 suites**, aún sin regresión completa en Windows. Ver [incremento SQLite de órdenes](docs/29-ordenes-sqlite-transaccion.md).
+
+## Iteración 4 — validación de movimiento hexagonal sintético (CCW-014)
+
+`packages/movement/` añade un **reductor puro** para recorrer hexágonos contiguos del tablero 13×9, comprobar unidades ordenadas y propias, topes de movimiento por unidad (configuración ficticia), ocupación, celdas bloqueadas, turno/revisión y movimiento único por unidad. La entrada no puede alterar directamente el estado del servidor, y la salida contiene el tablero siguiente y un evento sin secretos. No son reglas oficiales ni movimientos jugables todavía.
+
+```powershell
+node --test packages/movement/movement.test.mjs
+```
+
+**17/17 pruebas de movimiento y 34/34 junto con las de validación de órdenes** ejecutadas correctamente con Node.js 22.16.0, sin WSL ni Actions. La batería total de la rama apilada enumera **29 suites**, pendiente de ejecución conjunta. Este módulo **no está conectado a SQLite/HTTP**. [Contrato y límites](docs/30-movimiento-sintetico-i4.md). Depende de la [PR #45](https://github.com/PedroBlanco/command-colors/pull/45), todavía en revisión.
+
+## I4 — Movimiento persistente (laboratorio, no reglamentario)
+
+En la rama de integración `feat/i4-sqlite-movement-events`, el comando `move_synthetic_unit` puede validar una ruta hexagonal y guardar el nuevo tablero, las unidades ya movidas, el evento público y la revisión **en una misma transacción SQLite**. La política se deriva del tablero del servidor: **dos pasos ficticios por unidad y ningún obstáculo de terreno**. No representa el reglamento oficial de *Ancients*. Se evita mover dos veces la misma unidad y se bloquea deshacer órdenes tras ejecutar un movimiento; cada turno nuevo reinicia el registro de unidades movidas.
+
+```powershell
+node --test packages/order-validator/*.test.mjs packages/movement/*.test.mjs packages/command-deck/movement-sqlite.test.mjs
+.\scripts\test-local.ps1
+```
+
+**48/48 pruebas locales superadas** (incluidas 9 de SQLite real). La prueba HTTP de dos usuarios se ha añadido pero **todavía no está ejecutada**; el script general abarca **31 suites**, pendiente de regresión íntegra en Windows. Las vistas privadas del jugador y las actualizaciones SSE necesitan validación completa de navegador. Ver [contrato de movimiento persistente](docs/31-movimiento-sqlite-http-i4.md). Se mantienen en borrador las PR apiladas #45, #46 y la integración posterior. La PR #27 (tablero SVG) sigue pendiente de validación visual.
+
+## Comprobación SSE de movimientos — incremento I4
+
+El archivo `packages/local-api/movement-revision-sse.test.mjs` añade **4 pruebas de la función SSE real** `startRevisionStream` con contadores de revisión leídos de una base SQLite real; simula la identidad y membresía de dos participantes, sin abrir HTTP ni usar cookies de navegador. Comprueba la notificación de movimiento a ambos, que un rechazo no genera nuevos avisos, que una reconexión recibe la revisión actual y que la revocación de sesión cierra el flujo. Los frames contienen solo `lobbyRevision` y `gameRevision`, sin rutas, cartas ni manos. El archivo SSE publicado coincide en SHA con el ejecutado localmente (`30e374b5478fb1038c0e294bdadddfea6fedef43`).
+
+**Prueba real local:** 52/52 correctas combinando órdenes, movimiento, SQLite y SSE simulado con Node.js 22.16.0. **No equivale a una prueba HTTP/cookies/SSE completa.** Las pruebas HTTP de dos perfiles siguen pendientes; la regresión general enumera ahora **32 suites** y aún no se ha ejecutado conjuntamente en Windows. Ni esta verificación ni el incremento implementan reglas oficiales de *Ancients*.
+
+## Movimiento manual por navegador (CCW-014, laboratorio)
+
+La interfaz de la rama experimental permite introducir una unidad propia y una ruta por hexágonos en el formato `columna,fila; columna,fila`, por ejemplo `synthetic-a` y `4,4`. El botón de movimiento solo se habilita en la fase `MOVEMENT` del jugador activo. El cliente valida el formato y genera un comando mínimo `move_synthetic_unit` con `expectedRevision` y clave idempotente; el servidor sigue siendo la **única autoridad** sobre órdenes previas, ocupación, distancias, movimientos repetidos y persistencia.
+
+**Pruebas ejecutadas localmente en Node.js 22.16.0:** 64/64 correctas entre validadores, SQLite, SSE simulado y controles de navegador (5 casos nuevos). El test de interacción simulada de botón se añadió a `browser-deck-ui.test.mjs`, pero **no está ejecutado en esta revisión**; la validación visual PC/móvil también sigue pendiente. La batería general enumera ahora **33 suites**. No es todavía el tablero SVG de la PR #27 ni una implementación del reglamento oficial. [Detalles](docs/32-movimiento-manual-interfaz.md).
+
+## Verificación integrada HTTP/cookies y SSE (7 de noviembre de 2026)
+
+Después de la publicación inicial se han ejecutado las suites **originales del repositorio** `command-deck-cookie.test.mjs` (4/4), `command-deck-sse.test.mjs` (ahora 3/3) y `browser-deck-ui.test.mjs` (7/7), con los módulos de pasarela HTTP, sesiones y SQLite publicados y cotejados por sus hashes Git. La tercera prueba SSE, incorporada a esta rama, realiza **un movimiento real por HTTP con dos conexiones SSE autenticadas**: ambas reciben la revisión 3, un comando rechazado no produce aviso, la reconexión parte de la revisión vigente y el cierre de sesión revoca el flujo. Los mensajes SSE solo contienen `lobbyRevision` y `gameRevision`, sin cartas o rutas.
+
+**Evidencia ejecutada:** `node --test` sobre nueve suites de órdenes, movimiento, SQLite, interfaz simulada, cookies y SSE: **78/78 correctas, 0 fallos**, Node.js 22.16.0. Test SSE publicado con SHA `bd1cc3298329ba926e014ad26b77a5560a523239` idéntico al ejecutado. Queda pendiente la batería completa de **33 suites**, con pruebas de otras áreas del proyecto, y la validación visual real en Windows PC/móvil. No se emplearon WSL, VPS ni GitHub Actions. El laboratorio no debe publicarse en Internet.
+
+## Ajuste de controles tras movimiento — 151 pruebas (7/11/2026)
+
+La vista autorizada de una partida sintética comunica ahora la lista pública de identificadores `movedUnitIds` derivada **solo** de `matches.private_state`, sin revelar manos o mazo. Cuando ya se ha movido una unidad, la interfaz deja de ofrecer «Deshacer órdenes» y rechaza localmente el intento de mover esa misma unidad por segunda vez (`UNIDAD_YA_MOVIDA`). El servidor SQLite conserva de forma independiente la comprobación decisiva. La nueva prueba de controlador, las pruebas de botón en navegador simulado y las pruebas reales HTTP/cookies verifican el comportamiento, incluida la proyección del estado a ambos jugadores.
+
+Regresión conjunta sobre **16 suites** (geometría, fases, mazo, dados, órdenes, movimiento, SQLite, DOM simulado, HTTP/cookies y SSE): **151 pruebas ejecutadas, 151 PASS, 0 FAIL**, Node.js v22.16.0 en entorno aislado linux/x64, sin WSL ni GitHub Actions. Los cinco archivos modificados se contrastaron con los SHAs de los mismos archivos probados. Siguen pendientes **17 suites de las 33 generales** y la validación visual PC/móvil; todavía no procede fusionar las PR apiladas.
+
+## Regresión local reproducible (Windows 11, sin WSL)
+
+Las **33 suites** de pruebas se declaran una única vez en `scripts/check-browser-lab.mjs`. `scripts/test-local.ps1` invoca ahora el ejecutor Node.js `scripts/run-test-suite.mjs`, con código de salida propagado, selección opcional de suites y generación no sobrescribible de evidencias TAP y SHA-256.
+
+```powershell
+node .\scripts\run-test-suite.mjs --list
+.\scripts\test-local.ps1 -Log '.local-data\regression\completa-20261108.tap'
+```
+
+El ejecutor y su integración con el preflight superaron **8/8 pruebas**, también desde su CLI, con Node.js v22.16.0. **La regresión integral todavía no está ejecutada:** se conservan **26 de 33 suites verificadas**, las otras siete pendientes y la revisión visual en PC/móvil. Ver [procedimiento de pruebas y evidencia](docs/38-ejecutor-regresion-local.md). No implica permiso de despliegue ni de fusionar las PR apiladas.
+
+
+## Preparación de selección de rutas sobre tablero SVG (PR #49)
+
+La rama `feat/i4-svg-movement-path-draft` añade el contrato puro `packages/local-api/hex-selection.mjs`: empezar con una unidad propia, encadenar hexágonos vecinos no ocupados, deshacer pasos **solo en el cliente** y descartar un borrador si la revisión del servidor cambia. El resultado saneado `{unitId, path}` se entrega al flujo de `deckCommand` ya existente, sin suplantar al servidor.
+
+```powershell
+node --test packages/local-api/hex-selection.test.mjs
+.\\scripts\\test-local.ps1
+```
+
+El nuevo módulo superó **11/11 pruebas** en Node.js 22.16.0 y los dos archivos publicados coinciden por SHA Git con los probados. El manifiesto contiene **34 suites** en esta rama; **no se ha ejecutado la regresión conjunta** ni las siete suites previamente pendientes. El tablero SVG #27 aún no está integrado, y la selección gráfica no es utilizable desde el navegador por el momento. [Detalles y limitaciones](docs/39-ruta-seleccion-hexagono-i4.md). R-05 sigue sin reglas oficiales implementadas; PR #49 y sus predecesoras permanecen en borrador.
+
+## Tablero táctico SVG con sesión autenticada (I4, PR #50)
+
+La rama `feat/i4-authenticated-svg-board` añade a la página del **laboratorio local** un tablero SVG de 117 hexágonos: seleccionar una unidad propia, marcar una ruta, deshacer pasos en el navegador, cancelar o confirmar. Al confirmar, se envía `move_synthetic_unit` por la API de cookies existente; el servidor sigue comprobando actor, órdenes, recorrido, revisión e idempotencia. Los mensajes SSE invalidan borradores obsoletos.
+
+La vista dibuja **solo información pública**; nunca la mano contraria. El servidor entrega los módulos del tablero por una lista cerrada de rutas. El formulario manual continúa disponible. No se han incorporado imágenes ni reglas oficiales. La PR #27 de tablero con identidades simuladas A/B permanece separada y pendiente de aceptación; estos dos renderizadores deberán consolidarse tras la revisión.
+
+**Revisión 9/11:** el tablero mantiene ahora un único punto de Tabulador, navegación entre hexágonos con flechas y conservación del foco tras redibujar. Se han comprobado **116/116 callbacks** de 11 archivos de pruebas en V8 aislado con adaptadores de `node:test` y de las primitivas Node; incluyen los 22 casos anteriores de selección y tablero. **No equivale a 116 pruebas ejecutadas con Node.js, ni comprueba la seguridad criptográfica**. Las anteriores cifras de 19/19 con Node no cuentan con evidencia TAP contrastable. El manifiesto contiene **35 suites** y la regresión integral, la suite HTTP de los recursos nuevos y la aceptación visual/móvil continúan pendientes. Véase [especificación y criterios de aceptación](docs/40-tablero-svg-autenticado-i4.md). No ejecutar en Internet ni fusionar PR #45–#50 hasta resolver los bloqueos.
+
+## Protección frente a respuestas HTTP tardías (I4; PR #51)
+
+El navegador protege las vistas privadas frente a carreras de peticiones al cambiar de identidad o de partida. Un ámbito local, sin credenciales, invalida las respuestas antiguas de comandos, invitaciones y consultas; la API sigue autorizando por cookie de sesión. Al cambiar de partida se eliminan los tokens de invitación y la información privada anterior.
+
+**Evidencia ejecutada:** `private-view-scope.test.mjs` y `private-projection.test.mjs` suman **20/20 PASS en Node.js 22.16.0**, con SHA Git cotejados con GitHub. La interfaz simulada (`browser-deck-ui.test.mjs` y `browser-ui.test.mjs`) superó **22/22 callbacks en V8 aislado** (no es prueba Node ni navegador), incluidos cambios de cuenta con pestaña visible, respuestas de otro bando y revalidación temporalmente fallida y avisos SSE de conexiones cerradas. La rama lista **37 suites**, sin regresión integral ni pruebas visuales de PC/móvil. [Detalle y comandos](docs/41-aislamiento-respuestas-navegador-i4.md). La PR #51 sigue apilada sobre #50 y en borrador; no se ha modificado `main`.
+
+## Inventario de pruebas de la integración I4
+
+El lanzador `scripts/test-local.ps1` audita automáticamente todas las
+suites mediante `scripts/check-test-inventory.mjs`, conservando la
+protección incorporada en la PR #80. El inventario de esta integración
+contiene 38 suites. Las opciones `-Only` y `-Log` permiten pruebas
+focalizadas e informes TAP sin utilizar WSL ni GitHub Actions.
+
+Las cifras indicadas en apartados históricos corresponden a sus
+respectivas ramas y no acreditan la regresión de esta integración.
