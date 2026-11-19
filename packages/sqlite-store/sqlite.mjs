@@ -374,6 +374,64 @@ export function openSqliteComposition({file, clock = Date.now,
           return sectionHistory.previewMovement(identity.actor,request,trustedContext);
         });
       },
+      /** INTERNAL LAB ONLY. Preview a separately ordered leader's normal
+       * movement under a single WAL snapshot of session, membership and the
+       * private CCWB order journal. Never authorize movement or expose HTTP. */
+      precheckExperimentalSectionLeaderMovement(request = {},trustedContext) {
+        if (!plainLabRequest(request) ||
+            Object.keys(request).length!==4 ||
+            !['sessionToken','expectedRevision','leaderId','path'].every(k => Object.hasOwn(request,k)) ||
+            typeof request.sessionToken!=='string' ||
+            !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision<0 ||
+            typeof request.leaderId!=='string' ||
+            !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(request.leaderId) ||
+            request.leaderId==='__proto__' ||
+            !Array.isArray(request.path) || request.path.length<1 || request.path.length>32 ||
+            !request.path.every(cell => plainLabRequest(cell) &&
+              Object.keys(cell).length===2 && Object.hasOwn(cell,'col') &&
+              Object.hasOwn(cell,'row') && inBounds(cell)))
+          return {status:400,code:'INVALID_SECTION_LAB_LEADER_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(request.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewLeaderMovement(identity.actor,request,trustedContext);
+        });
+      },
+      /** INTERNAL LAB ONLY: hypothetical movement sequence, read-only and
+       * based on the same WAL snapshot as session, membership and replay.
+       * No public route, commands, mutations or gameplay authorization. */
+      precheckExperimentalSectionMovementSequence(request = {},trustedContext) {
+        if (!plainLabRequest(request) ||
+            Object.keys(request).length!==3 ||
+            !['sessionToken','expectedRevision','actions'].every(k => Object.hasOwn(request,k)) ||
+            typeof request.sessionToken!=='string' ||
+            !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision<0 ||
+            !Array.isArray(request.actions) || request.actions.length<1 ||
+            request.actions.length>117 ||
+            !request.actions.every(action => plainLabRequest(action) &&
+              Object.keys(action).length===3 &&
+              ['kind','id','path'].every(k => Object.hasOwn(action,k)) &&
+              ['UNIT','LEADER'].includes(action.kind) &&
+              typeof action.id==='string' &&
+              /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(action.id) &&
+              action.id!=='__proto__' &&
+              Array.isArray(action.path) && action.path.length>0 &&
+              action.path.length<=32 &&
+              action.path.every(cell => plainLabRequest(cell) &&
+                Object.keys(cell).length===2 &&
+                Object.hasOwn(cell,'col') && Object.hasOwn(cell,'row') &&
+                inBounds(cell))))
+          return {status:400,code:'INVALID_SECTION_LAB_SEQUENCE_REQUEST'};
+        return readSnapshot(() => {
+          const identity=resolveSectionLabActor(request.sessionToken);
+          if(identity.error)return identity.error;
+          if(!hasExperimentalSectionHistory(rowOrThrow()))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          return sectionHistory.previewMovementSequence(identity.actor,request,trustedContext);
+        });
+      },
       publicEvents(actor, {denyExperimentalLab = false} = {}) {
         if (!['A','B'].includes(actor)) return null;
         // Mode selection, replay verification and event read share a WAL
