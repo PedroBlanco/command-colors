@@ -348,3 +348,35 @@ puro, pero seis casos de integración de checklist aún no se han
 ejecutado con el árbol completo. La regresión integral Windows
 anterior solo acredita el commit #152 (56 suites); #153 y esta
 integración necesitan nueva comprobación conjunta.
+
+## Aplicación experimental de impactos directos — exclusivamente fixtures CCRL (#71)
+
+Se introduce la **primera escritura de bloques**, acotada a datos
+ficticios del laboratorio CCRL, y no a partidas del servidor CCWB.
+El módulo `lab-direct-hit-effect.mjs` vuelve a calcular de forma
+canónica una propuesta de impactos sobre la copia del tablero:
+descuenta bloques, puede retirar únicamente una unidad de prueba
+eliminada y conserva al líder para una comprobación futura.
+No resuelve moral, banderas, retiradas, líderes ni estandartes.
+
+La función `openLabOnlyDirectHitCommit()` exige una **doble barrera**:
+`allowTestFixtureMutation:true` habilitado por el código servidor
+y `labFixtureOnly:true` almacenado en el turno ficticio. El adaptador
+`openAncientsDirectHitFixtureAdapter()` exige por separado
+`enableUnsafeFixtureMutation:true`; no debe importarse en rutas HTTP.
+Comprueba el `application_id`, versión y esquema CCRL, revisión,
+huella del tablero, autor de la reserva e idempotencia. Aplica la
+modificación de prueba, revisión, evento mínimo y comando mediante
+`BEGIN IMMEDIATE`, con rollback total si falla una escritura.
+
+**Nunca supone combate reglamentario autorizado:**
+`labOnly:true`, `unverifiedFullRules:true`,
+`attackAuthorized:false`, `combatResolved:false`. No cambia
+el almacenamiento principal, sesiones, privacidad ni interfaz web.
+
+[Restricciones y ejemplos del fixture](58-impactos-directos-sqlite-fixture.md).
+Los siete blobs funcionales/test corresponden exactamente a #71.
+El inventario pasa a **61 suites**. La fuente acredita **39/39
+pruebas nativas** de módulos aislados (repetidas cinco veces),
+pero **seis pruebas del adaptador con módulos reales siguen pendientes**
+de ejecución nativa y no se ha ejecutado la regresión global.
