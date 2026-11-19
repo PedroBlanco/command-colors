@@ -3,6 +3,7 @@ import {deckActions, deckCommand, deckSummary, parseSyntheticMovementPath} from 
 import {createMovementBoard} from './movement-board-ui.mjs';
 import {createPrivateViewScope} from './private-view-scope.mjs';
 import {privateProjectionMatches} from './private-projection.mjs';
+import {createRevisionRefresh} from './revision-refresh.mjs';
 
 const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
@@ -11,8 +12,12 @@ let cached = null;
 let signedInHandle = null;
 const privateScope = createPrivateViewScope();
 let movementBoard = null;
-let updates = null, updateMatchId = null, lastNotice = null, inspectionSequence = 0;
-let pendingRefresh = false;
+let updates = null, updateMatchId = null, inspectionSequence = 0;
+const revisionRefresh = createRevisionRefresh({
+  inspect: () => inspect(),
+  onError: error => message(error.message)
+});
+revisionRefresh.setPaused(document.hidden);
 
 function renderDeck() {
   const isDeck = cached && typeof cached.phase === 'string';
@@ -74,8 +79,7 @@ function closeUpdates() {
   if (updates) updates.close();
   updates = null;
   updateMatchId = null;
-  lastNotice = null;
-  pendingRefresh = false;
+  revisionRefresh.reset();
   el('connection').textContent = 'Avisos en tiempo real desconectados';
 }
 function subscribeTo(matchId) {
@@ -83,36 +87,43 @@ function subscribeTo(matchId) {
   if (updates && updateMatchId === matchId) return;
   closeUpdates();
   updateMatchId = matchId;
-  const feed = new EventSource(`/api/matches/${matchId}/updates`);
+  const stream = new EventSource(`/api/matches/${matchId}/updates`);
   const ticket = privateScope.capture();
-  updates = feed;
-  const active = () => updates === feed && privateScope.isCurrent(ticket,matchId) &&
+  updates = stream;
+  const active = () => updates === stream && privateScope.isCurrent(ticket,matchId) &&
     el('match-id').value.trim() === matchId;
   el('connection').textContent = 'Conectando avisos de partida…';
-  feed.onopen = () => {if (active()) el('connection').textContent = 'Avisos de partida conectados';};
-  feed.onerror = () => {if (active()) el('connection').textContent = 'Reconectando avisos de partida…';};
-  feed.addEventListener('revision', event => {
+  stream.onopen = () => {
+    if (active()) el('connection').textContent = 'Avisos de partida conectados';
+  };
+  stream.onerror = () => {
+    if (active()) el('connection').textContent = 'Reconectando avisos de partida…';
+  };
+  stream.addEventListener('revision', event => {
+    // Ignore callbacks queued before logout or a match / identity switch.
     if (!active()) return;
     try {
       const {lobbyRevision, gameRevision} = JSON.parse(event.data);
       if (!Number.isSafeInteger(lobbyRevision) || !(gameRevision === null || Number.isSafeInteger(gameRevision))) return;
-      const key = `${lobbyRevision}:${gameRevision}`;
-      if (key === lastNotice) return;
-      lastNotice = key;
-      if (document.hidden) pendingRefresh = true;
-      else inspect().catch(error => {if (active()) message(error.message);});
+      // The event can arrive just before visibilitychange is dispatched.
+      // Never launch a private GET from a hidden tab merely for a notice.
+      if (document.hidden) revisionRefresh.setPaused(true);
+      // A revision is acknowledged only after inspect() really succeeds.
+      // Failed HTTP requests remain pending for bounded automatic retry.
+      revisionRefresh.notice(`${lobbyRevision}:${gameRevision}`);
     } catch {if (active()) message('No se ha podido interpretar el aviso de revisión');}
   });
 }
 document.addEventListener('visibilitychange', async () => {
-  if (document.hidden) return;
-  // Cookies can change when another tab logs in as a different player.
-  // Revalidate before revealing an old hand or processing deferred SSE.
-  if (!await session()) return;
-  if (pendingRefresh) {
-    pendingRefresh = false;
-    inspect().catch(error => message(error.message));
+  if (document.hidden) {
+    revisionRefresh.setPaused(true);
+    return;
   }
+  // Confirm the current cookie identity before resuming deferred notices.
+  if (!await session() || document.hidden) return;
+  // A second visibilitychange may hide the tab while the session GET awaits.
+  // Never unpause based on a stale visible event.
+  revisionRefresh.setPaused(false);
 });
 window.addEventListener('beforeunload', closeUpdates);
 
@@ -212,6 +223,13 @@ function action(id,callback) {
     }
   });
 }
+/** A cookie may have changed in another tab since the current view was drawn. */
+async function confirmCurrentSession(ticket, matchId = ticket.matchId) {
+  if (!privateScope.isCurrent(ticket,matchId)) return false;
+  if (!await session()) return false;
+  return privateScope.isCurrent(ticket,matchId) &&
+    (matchId === null || el('match-id').value.trim() === matchId);
+}
 async function sendDeck(type, fields = {}, retryKey = null) {
   if (!cached?.matchId) throw new Error('No hay partida activa');
   const matchId = cached.matchId;
@@ -257,6 +275,7 @@ action('logout',async()=>{
 });
 action('create',async()=>{
   const ticket=privateScope.capture();
+  if(!await confirmCurrentSession(ticket))return false;
   const result=await api('POST','/api/matches');
   if(!privateScope.isCurrent(ticket))return false;
   el('match-id').value=result.matchId;
@@ -275,12 +294,17 @@ action('refresh',inspect);
 action('invite',async()=>{
   const id=el('match-id').value.trim(),ticket=privateScope.capture();
   if(!privateScope.isCurrent(ticket,id))throw Error('PARTIDA_DESACTUALIZADA');
+  if(!await confirmCurrentSession(ticket,id))return false;
   const data=await api('POST',`/api/matches/${id}/invitations`,{targetHandle:el('invitee').value});
   if(!privateScope.isCurrent(ticket,id) || el('match-id').value.trim()!==id)return false;
+  // A cookie might change in a second tab while the token POST is pending.
+  // Never display a secret response until identity has been rechecked.
+  if(!await confirmCurrentSession(ticket,id))return false;
   el('invite-token').textContent=data.token;
 });
 action('accept',async()=>{
   const ticket=privateScope.capture();
+  if(!await confirmCurrentSession(ticket))return false;
   const data=await api('POST','/api/invitations/accept',{invitationToken:el('received').value.trim()});
   if(!privateScope.isCurrent(ticket))return false;
   el('match-id').value=data.matchId;
@@ -291,14 +315,16 @@ action('accept',async()=>{
 });
 action('reject',async()=>{
   const ticket=privateScope.capture();
+  if(!await confirmCurrentSession(ticket))return false;
   await api('POST','/api/invitations/reject',{invitationToken:el('received').value.trim()});
   return privateScope.isCurrent(ticket);
 });
 action('turn',async()=>{
   if(!cached?.matchId)throw Error('No hay partida activa');
-  const matchId=cached.matchId,ticket=privateScope.capture();
+  const matchId=cached.matchId,revision=cached.revision,ticket=privateScope.capture();
   if(!privateScope.isCurrent(ticket,matchId))throw Error('PARTIDA_DESACTUALIZADA');
-  await api('POST',`/api/matches/${matchId}/commands`,{type:'pass_demo_turn',expectedRevision:cached.revision,
+  if(!await confirmCurrentSession(ticket,matchId))return false;
+  await api('POST',`/api/matches/${matchId}/commands`,{type:'pass_demo_turn',expectedRevision:revision,
     idempotencyKey:crypto.randomUUID().replaceAll('-','')});
   if(!privateScope.isCurrent(ticket,matchId))return false;
   await inspect();
@@ -307,14 +333,19 @@ action('turn',async()=>{
 action('events',async()=>{
   const id=el('match-id').value.trim(),ticket=privateScope.capture();
   if(!privateScope.isCurrent(ticket,id))throw Error('PARTIDA_DESACTUALIZADA');
+  if(!await confirmCurrentSession(ticket,id))return false;
   const events=await api('GET',`/api/matches/${id}/events`);
   if(!privateScope.isCurrent(ticket,id) || el('match-id').value.trim()!==id)return false;
+  // Event contents are not accepted from a request whose cookie identity
+  // may have changed while its HTTP response was in flight.
+  if(!await confirmCurrentSession(ticket,id))return false;
   stateText(events);
 });
 action('deck-initialize',async()=>{
   if(!cached?.matchId || cached.you !== 'A' || cached.revision !== 0 || cached.phase)throw Error('INICIALIZACION_NO_DISPONIBLE');
   const id=cached.matchId,ticket=privateScope.capture();
   if(!privateScope.isCurrent(ticket,id))throw Error('PARTIDA_DESACTUALIZADA');
+  if(!await confirmCurrentSession(ticket,id))return false;
   await api('POST',`/api/matches/${id}/deck/initialize`,{});
   if(!privateScope.isCurrent(ticket,id))return false;
   await inspect();

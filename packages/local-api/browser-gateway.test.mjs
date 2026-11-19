@@ -71,6 +71,7 @@ test('serves only the public browser UI, with restrictive CSP',()=>harness(async
     ['/movement-board-ui.mjs','createMovementBoard'],
     ['/private-view-scope.mjs','createPrivateViewScope'],
     ['/private-projection.mjs','privateProjectionMatches'],
+    ['/revision-refresh.mjs','createRevisionRefresh'],
     ['/hex-selection.mjs','beginMovementDraft'],
     ['/hex-grid/hex.mjs','polygonPoints']
   ]) {
