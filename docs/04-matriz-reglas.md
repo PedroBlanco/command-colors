@@ -486,3 +486,37 @@ ramas fuente acreditan 61/61 y 84/84 pruebas nativas focalizadas;
 **no equivalen a regresión conjunta de esta integración**.
 El inventario conserva la suite especial de verificación de
 `main`, ausente de las ramas antiguas, y pasa a **68 suites**.
+
+## Revisión de una segunda declaración física de líder — consolidación #78
+
+La operación interna `reviewLabPhysicalLeaderReroll()` permite que
+el **defensor** confirme o impugne de forma independiente las caras de
+la segunda declaración física, una vez registrada la impugnación
+inicial y el consentimiento expreso de ambos participantes.
+**Consentir repetir no equivale a aceptar el nuevo resultado.**
+
+El estado persistido vincula mediante SHA-256 la declaración original,
+la segunda declaración y el veredicto del otro jugador; mantiene
+revisiones consecutivas, firma de idempotencia y una transacción
+`BEGIN IMMEDIATE`. Ni la consulta ni los eventos públicos revelan
+caras, datos del líder, identificadores privados o posibles bajas.
+Los reintentos exactos recuperan el mismo resultado sin tirar dados.
+
+La puerta distingue `PHYSICAL_REROLL_AWAITING_OPPONENT`,
+`PHYSICAL_REROLL_CONFIRMED` y `PHYSICAL_REROLL_DISPUTED`.
+**La impugnación original continúa registrada**, y aunque el
+adversario confirme la nueva declaración siguen vigentes
+`combatAuthorized:false`, `leaderCasualtyApplied:false`,
+`combatResolved:false` y el bloqueo de continuación; no se
+aplican efectos reglamentarios ni una tercera tirada automática.
+
+La capacidad sigue siendo exclusiva de los fixtures CCRL con
+doble opt-in, sin endpoints HTTP ni modificación del almacén CCWB.
+[Revisión de segunda tirada física](64-revision-segunda-tirada-fisica.md).
+
+El módulo, contrato, suite y adaptadores se importan con los mismos
+blobs Git de #78. Se conserva la suite de auditoría que ya existe en
+`main`, ausente de la rama histórica, y el inventario sube a
+**69 suites**. La fuente documenta **110/110 pruebas nativas**
+en batería local ampliada; la suite exacta de 14 casos del nuevo
+archivo y la regresión global del árbol consolidado quedan pendientes.
