@@ -293,3 +293,31 @@ en el futuro al mismo snapshot y a una secuencia autorizada.
 Importados los mismos dos blobs de #68 y sus dependencias coincidentes,
 con **24 pruebas nativas correctas documentadas en la fuente**.
 Manifiesto de integración: **56 suites**; falta regresión integral conjunta.
+
+## Instantánea transaccional de bloques y dados por revisión — integración de #69
+
+El laboratorio SQLite separado `CCRL` incorpora la consulta
+`previewStagedBlockLoss()`, que recupera turno, tablero y tirada oficial
+guardada desde la misma revisión bajo `BEGIN IMMEDIATE`.
+No acepta del cliente valores de bloques, aciertos, líderes o resultados
+de dados; exige identidad de servidor y la titularidad de la reserva.
+
+Las tiradas oficiales recién registradas guardan una huella SHA-256
+de `board_json` para detectar modificaciones del tablero entre tirada y
+consulta. Las capturas antiguas sin huella y los dados sintéticos **no
+se reinterpretan como datos oficiales**. Se vuelve a calcular la
+interpretación de los dados y se valida su coherencia con el resultado
+persistido antes de estimar pérdidas. La huella no sustituye una
+protección criptográfica frente a alguien con acceso directo de
+escritura a la base.
+
+No hay daños, eliminaciones, líderes retirados, estandartes, HTTP ni
+modificación de CCWB. `hitsApplied:false`, `combatResolved:false`,
+`bannerAwarded:false`. Solo previsualización.
+[Contrato y evidencia](56-snapshot-sqlite-bloques-disparo-ancients.md).
+
+Se importan los tres blobs de módulo/prueba exactos de #69; las
+dependencias ya en `main` coinciden por SHA Git. El inventario incluye
+ahora **57 suites** (56 existentes más una). La rama fuente registra
+**143/143** casos focalizados correctos en ocho suites Ancients; no se
+ha ejecutado la regresión integral del nuevo commit.
