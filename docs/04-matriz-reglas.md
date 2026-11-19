@@ -180,3 +180,27 @@ Se importan exactamente cuatro blobs originales (dos módulos y dos suites),
 con dependencias coincidentes byte a byte con `main`.
 El manifiesto pasa a **49 suites**. La fuente de #63 documentó 31 casos
 V8 correctos, que no sustituyen ejecución nativa Node ni regresión integral.
+
+## Reserva y cancelación atómica de cribas de disparo — laboratorio CCRL (integración #64)
+
+Laboratorio experimental **separado** del almacén de partidas `CCWB`,
+sin ruta HTTP y sin migraciones de la aplicación principal. Emplea un fichero
+SQLite independiente con `application_id=CCRL`, transacciones `BEGIN IMMEDIATE`,
+revisiones e idempotencia, y permite reservar o cancelar una **criba**
+de ataque a distancia antes de obtener dados. Las guardas se evalúan contra
+tablero y turno del propio almacenamiento; el jugador autenticado
+`sessionUserId` solo puede proceder de código servidor fiable.
+
+Ni la reserva ni su cancelación ejecutan combates, consumen cartas,
+modifican bloques, manos o unidades, ni publican identificadores privados.
+Sus eventos públicos se mantienen mínimos. Las funciones de siembra,
+inspección y acceso directo a la base son **exclusivas del laboratorio** y
+no pueden conectarse a rutas de red.
+
+Referencia: [laboratorio transaccional CCRL](51-reserva-sqlite-combates-ancients.md).
+Los cuatro archivos de módulo/prueba se importan exactamente desde #64
+con SHAs Git invariantes, y las dependencias de #147/#146 coinciden.
+El manifiesto se amplía a **51 suites**. La rama fuente documenta **33/33
+pruebas Node nativas correctas** para el laboratorio, pero esta integración
+requiere regresión conjunta antes de dar por validada su convivencia.
+**R-04/R-06 y la autorización de combate oficial siguen pendientes.**
