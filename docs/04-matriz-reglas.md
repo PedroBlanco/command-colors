@@ -141,3 +141,22 @@ Los ensayos nativos registrados en las PR fuente son evidencia histórica de
 los módulos sin modificaciones; **no acreditan una regresión completa de esta
 integración**. Antes de activar reglas oficiales deben validarse contra edición,
 erratas, escenarios y excepciones, con autorización exclusivamente del servidor.
+
+## Línea de visión y precomprobación de disparo — integración #61 y #62
+
+**R-06 sigue incompleta; ninguna salida autoriza un ataque**. El cálculo geométrico
+`assessAncientsLineOfSight` trabaja con centros hexagonales `odd-q` y terreno
+público del servidor para bosque, colina y accidentado, con obstáculos sobre
+aristas opuestas. `assessAncientsRangedProfile` aplica el alcance base y los
+dados ordinarios según tropa/movimiento; `precheckAncientsRangedAttack`
+combina arma, distancia, ocupación, adyacencia, LOS y terreno. El catálogo
+excluye expansiones y las excepciones de cartas, líderes y escenarios.
+
+Documentación: [LOS](48-linea-vision-ancients-basico.md),
+[disparos](49-precomprobacion-combate-distancia-ancients.md).
+Los tres módulos y sus tests se importan por sus SHA originales de #61/#62;
+las dependencias de #145 y `hex-grid/hex.mjs` coinciden con la rama fuente.
+Se preserva el inventario previo y se suman **3 suites**: 47 en total.
+Las **41 pruebas focalizadas** documentadas en #62 no acreditan una regresión
+integral de esta integración. El servidor deberá verificar fase, cartas, órdenes,
+historial de movimiento y estado antes de habilitar combates.
