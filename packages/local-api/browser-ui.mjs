@@ -8,6 +8,19 @@ import {createRevisionRefresh} from './revision-refresh.mjs';
 const el = id => document.getElementById(id);
 const message = value => {el('message').textContent = value;};
 const stateText = value => {el('state').textContent = JSON.stringify(value,null,2);};
+// Report command errors in their originating control group, not only in #message.
+const deckFeedbackSlots=Object.freeze({
+  'deck-initialize':'deck-init-feedback','deck-play':'deck-card-feedback',
+  'deck-unit-add':'deck-orders-feedback','deck-unit-clear':'deck-orders-feedback',
+  'deck-orders':'deck-orders-feedback','deck-undo':'deck-orders-feedback',
+  'deck-move':'deck-move-feedback','deck-movement':'deck-move-feedback',
+  'deck-ask-defense':'deck-combat-feedback','deck-stand':'deck-combat-feedback',
+  'deck-evade':'deck-combat-feedback','deck-combat':'deck-combat-feedback',
+  'deck-draw':'deck-combat-feedback'
+});
+function clearDeckFeedback() {
+  for(const id of new Set(Object.values(deckFeedbackSlots))) el(id).textContent='';
+}
 let cached = null;
 let signedInHandle = null;
 const privateScope = createPrivateViewScope();
@@ -164,6 +177,7 @@ function clearMatchPresentation() {
   el('lobby').textContent = 'Sin partida cargada';
   el('invite-token').textContent = '—';
   el('received').value = '';
+  clearDeckFeedback();
   renderDeck();
 }
 function clearPrivateView() {
@@ -330,13 +344,21 @@ async function inspect() {
   return lobby;
 }
 function action(id,callback) {
+  const feedbackId=Object.hasOwn(deckFeedbackSlots,id) ? deckFeedbackSlots[id] : null;
   el(id).addEventListener('click',async() => {
     const ticket=privateScope.capture();
+    if (feedbackId && privateScope.isCurrent(ticket)) el(feedbackId).textContent='';
     try {
       const outcome = await callback();
-      if (outcome !== false && privateScope.isCurrent(ticket)) message('Operación realizada');
+      if (outcome !== false && privateScope.isCurrent(ticket)) {
+        message('Operación realizada');
+        if (feedbackId) el(feedbackId).textContent='Operación realizada';
+      }
     } catch(error) {
-      if (privateScope.isCurrent(ticket)) message(error.message);
+      if (privateScope.isCurrent(ticket)) {
+        message(error.message);
+        if (feedbackId) el(feedbackId).textContent=error.message;
+      }
     }
   });
 }
@@ -519,8 +541,9 @@ movementBoard = createMovementBoard({
     return confirmed;
   },
   onConfirm: async (fields, idempotencyKey) => {
-    if (await sendDeck('move_synthetic_unit', fields, idempotencyKey))
-      message('Movimiento sintético confirmado por el servidor');
+    const confirmed=await sendDeck('move_synthetic_unit', fields, idempotencyKey);
+    if (confirmed) message('Movimiento sintético confirmado por el servidor');
+    return confirmed;
   },
   onError: error => message(error.message)
 });

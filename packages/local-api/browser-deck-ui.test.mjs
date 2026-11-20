@@ -558,3 +558,18 @@ test('old SSE callbacks do not interfere with the newly subscribed match',()=>wi
  assert.equal(c.requests.length,before);
  assert.equal(c.element('connection').textContent,'Avisos de partida conectados');
 }));
+
+test('command feedback is local to a control and cleared on match switch',()=>withBrowser(async c=>{
+  await loginReady(c);await c.element('deck-initialize').dispatch('click');
+  c.element('deck-card').value='enemy_secret';
+  await c.element('deck-play').dispatch('click');
+  assert.equal(c.element('deck-card-feedback').textContent,'CARTA_NO_PROPIA');
+  assert.equal(c.element('deck-orders-feedback').textContent,'');
+  c.element('deck-card').value='own_1';
+  c.state.revision=5;
+  await c.element('deck-play').dispatch('click');
+  assert.equal(c.element('deck-card-feedback').textContent,'409: STALE_REVISION');
+  c.element('match-id').value=MATCH_B;
+  await c.element('match-id').dispatch('input');
+  assert.equal(c.element('deck-card-feedback').textContent,'');
+}));

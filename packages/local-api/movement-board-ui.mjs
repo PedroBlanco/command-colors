@@ -161,7 +161,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   makeIdempotencyKey=()=>crypto.randomUUID().replaceAll('-','')}={}) {
   if (typeof onConfirm!=='function') throw new TypeError('MISSING_MOVEMENT_SENDER');
   let view=null, draft=null, keyForRetry=null, pending=false, autoRoute=false;
-  let selectedTargetId=null, defenseRetryKey=null;
+  let selectedTargetId=null, defenseRetryKey=null, activeError=null;
   const message=value=>{if(status)status.textContent=value;};
   // Local geometry failures belong beside the board, not only in the
   // application's general message area. Never echo private server payloads.
@@ -176,7 +176,13 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     OBJETIVO_RIVAL_REQUERIDO:'Selecciona una unidad rival durante el combate sintético.'
   });
   const reportError=error=>{
-    if (Object.hasOwn(localErrors,error?.message)) message(localErrors[error.message]);
+    const code=error?.message;
+    const serverCode=typeof code==='string' &&
+      /^[1-5][0-9]{2}: [A-Z][A-Z0-9_]{0,79}$/.test(code);
+    activeError=Object.hasOwn(localErrors,code) ? localErrors[code] :
+      serverCode ? `El servidor rechazó el comando (${code}).` :
+        'No se pudo completar la acción. Revisa la conexión y reintenta.';
+    message(activeError);
     onError(error);
   };
   function repaint() {
@@ -208,6 +214,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if (confirmButton)confirmButton.disabled=pending||renderError||!editable||!draft?.path.length;
     if (attackButton)attackButton.disabled=pending||renderError||!defenseReady||!selectedTargetId;
     message(renderError ? 'El tablero recibido no es válido.' :
+      activeError ? activeError :
       defenseReady ? (selectedTargetId
         ? `Objetivo rival ${selectedTargetId} seleccionado. Solicita la decisión defensiva para enviar el comando al servidor.`
         : 'Combate sintético: selecciona una unidad rival para solicitar su decisión defensiva.') :
@@ -217,6 +224,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   }
   function select(cell) {
     if(pending)return;
+    activeError=null;
     try {
       if (!view) throw Error('MOVIMIENTO_NO_DISPONIBLE');
       const actions=deckActions(view);
@@ -248,16 +256,19 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   }
   async function confirm() {
     if(pending)return;
+    activeError=null;
     try {
       const fields=movementDraftFields(view,draft);
       if(!keyForRetry)keyForRetry=makeIdempotencyKey();
       pending=true;repaint();
-      await onConfirm(fields,keyForRetry);
+      const result=await onConfirm(fields,keyForRetry);
+      if(result===false)return; // Superseded identity cannot confirm this move.
       draft=null;keyForRetry=null;autoRoute=false;
     } catch(error){reportError(error);} finally {pending=false;repaint();}
   }
   async function requestDefense() {
     if (pending) return;
+    activeError=null;
     try {
       if (!selectedTargetId || !view ||
           !deckActions(view).includes('ask_synthetic_defense') ||
@@ -273,9 +284,10 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   }
   function undo() {
     if(pending)return;
+    activeError=null;
     try {draft=undoMovementHex(view,draft);keyForRetry=null;autoRoute=false;repaint();}catch(error){reportError(error);}
   }
-  function cancel() {if(pending)return;draft=null;keyForRetry=null;autoRoute=false;repaint();}
+  function cancel() {if(pending)return;draft=null;keyForRetry=null;autoRoute=false;activeError=null;repaint();}
   undoButton?.addEventListener('click',undo);
   cancelButton?.addEventListener('click',cancel);
   confirmButton?.addEventListener('click',confirm);
@@ -285,7 +297,7 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
     if(!next||!view || next.matchId!==view.matchId || next.you!==view.you
        || next.revision!==view.revision || next.phase!==view.phase || next.actingSide!==view.actingSide) {
       draft=null;keyForRetry=null;autoRoute=false;
-      selectedTargetId=null;defenseRetryKey=null;
+      selectedTargetId=null;defenseRetryKey=null;activeError=null;
     }
     // A same-revision projection should be immutable, but fail closed if a
     // corrupted/restored snapshot invalidates a draft even without a bump.
