@@ -165,7 +165,7 @@ test('a forged card or invalid orders are rejected before HTTP mutation',()=>wit
  c.element('deck-card').value='enemy_secret';
  await c.element('deck-play').dispatch('click');
  assert.equal(c.requests.length,before);
- assert.equal(c.element('message').textContent,'CARTA_NO_PROPIA');
+ assert.equal(c.element('message').textContent,'Esa carta no está disponible en tu mano.');
  c.element('deck-card').value='own_1';
  await c.element('deck-play').dispatch('click');
  const count=c.requests.length;
@@ -177,7 +177,7 @@ test('a forged card or invalid orders are rejected before HTTP mutation',()=>wit
    // Even an artificial event on the disabled add button must fail closed.
    await c.element('deck-unit-add').dispatch('click');
    assert.equal(c.requests.length,count);
-   assert.equal(c.element('message').textContent,'UNIDAD_NO_DISPONIBLE');
+   assert.equal(c.element('message').textContent,'La unidad elegida no está disponible para esta orden.');
    assert.equal(c.element('deck-orders').disabled,true);
  }
 }));
@@ -250,7 +250,7 @@ test('manual movement button sends sanitized own-unit path after order assignmen
  c.element('deck-move-path').value='13,4';
  await c.element('deck-move').dispatch('click');
  assert.equal(c.requests.length,before);
- assert.equal(c.element('message').textContent,'RUTA_INVALIDA');
+ assert.equal(c.element('message').textContent,'La ruta indicada no es válida. Revisa sus hexágonos.');
 }));
 
 
@@ -563,12 +563,12 @@ test('command feedback is local to a control and cleared on match switch',()=>wi
   await loginReady(c);await c.element('deck-initialize').dispatch('click');
   c.element('deck-card').value='enemy_secret';
   await c.element('deck-play').dispatch('click');
-  assert.equal(c.element('deck-card-feedback').textContent,'CARTA_NO_PROPIA');
+  assert.equal(c.element('deck-card-feedback').textContent,'Esa carta no está disponible en tu mano.');
   assert.equal(c.element('deck-orders-feedback').textContent,'');
   c.element('deck-card').value='own_1';
   c.state.revision=5;
   await c.element('deck-play').dispatch('click');
-  assert.equal(c.element('deck-card-feedback').textContent,'409: STALE_REVISION');
+  assert.equal(c.element('deck-card-feedback').textContent,'La partida ha cambiado. Actualiza su estado antes de repetir la acción.');
   c.element('match-id').value=MATCH_B;
   await c.element('match-id').dispatch('input');
   assert.equal(c.element('deck-card-feedback').textContent,'');
