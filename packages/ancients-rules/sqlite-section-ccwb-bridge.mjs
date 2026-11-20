@@ -10,6 +10,8 @@ import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempo
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
 import {previewVerifiedSectionFootCore} from './verified-foot-core-preview.mjs';
+import {planPrivateFootPathV2SqliteStage} from './private-foot-path-v2-sqlite-stage.mjs';
+import {inspectFootPathV2StageForSectionAdvance} from './private-foot-path-v2-lifecycle.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence} from './staged-movement-preflight.mjs';
@@ -148,11 +150,25 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       if(row.game_revision!==request.expectedRevision)return denied(409,'STALE_REVISION');
       const result=applySectionHistoryLabCommand(snapshot,command);
       if(!result.accepted)return denied(result.code==='NOT_YOUR_TURN'?403:409,result.code);
+      // A private V2 proposal cannot claim a real section command key.
+      // Expire it only after an accepted command and only inside this writer
+      // transaction. Corruption or key collision blocks advancement.
+      const pathV2=inspectFootPathV2StageForSectionAdvance({
+        persisted,matchId:row.id,gameRevision:row.game_revision,
+        actor:request.actor,idempotencyKey:request.idempotencyKey
+      });
+      if(pathV2.status==='CORRUPT')
+        return denied(409,'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED');
+      if(pathV2.status==='KEY_CONFLICT')
+        return denied(409,'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE');
+      if(pathV2.status!=='ABSENT'&&Object.hasOwn(persisted,'ancientsFootMovementJournalLab'))
+        return denied(409,'SECTION_LAB_FOOT_STAGE_VERSION_CONFLICT');
       const next=result.nextState;
       const updated={...persisted,ancientsSectionHistoryLab:{
         initial:journal.initial,
         commands:[...journal.commands,bindLabJournalIdempotency(command,request.idempotencyKey)],
         state:next}};
+      delete updated.ancientsFootPathJournalV2Lab;
       if(update.run(JSON.stringify(updated),next.revision,row.id,row.game_revision).changes!==1)
         throw new Error('SECTION_CCWB_CONCURRENT_UPDATE');
       eventInsert.run(row.id,next.revision,'public',JSON.stringify({...result.publicEvent,visibility:'public'}));
@@ -208,6 +224,19 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       attackAuthorized:false,boardChanged:false,canCommit:false
     });
   }
+  /** The caller holds BEGIN IMMEDIATE and has authenticated membership.
+   * Re-verify the complete CCWB history before constructing a V2 private
+   * full-path proposal from a server-controlled synthetic scenario. */
+  function proposeFootPathV2JournalStage(actor,request,trustedScenario,previousJournal){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    return planPrivateFootPathV2SqliteStage({
+      matchId,verifiedState:snapshot,actor,
+      expectedRevision:request.expectedRevision,actions:request.actions,
+      idempotencyKey:request.idempotencyKey,trustedScenario,previousJournal
+    });
+  }
   return Object.freeze({initialize,view,dispatch,previewMovement,
-    previewLeaderMovement,previewMovementSequence,previewVerifiedFootCore});
+    previewLeaderMovement,previewMovementSequence,previewVerifiedFootCore,
+    proposeFootPathV2JournalStage});
 }

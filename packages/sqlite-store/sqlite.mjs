@@ -12,6 +12,7 @@ import {createSqliteCommandDeckStore, hasCommandDeck} from '../command-deck/sqli
 import {createSqliteAncientsSectionBridge, hasExperimentalSectionHistory} from '../ancients-rules/sqlite-section-ccwb-bridge.mjs';
 import {makeSectionMutationSessionGuard} from './section-mutation-session-guard.mjs';
 import {snapshotStagedSequenceRequest,snapshotFootTransactionProbeRequest} from '../ancients-rules/staged-sequence-request-snapshot.mjs';
+import {snapshotFootPathV2StageRequest} from '../ancients-rules/private-foot-path-v2-sqlite-stage.mjs';
 import {inBounds} from '../hex-grid/hex.mjs';
 
 const scrypt = promisify(callbackScrypt);
@@ -490,6 +491,68 @@ export function openSqliteComposition({file, clock = Date.now,
             ruleSubset:'BASE_FOOT_OPEN_ONE_HEX_V1',
             movementAuthorized:false,officialMovementAuthorized:false,
             canCommit:false,boardChanged:false,dbChanged:false
+          });
+        });
+      },
+      /**
+       * INTERNAL LAB ONLY — private V2 full-path draft, ONE movement command
+       * of one or two hexes, ONE provisional revision. The existing CCWB
+       * history is verified under the writer lock by the section bridge.
+       * Never expose via HTTP/SSE; never modify board, public revision,
+       * game_commands, game_events, or the legacy V1 staged journal.
+       */
+      stageExperimentalSectionFootPathV2Journal(request={},trustedScenario) {
+        const stable=snapshotFootPathV2StageRequest(request);
+        if(stable===null)
+          return {status:400,code:'INVALID_SECTION_LAB_FOOT_PATH_V2_REQUEST'};
+        return atomic(()=>{
+          const identity=resolveSectionLabActor(stable.sessionToken);
+          if(identity.error)return identity.error;
+          const row=rowOrThrow();
+          if(!hasExperimentalSectionHistory(row))
+            return {status:409,code:'SECTION_LAB_NOT_INITIALIZED'};
+          if(row.game_revision!==stable.expectedRevision)
+            return {status:409,code:'STALE_REVISION'};
+          const committed=db.prepare(
+            'SELECT committed_revision FROM game_commands WHERE match_id=? AND actor=? AND idem_key=?'
+          ).get(matchId,identity.actor,stable.idempotencyKey);
+          if(committed)
+            return {status:409,code:'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE'};
+          const persisted=decode(row.private_state);
+          if(Object.hasOwn(persisted,'ancientsFootMovementJournalLab'))
+            return {status:409,code:'SECTION_LAB_FOOT_STAGE_VERSION_CONFLICT'};
+          const exists=Object.hasOwn(persisted,'ancientsFootPathJournalV2Lab');
+          const previous=exists?persisted.ancientsFootPathJournalV2Lab:null;
+          if(exists&&(previous===null||typeof previous!=='object'||
+             Array.isArray(previous)))
+            return {status:409,code:'SECTION_LAB_FOOT_PATH_V2_REJECTED',
+              reason:'FOOT_PATH_LAB_PERSISTED_JOURNAL_DRIFT'};
+          const plan=sectionHistory.proposeFootPathV2JournalStage(
+            identity.actor,stable,trustedScenario,previous
+          );
+          if(plan.status==='PRIVATE_FOOT_PATH_STAGE_ALREADY_RECORDED')
+            return Object.freeze({
+              status:200,code:'SECTION_LAB_FOOT_PATH_V2_ALREADY_RECORDED',
+              provisionalRevision:plan.provisionalRevision,
+              privateDraftChanged:false,gameRevisionChanged:false,
+              boardChanged:false,movementAuthorized:false,
+              officialMovementAuthorized:false,canCommit:false
+            });
+          if(plan.status!=='PRIVATE_FOOT_PATH_STAGE_APPEND_CANDIDATE')
+            return {status:409,code:'SECTION_LAB_FOOT_PATH_V2_REJECTED',
+              reason:plan.reason??'INVALID_PRIVATE_FOOT_PATH_V2'};
+          const next={...persisted,ancientsFootPathJournalV2Lab:plan.journal};
+          const updated=db.prepare(
+            'UPDATE matches SET private_state=? WHERE id=? AND game_revision=?'
+          ).run(JSON.stringify(next),matchId,row.game_revision);
+          if(updated.changes!==1)
+            throw new Error('SECTION_LAB_FOOT_PATH_V2_CONCURRENT_UPDATE');
+          return Object.freeze({
+            status:200,code:'SECTION_LAB_FOOT_PATH_V2_SAVED',
+            provisionalRevision:plan.provisionalRevision,
+            privateDraftChanged:true,gameRevisionChanged:false,
+            boardChanged:false,movementAuthorized:false,
+            officialMovementAuthorized:false,canCommit:false
           });
         });
       },
