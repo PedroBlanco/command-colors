@@ -21,7 +21,7 @@ select{display:block;width:100%;min-height:42px;border:1px solid #a4b5b0;border-
 [hidden]{display:none!important}
 code{overflow-wrap:anywhere}.notice{padding:12px;background:#fff0cb;border-radius:7px}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius:7px;padding:9px;min-height:45px}
-#current{font-weight:700}#message{min-height:2em}
+#current{font-weight:700}#message{min-height:2em}.control-feedback{min-height:1.4em;margin:4px 0 8px;overflow-wrap:anywhere}
 
 /* Tablero táctico del laboratorio autenticado, sin recursos oficiales. */
 #movement-viewport{width:100%;overflow:hidden;border:1px solid #a4b5b0;border-radius:8px;background:#e7e8de;overflow-x:auto;touch-action:auto}
@@ -61,20 +61,24 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <section aria-labelledby="deck-title"><details id="deck-details"><summary id="deck-title">Mazo de mando sintético</summary>
 <p>Solo identificadores ficticios. No incluye cartas ni reglas oficiales de Ancients.</p>
 <button id="deck-initialize" disabled>Inicializar mazo de prueba (jugador A)</button>
+<p id="deck-init-feedback" class="control-feedback" role="status" aria-live="polite"></p>
 <div id="deck-panel" hidden>
 <p id="deck-status" role="status">Mazo no inicializado</p>
 <label>Carta de tu mano<select id="deck-card"></select></label><button id="deck-play" disabled>Jugar carta</button>
+<p id="deck-card-feedback" class="control-feedback" role="status" aria-live="polite"></p>
 <label>Unidad propia que recibe orden
 <select id="deck-units"><option value="">Selecciona una unidad</option></select></label>
 <button id="deck-unit-add" type="button" disabled>Añadir unidad a las órdenes</button>
 <button id="deck-unit-clear" type="button" disabled>Vaciar selección</button>
 <p id="deck-unit-selected" role="status" aria-live="polite">Ninguna unidad seleccionada</p>
 <button id="deck-orders" disabled>Asignar órdenes</button><button id="deck-undo" disabled>Deshacer órdenes</button>
+<p id="deck-orders-feedback" class="control-feedback" role="status" aria-live="polite"></p>
 <fieldset><legend>Movimiento ficticio (no reglamento oficial)</legend>
 <label>Unidad propia a mover<select id="deck-move-unit"><option value="">Selecciona una unidad</option></select></label>
 <label>Ruta hexagonal (columna,fila; columna,fila)
 <input id="deck-move-path" placeholder="4,4; 4,5" spellcheck="false"></label>
 <button id="deck-move" disabled>Mover unidad</button>
+<p id="deck-move-feedback" class="control-feedback" role="status" aria-live="polite"></p>
 <p>Indica cada hexágono de la ruta, sin repetir el origen. El servidor valida ocupación, órdenes y distancia.</p>
 </fieldset>
 <button id="deck-movement" disabled>Terminar movimiento</button>
@@ -82,6 +86,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 <button id="deck-ask-defense" disabled>Pedir decisión defensiva</button>
 <button id="deck-stand" disabled>Defender: STAND</button><button id="deck-evade" disabled>Defender: EVADE</button>
 <button id="deck-combat" disabled>Terminar combate</button><button id="deck-draw" disabled>Robar carta y terminar turno</button>
+<p id="deck-combat-feedback" class="control-feedback" role="status" aria-live="polite"></p>
 </div></details></section>
 
 <section id="movement-section" aria-labelledby="movement-title">

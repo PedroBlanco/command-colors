@@ -287,3 +287,27 @@ test('synthetic defense retry keeps the same idempotency key until success',asyn
  assert.deepEqual(keys,['defense_retry_01','defense_retry_01']);
  assert.equal(ui.attackButton.disabled,true);
 });
+
+test('rejected server movement stays visible by board confirm and keeps retry key',async()=>{
+  const ui=fixture(),errors=[],keys=[];
+  const ctrl=createMovementBoard({...ui,onConfirm:async(_,key)=>{
+    keys.push(key);throw Error('409: STALE_REVISION');
+  },onError:e=>errors.push(e.message),makeIdempotencyKey:()=> 'retry_key_1'});
+  ctrl.setView(view());ctrl.select({col:3,row:4});ctrl.select({col:4,row:4});
+  await ctrl.confirm();
+  assert.match(ui.status.textContent,/servidor rechazó.*409: STALE_REVISION/);
+  assert.deepEqual(errors,['409: STALE_REVISION']);
+  assert.ok(ctrl.getDraft());
+  await ctrl.confirm();
+  assert.deepEqual(keys,['retry_key_1','retry_key_1']);
+  assert.match(ui.status.textContent,/409: STALE_REVISION/);
+  ctrl.setView({...view(),revision:6});
+  assert.doesNotMatch(ui.status.textContent,/409: STALE_REVISION/);
+});
+test('superseded movement response cannot discard its local pending route',async()=>{
+  const ui=fixture(),ctrl=createMovementBoard({...ui,onConfirm:async()=>false});
+  ctrl.setView(view());ctrl.select({col:3,row:4});ctrl.select({col:4,row:4});
+  await ctrl.confirm();
+  assert.deepEqual(ctrl.getDraft().path,[{col:4,row:4}]);
+  assert.equal(ui.confirmButton.disabled,false);
+});
