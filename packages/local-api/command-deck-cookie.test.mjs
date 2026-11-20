@@ -165,25 +165,25 @@ test('HTTP cookie/SQLite: both authorized players see a persisted move but canno
  const ordered=await send(alice,'assign_synthetic_orders',1,'http_orders_moving_01',{unitIds:['synthetic-a']});
  assert.equal(ordered.status,200);
  const refused=await send(bob,'move_synthetic_unit',2,'http_enemy_moving_01',{
-  unitId:'synthetic-a',path:[{col:4,row:4}]});
+  unitId:'synthetic-a',path:[{col:4,row:6}]});
  assert.equal(refused.status,403);
  const forged=await send(alice,'move_synthetic_unit',2,'http_bad_moving_001',{
-  unitId:'synthetic-a',path:[{col:4,row:4},{col:4,row:5},{col:5,row:5}],
+  unitId:'synthetic-a',path:[{col:4,row:6},{col:4,row:5},{col:5,row:5}],
   maxStepsByUnit:{'synthetic-a':100},blockedCells:[],board:[]});
  assert.equal(forged.status,400);assert.equal(forged.data.code,'MOVEMENT_LIMIT_EXCEEDED');
  const applied=await send(alice,'move_synthetic_unit',2,'http_valid_moving_01',{
-  unitId:'synthetic-a',path:[{col:4,row:4}]});
+  unitId:'synthetic-a',path:[{col:4,row:6}]});
  assert.equal(applied.status,200);assert.equal(applied.data.code,'APPLIED');
  const own=(await call('GET',path,{cookie:alice})).data.state;
  const opponent=(await call('GET',path,{cookie:bob})).data.state;
  assert.equal(own.revision,3);assert.equal(opponent.revision,3);
  assert.equal(own.board[0].col,4);assert.equal(opponent.board[0].col,4);
- assert.equal(own.board[0].row,4);assert.equal(opponent.board[0].row,4);
+ assert.equal(own.board[0].row,6);assert.equal(opponent.board[0].row,6);
  assert.deepEqual(own.movedUnitIds,['synthetic-a']);
  assert.deepEqual(opponent.movedUnitIds,['synthetic-a']);
  assert.equal((await call('GET',path,{cookie:carol})).status,404);
  const repeat=await send(alice,'move_synthetic_unit',2,'http_valid_moving_01',{
-  unitId:'synthetic-a',path:[{col:4,row:4}]});
+  unitId:'synthetic-a',path:[{col:4,row:6}]});
  assert.equal(repeat.status,200);assert.equal(repeat.data.code,'ALREADY_APPLIED');
  const second=await send(alice,'move_synthetic_unit',3,'http_double_moving_1',{
   unitId:'synthetic-a',path:[{col:5,row:4}]});

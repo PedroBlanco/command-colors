@@ -3,7 +3,7 @@
  * Only reads the player's authorized board projection. This is NOT a rules
  * engine: the SQLite server decides orders, movement range and terrain.
  */
-import {distance, inBounds} from '../hex-grid/hex.mjs';
+import {distance, inBounds, neighbors} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
 
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
@@ -84,4 +84,67 @@ export function movementDraftFields(view, draft) {
   checkedDraft(view, draft);
   if (draft.path.length === 0) throw new Error('RUTA_VACIA');
   return {unitId: draft.unitId, path: draft.path.map(coordinates)};
+}
+
+/** Candidate neighboring cells for visual guidance ONLY; no rule authorization. */
+export function nextMovementHexes(view, draft) {
+  const {last, visited, occupied} = checkedDraft(view, draft);
+  if (draft.path.length >= 32) return [];
+  return neighbors(last).filter(cell => !visited.has(key(cell)) && !occupied.has(key(cell)));
+}
+
+/** Go back to an earlier step (or the origin) without sending any command. */
+export function truncateMovementDraft(view, draft, cell) {
+  checkedDraft(view, draft);
+  if (!cell || typeof cell !== 'object' || Array.isArray(cell) || !inBounds(cell))
+    throw new Error('HEX_INVALIDO');
+  const origin = key(cell) === key(draft.origin);
+  const index = origin ? 0 : draft.path.findIndex(step => key(step) === key(cell)) + 1;
+  if (!origin && index === 0) throw new Error('HEX_FUERA_DE_RUTA');
+  return {unitId:draft.unitId, revision:draft.revision,
+    origin:coordinates(draft.origin), path:draft.path.slice(0,index).map(coordinates)};
+}
+
+/**
+ * Suggest a shortest GEOMETRIC continuation to any free destination.
+ * Breadth-first search is bounded by the 117 public hexes. Units, the
+ * already-chosen route and the origin are obstacles; neighbor order provides
+ * a reproducible tie-break. No card, terrain or official troop rules apply.
+ *
+ * The returned draft is detached. Only an explicit later confirmation may
+ * send its fields to the authoritative server.
+ */
+export function extendMovementDraftTo(view, draft, destination) {
+  const {last, visited, occupied} = checkedDraft(view, draft);
+  if (!destination || typeof destination !== 'object' || Array.isArray(destination) ||
+      !inBounds(destination)) throw new Error('HEX_INVALIDO');
+  const target = key(destination), source = key(last);
+  if (visited.has(target)) throw new Error('HEX_REPETIDO');
+  if (occupied.has(target)) throw new Error('HEX_OCUPADO');
+  const queue = [coordinates(last)];
+  const parents = new Map([[source, null]]);
+  const positions = new Map();
+  for (let head=0; head<queue.length && !parents.has(target); head++) {
+    for (const adjacent of neighbors(queue[head])) {
+      const id = key(adjacent);
+      if (visited.has(id) || occupied.has(id) || parents.has(id)) continue;
+      parents.set(id,key(queue[head]));
+      positions.set(id,adjacent);
+      if (id === target) break;
+      queue.push(adjacent);
+    }
+  }
+  if (!parents.has(target)) throw new Error('RUTA_INACCESIBLE');
+  const continuation = [];
+  for (let at=target; at!==source; at=parents.get(at)) {
+    const cell=positions.get(at);
+    if (!cell) throw new Error('RUTA_INACCESIBLE');
+    continuation.push(coordinates(cell));
+  }
+  continuation.reverse();
+  if (draft.path.length+continuation.length>32) throw new Error('RUTA_DEMASIADO_LARGA');
+  return {
+    unitId:draft.unitId,revision:draft.revision,origin:coordinates(draft.origin),
+    path:[...draft.path.map(coordinates),...continuation]
+  };
 }

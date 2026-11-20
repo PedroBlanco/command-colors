@@ -120,16 +120,16 @@ test('SSE: authenticated movement reaches both players with counters only; rejec
  await sa.waitFor(e=>e.payload.gameRevision===2);
  await sb.waitFor(e=>e.payload.gameRevision===2);
  const before=sa.events.length;
- assert.equal((await command(b,'move_synthetic_unit',2,'sse_move_enemy_001',{unitId:'synthetic-a',path:[{col:4,row:4}]})).status,403);
+ assert.equal((await command(b,'move_synthetic_unit',2,'sse_move_enemy_001',{unitId:'synthetic-a',path:[{col:4,row:6}]})).status,403);
  await new Promise(resolve=>setTimeout(resolve,100));
  assert.equal(sa.events.length,before);
- assert.equal((await command(a,'move_synthetic_unit',2,'sse_move_valid_001',{unitId:'synthetic-a',path:[{col:4,row:4}]})).status,200);
+ assert.equal((await command(a,'move_synthetic_unit',2,'sse_move_valid_001',{unitId:'synthetic-a',path:[{col:4,row:6}]})).status,200);
  await sa.waitFor(e=>e.payload.gameRevision===3);
  await sb.waitFor(e=>e.payload.gameRevision===3);
  const viewA=(await call('GET',path,{cookie:a})).body.state;
  const viewB=(await call('GET',path,{cookie:b})).body.state;
  assert.equal(viewA.revision,3);assert.equal(viewB.revision,3);
- assert.deepEqual(viewA.board[0],viewB.board[0]);assert.equal(viewB.board[0].col,4);
+ assert.deepEqual(viewA.board[0],viewB.board[0]);assert.equal(viewB.board[0].col,4);assert.equal(viewB.board[0].row,6);
  const secret=JSON.parse(store.unsafeTestDatabase().prepare('SELECT private_state FROM matches WHERE id=?').get(id).private_state).commandSession;
  for(const watcher of [sa,sb])for(const frame of watcher.events){
   assert.deepEqual(Object.keys(frame.payload).sort(),['gameRevision','lobbyRevision']);
