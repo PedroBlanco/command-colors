@@ -1,6 +1,7 @@
 /** Local-only browser lab; no licensed artwork, card texts or legal Ancients rules. */
 import {deckActions, deckCommand, deckSummary, parseSyntheticMovementPath} from './deck-controls.mjs';
 import {createMovementBoard} from './movement-board-ui.mjs';
+import {describeCommandError} from './command-feedback.mjs';
 import {createPrivateViewScope} from './private-view-scope.mjs';
 import {privateProjectionMatches} from './private-projection.mjs';
 import {createRevisionRefresh} from './revision-refresh.mjs';
@@ -356,8 +357,9 @@ function action(id,callback) {
       }
     } catch(error) {
       if (privateScope.isCurrent(ticket)) {
-        message(error.message);
-        if (feedbackId) el(feedbackId).textContent=error.message;
+        const explanation=feedbackId ? describeCommandError(error) : error.message;
+        message(explanation);
+        if (feedbackId) el(feedbackId).textContent=explanation;
       }
     }
   });
@@ -545,7 +547,7 @@ movementBoard = createMovementBoard({
     if (confirmed) message('Movimiento sintético confirmado por el servidor');
     return confirmed;
   },
-  onError: error => message(error.message)
+  onError: error => message(describeCommandError(error))
 });
 renderDeck();
 await session();
