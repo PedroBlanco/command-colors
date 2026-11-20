@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields} from './hex-selection.mjs';
+import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
+  nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
 import {deckCommand} from './deck-controls.mjs';
 
 const view = () => ({you:'A',turn:'A',actingSide:'A',phase:'MOVEMENT',revision:5,
@@ -99,6 +100,7 @@ test('a 32-step route is the maximum; duplicate/corrupted view fails closed',()=
   for(const step of snake.slice(0,32)) d=appendMovementHex(v,d,step);
   assert.equal(d.path.length,32);
   fail(()=>appendMovementHex(v,d,snake[32]),'RUTA_DEMASIADO_LARGA');
+  fail(()=>extendMovementDraftTo(v,d,snake[32]),'RUTA_DEMASIADO_LARGA');
   const duplicate={...v,board:[...v.board,{id:'synthetic-a',side:'B',col:11,row:2}]};
   fail(()=>starts(duplicate),'VISTA_TABLERO_INVALIDA');
   const collision={...v,board:[...v.board,{id:'another',side:'A',col:0,row:0}]};
@@ -114,4 +116,39 @@ test('draft serialization strips prototype-adjacent fields and does not alias ar
   assert.deepEqual(result,{unitId:'synthetic-a',path:[hex(4,4)]});
   result.path[0].col=0;
   assert.deepEqual(next.path,[hex(4,4)]);
+});
+
+test('neighbor hints remain geometric; tapping earlier route steps truncates only locally',()=>{
+  const v=view(), start=starts(v);
+  assert.equal(nextMovementHexes(v,start).length,6);
+  const first=appendMovementHex(v,start,hex(4,4));
+  const next=nextMovementHexes(v,first);
+  assert.equal(next.some(c=>c.col===3&&c.row===4),false);
+  assert.equal(next.some(c=>c.col===5&&c.row===4),false);
+  const second=appendMovementHex(v,first,hex(4,5));
+  assert.deepEqual(truncateMovementDraft(v,second,hex(4,4)).path,[hex(4,4)]);
+  assert.deepEqual(truncateMovementDraft(v,second,hex(3,4)).path,[]);
+  fail(()=>truncateMovementDraft(v,second,hex(8,6)),'HEX_FUERA_DE_RUTA');
+  assert.deepEqual(second.path,[hex(4,4),hex(4,5)]);
+});
+
+test('automatic route is adjacent, unoccupied and detached from the input draft',()=>{
+  const v=view(),d=starts(v),p=extendMovementDraftTo(v,d,hex(6,4));
+  let manual=d;
+  for(const cell of p.path)manual=appendMovementHex(v,manual,cell);
+  assert.deepEqual(p,manual);
+  assert.deepEqual(p.path.at(-1),hex(6,4));
+  assert.deepEqual(d.path,[]);
+  assert.deepEqual(movementDraftFields(v,p).path,p.path);
+});
+
+test('automatic route rejects occupied, disconnected and stale destinations',()=>{
+  const v=view(),d=starts(v);
+  fail(()=>extendMovementDraftTo(v,d,hex(5,4)),'HEX_OCUPADO');
+  fail(()=>extendMovementDraftTo({...v,revision:6},d,hex(6,4)),'BORRADOR_DESACTUALIZADO');
+  const blocked={...v,board:[
+    ...v.board.filter(u=>u.id!=='synthetic-b'),
+    ...Array.from({length:9},(_,row)=>({id:`wall_${row}`,side:'B',col:5,row}))
+  ]};
+  fail(()=>extendMovementDraftTo(blocked,starts(blocked),hex(6,4)),'RUTA_INACCESIBLE');
 });
