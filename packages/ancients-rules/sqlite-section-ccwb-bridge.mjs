@@ -9,6 +9,7 @@ import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
 import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
+import {previewVerifiedSectionFootCore} from './verified-foot-core-preview.mjs';
 import {precheckStagedAncientsMovement,
   precheckStagedAncientsLeaderMovement,
   precheckStagedAncientsMovementSequence} from './staged-movement-preflight.mjs';
@@ -194,6 +195,19 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     });
     return Object.freeze({status:200,code:'SECTION_LAB_SEQUENCE_PREVIEW',preview});
   }
+  function previewVerifiedFootCore(actor,request,trustedScenario){
+    if(!['A','B'].includes(actor))return denied(403,'FORBIDDEN');
+    const {snapshot}=verify(resultRow());
+    const preview=previewVerifiedSectionFootCore({
+      verifiedState:snapshot,actor,expectedRevision:request.expectedRevision,
+      actions:request.actions,trustedScenario
+    });
+    return Object.freeze({
+      status:200,code:'SECTION_LAB_VERIFIED_FOOT_CORE_PREVIEW',
+      preview,movementAuthorized:false,officialMovementAuthorized:false,
+      attackAuthorized:false,boardChanged:false,canCommit:false
+    });
+  }
   return Object.freeze({initialize,view,dispatch,previewMovement,
-    previewLeaderMovement,previewMovementSequence});
+    previewLeaderMovement,previewMovementSequence,previewVerifiedFootCore});
 }
