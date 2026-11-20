@@ -88,6 +88,7 @@ export const LOCAL_TEST_FILES = Object.freeze([
   'packages/ancients-rules/core-open-foot-path-v2.test.mjs',
   'packages/ancients-rules/foot-path-v2-replay-audit.test.mjs',
   'packages/ancients-rules/foot-path-v2-journal.test.mjs',
+  'packages/ancients-rules/private-foot-path-v2-sqlite-stage.test.mjs',
   'packages/ancients-rules/staged-movement-preflight.test.mjs',
   'packages/sqlite-store/ancients-section-history.test.mjs',
   'packages/sqlite-store/section-mutation-session-guard.test.mjs',
