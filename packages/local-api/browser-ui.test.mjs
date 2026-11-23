@@ -26,6 +26,7 @@ async function withBrowser(run,{owner='alice'}={}) {
     addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
   const window={addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
   const state={login:false,lobby:'INVITING',revision:0,deckPhase:null,
+    lab:false,labRevision:0,labPhase:'AWAIT_CARD',labTurn:'A',
     board:[{id:'synthetic-a',side:'A',col:2,row:4},
       {id:'synthetic-a2',side:'A',col:3,row:4},
       {id:'synthetic-b',side:'B',col:10,row:4}]};
@@ -42,6 +43,45 @@ async function withBrowser(run,{owner='alice'}={}) {
     else if(path==='/api/session' && options.method==='DELETE'){state.login=false;response={ok:true};status=200;}
     else if(path==='/api/session' && state.login){response={authenticated:true,handle:owner};status=200;}
     else if(path==='/api/matches' && options.method==='POST'){response={matchId:MATCH};status=201;}
+    else if(path===`/api/matches/${MATCH}` && state.login && state.lab){
+      response={code:'SECTION_LAB_INTERNAL_ONLY'};status=409;
+    }
+    else if(path===`/api/matches/${MATCH}/ancients-lab/initialize` &&
+      state.login && options.method==='POST'){
+      if(state.lab){status=409;response={code:'SECTION_LAB_NOT_AVAILABLE'}}
+      else{state.lab=true;status=201;response={code:'SECTION_LAB_INITIALIZED'}}
+    }
+    else if(path===`/api/matches/${MATCH}/ancients-lab` && state.login && state.lab){
+      const own=[{instanceId:'card_left_A',definitionId:'ORDER_2_LEFT'}];
+      response={matchId:MATCH,status:'READY',
+        players:[{side:'A',handle:owner},{side:'B',handle:'bob'}],
+        state:{matchId:MATCH,status:'LAB_ONLY',you:'A',turn:state.labTurn,
+          revision:state.labRevision,phase:state.labPhase,yourHand:own,
+          opponentCardCount:2,board:[
+            {id:'unitA',side:'A',col:2,row:7,unitType:'LIGHT_INFANTRY'},
+            {id:'unitB',side:'B',col:10,row:1,unitType:'MEDIUM_CAVALRY'}
+          ],movedUnitIds:[],orderedUnitIds:state.labPhase==='LAB_RESOLUTION_PENDING'?['unitA']:[],
+          terrain:[]}};
+      status=200;
+    }
+    else if(path===`/api/matches/${MATCH}/ancients-lab/commands` && state.login){
+      if(!state.lab){status=409;response={code:'SECTION_LAB_NOT_INITIALIZED'}}
+      else{
+        const command=JSON.parse(options.body);
+        if(command.expectedRevision!==state.labRevision){status=409;response={code:'STALE_REVISION'}}
+        else{
+          const phases={PLAY_SECTION_CARD:'ASSIGN_ORDERS',
+            ASSIGN_SECTION_ORDERS:'LAB_RESOLUTION_PENDING',
+            END_EXPERIMENTAL_TURN:'AWAIT_CARD'};
+          if(!Object.hasOwn(phases,command.type)){status=400;response={code:'INVALID_SECTION_LAB_COMMAND'}}
+          else{
+            state.labPhase=phases[command.type];state.labRevision++;
+            if(command.type==='END_EXPERIMENTAL_TURN')state.labTurn='B';
+            status=200;response={code:'SECTION_LAB_APPLIED'};
+          }
+        }
+      }
+    }
     else if(path===`/api/matches/${MATCH}` && state.login){response={matchId:MATCH,status:state.lobby,players:state.lobby==='READY'?[{side:'A',handle:owner},{side:'B',handle:owner==='alice'?'bob':'alice'}]:[{side:'A',handle:owner}],
       ...(state.lobby==='READY'?{state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:state.board,
         ...(state.deckPhase?{phase:state.deckPhase,actingSide:'A',
@@ -329,3 +369,50 @@ test('changing the selected lobby cancels the old recovery timer before a new ma
   await ctx.element('logout').dispatch('click');
   assert.equal(ctx.timerCount(),0);
 },{owner:'bob'}));
+
+test('browser: explicit loopback Ancients mode uses distinct authenticated routes',()=>withBrowser(async(ctx)=>{
+ await ctx.element('login-form').dispatch('submit');
+ await ctx.element('create').dispatch('click');
+ ctx.state.lobby='READY';
+ await ctx.element('refresh').dispatch('click');
+ assert.equal(ctx.element('ancients-start').disabled,false);
+ assert.equal(ctx.element('deck-initialize').disabled,false);
+ await ctx.element('ancients-start').dispatch('click');
+ assert.equal(ctx.state.lab,true);
+ assert.equal(ctx.element('deck-panel').hidden,true);
+ assert.equal(ctx.element('deck-initialize').disabled,true);
+ assert.equal(ctx.element('turn').disabled,true);
+ assert.equal(ctx.element('ancients-controls').hidden,false);
+ assert.equal(ctx.feeds[0].closed,true);
+ assert.equal(ctx.element('ancients-play').disabled,false);
+ assert.match(ctx.element('ancients-status').textContent,/AWAIT_CARD/);
+ const init=ctx.requests.find(r=>r.path===`/api/matches/${MATCH}/ancients-lab/initialize`);
+ assert.equal(init.method,'POST');
+ assert.deepEqual(JSON.parse(init.body),{});
+ await ctx.element('ancients-play').dispatch('click');
+ assert.equal(ctx.state.labPhase,'ASSIGN_ORDERS');
+ assert.equal(ctx.element('ancients-order').disabled,false);
+ const option=ctx.element('ancients-units').children.find(x=>x.value==='unitA');
+ option.selected=true;
+ await ctx.element('ancients-order').dispatch('click');
+ assert.equal(ctx.state.labPhase,'LAB_RESOLUTION_PENDING');
+ assert.equal(ctx.element('ancients-end').disabled,false);
+ const labCommands=ctx.requests.filter(r=>r.path===
+  `/api/matches/${MATCH}/ancients-lab/commands`);
+ assert.deepEqual(labCommands.map(r=>JSON.parse(r.body).type),[
+  'PLAY_SECTION_CARD','ASSIGN_SECTION_ORDERS'
+ ]);
+ for(const {body} of labCommands){
+  const fields=JSON.parse(body);
+  assert.equal('actor' in fields,false);
+  assert.equal('scenario' in fields,false);
+  assert.equal('trustedSetup' in fields,false);
+  assert.match(fields.idempotencyKey,/^[a-f0-9]{32}$/);
+ }
+ assert.deepEqual(JSON.parse(labCommands[1].body).unitIds,['unitA']);
+ await ctx.element('ancients-end').dispatch('click');
+ assert.equal(ctx.state.labTurn,'B');
+ assert.equal(ctx.element('ancients-play').disabled,true);
+ assert.equal(ctx.requests.filter(r=>r.path===`/api/matches/${MATCH}`).length>2,true);
+ assert.equal(ctx.requests.some(r=>r.path===`/api/matches/${MATCH}/ancients-lab`),true);
+}));
