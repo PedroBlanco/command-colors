@@ -193,3 +193,58 @@ test('foot lab: illegal trajectories, double movement and unsupported scope neve
  const mounted=completeFootSetup();mounted.movementUnitTypes.a1='LIGHT_CAVALRY';
  assert.throws(()=>init(mounted),/INVALID_FOOT_LAB_SETUP/);
 });
+
+test('foot lab: trusted terrain stops a path on forest entry and adjusts combat',()=>{
+ const c=completeFootSetup();
+ c.movementTerrain=[{col:3,row:4,kind:'FOREST'}];
+ const s0=init(c);
+ const s1=apply(s0,cmd('PLAY_SECTION_CARD',0,{cardInstanceId:s0.hands.A[0].instanceId})).nextState;
+ const s2=apply(s1,cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:[]})).nextState;
+ const before=structuredClone(s2);
+ const longPath=apply(s2,cmd('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'a1',path:[{col:3,row:4},{col:4,row:4}]
+ }));
+ assert.equal(longPath.accepted,false);
+ assert.equal(longPath.code,'MUST_STOP_ON_FOREST_ENTRY');
+ assert.deepEqual(s2,before);
+ const allowed=apply(s2,cmd('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'a1',path:[{col:3,row:4}]
+ }));
+ assert.equal(allowed.accepted,true);
+ assert.equal(allowed.nextState.board.units[0].col,3);
+ assert.equal(allowed.publicEvent.destinationTerrain,'FOREST');
+ assert.equal(allowed.publicEvent.battleAfterMovement,'POSSIBLE');
+ assert.equal(project(allowed.nextState,'A').terrain[0].kind,'FOREST');
+ const heavy=completeFootSetup();
+ heavy.movementUnitTypes.a1='MEDIUM_INFANTRY';
+ heavy.movementTerrain=[{col:3,row:4,kind:'FOREST'}];
+ const h0=init(heavy);
+ const h1=apply(h0,cmd('PLAY_SECTION_CARD',0,{cardInstanceId:h0.hands.A[0].instanceId})).nextState;
+ const h2=apply(h1,cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:[]})).nextState;
+ const h3=apply(h2,cmd('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'a1',path:[{col:3,row:4}]
+ }));
+ assert.equal(h3.accepted,true);
+ assert.equal(h3.publicEvent.battleAfterMovement,'UNAVAILABLE');
+ const hill=completeFootSetup();hill.movementTerrain=[{col:4,row:4,kind:'HILL'}];
+ const i0=init(hill);
+ const i1=apply(i0,cmd('PLAY_SECTION_CARD',0,{cardInstanceId:i0.hands.A[0].instanceId})).nextState;
+ const i2=apply(i1,cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:[]})).nextState;
+ assert.equal(apply(i2,cmd('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'a1',path:[{col:3,row:4},{col:4,row:4}]
+ })).publicEvent.destinationTerrain,'HILL');
+});
+
+test('foot lab: unsupported or tampered terrain is never admitted',()=>{
+ for(const terrain of [
+  [{col:3,row:4,kind:'UNSUPPORTED'}],
+  [{col:3,row:4,kind:'FOREST'},{col:3,row:4,kind:'HILL'}],
+  [{col:99,row:4,kind:'FOREST'}]
+ ]){
+  const c=completeFootSetup();c.movementTerrain=terrain;
+  assert.throws(()=>init(c),/INVALID_FOOT_LAB_SETUP/);
+ }
+ const c=completeFootSetup();c.movementTerrain=[{col:3,row:4,kind:'FOREST'}];
+ const s=init(c);s.footLab.terrain=null;
+ assert.throws(()=>validate(s),/INVALID_FOOT_LAB_STATE/);
+});
