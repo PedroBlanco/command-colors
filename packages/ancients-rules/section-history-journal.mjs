@@ -7,6 +7,7 @@ import {randomInt} from 'node:crypto';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS} from './section-card-order-screen.mjs';
 import {ANCIENTS_RULESET} from './movement-profile.mjs';
 import {assessAncientsMovementRegime} from './movement-regimes.mjs';
+import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
 import {
   OPEN_FOOT_PATH_CORE_KIND, OPEN_FOOT_PATH_CORE_POLICY, reduceCoreOpenFootPath
 } from './core-open-foot-path-v2.mjs';
@@ -26,16 +27,25 @@ const isCards=a=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validI
   Object.hasOwn(BASE_SECTION_CARD_LIMITS,c.definitionId));
 
 /**
- * Strict opt-in, server-owned OPEN-GROUND LAB scope only. No terrain, leaders,
- * special cards/scenario exceptions or unsupported movement regimes. Requiring
- * a complete sector lookup lets moved units receive orders in later turns.
+ * Strict opt-in, server-owned LAB scope: normal foot plus three verified base
+ * terrain types only. No leaders, special cards/scenario exceptions or unsupported
+ * movement regimes. Full sector lookup supports ordering pieces in later turns.
  */
-function validFootLabSetup(board,sectorCells,types){
+function validFootLabSetup(board,sectorCells,types,terrain=[]){
   if(!isRecord(board)||Object.keys(board).length!==2||
      !Array.isArray(board.units)||!Array.isArray(board.leaders)||
      board.units.length<1||board.units.length>117||board.leaders.length!==0||
      !isRecord(types)||Object.keys(types).length!==board.units.length||
-     !isRecord(sectorCells)||Reflect.ownKeys(sectorCells).length!==117)return false;
+     !isRecord(sectorCells)||Reflect.ownKeys(sectorCells).length!==117||
+     !Array.isArray(terrain)||terrain.length>117)return false;
+  const hexes=new Set();
+  for(const tile of terrain){
+    if(!isRecord(tile)||Object.keys(tile).length!==3||
+       !['col','row','kind'].every(k=>Object.hasOwn(tile,k))||
+       !goodLoc(tile)||!BASE_TERRAIN_TYPES.includes(tile.kind)||
+       hexes.has(loc(tile)))return false;
+    hexes.add(loc(tile));
+  }
   const ids=new Set(),positions=new Set();
   for(const unit of board.units){
     if(!isRecord(unit)||Object.keys(unit).length!==4||
@@ -64,7 +74,8 @@ function validFootLabSetup(board,sectorCells,types){
 
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
-  startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined}={}) {
+  startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
+  movementTerrain=[]}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -92,9 +103,12 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     handAtPlay:null,cardPlay:null,orderSnapshot:null,
     board:copy(board),sectorCells:copy(sectorCells)};
   if(movementUnitTypes!==undefined){
-    if(!validFootLabSetup(board,sectorCells,movementUnitTypes))
+    if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain))
       fail('INVALID_FOOT_LAB_SETUP');
-    state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[]};
+    state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[],
+      terrain:copy(movementTerrain)};
+  }else if(!Array.isArray(movementTerrain)||movementTerrain.length>0){
+    fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
   assertSectionHistoryLab(state);
   return state;
@@ -115,9 +129,12 @@ export function assertSectionHistoryLab(s){
   if(all.length!==s.totalCards||!same(all.map(c=>c.instanceId)))fail('SECTION_CARD_CONSERVATION_FAILED');
   if(Object.hasOwn(s,'footLab')){
     const info=s.footLab;
-    if(!isRecord(info)||Object.keys(info).length!==2||
+    if(!isRecord(info)||
+       !(Object.keys(info).length===2||
+         (Object.keys(info).length===3&&Object.hasOwn(info,'terrain')))||
        !isRecord(info.unitTypes)||!Array.isArray(info.movedUnitIds)||
-       !validFootLabSetup(s.board,s.sectorCells,info.unitTypes)||
+       !validFootLabSetup(s.board,s.sectorCells,info.unitTypes,
+         info.terrain??[])||
        info.movedUnitIds.length>117||
        !info.movedUnitIds.every(validId)||!same(info.movedUnitIds)||
        (s.phase!=='LAB_RESOLUTION_PENDING'&&info.movedUnitIds.length>0)||
@@ -213,6 +230,19 @@ export function applySectionHistoryLabCommand(state,command={}){
     });
     if(result.status!=='RULE_PATH_TRANSITION_CANDIDATE')
       return reject(result.reason??'FOOT_LAB_MOVE_REJECTED');
+    // Open-ground V2 checks card-independent movement/profile/occupancy;
+    // the existing terrain policy independently rejects entry restrictions.
+    // Both verdicts are required before any mutation or SQLite event.
+    const moving=state.board.units.find(u=>u.id===command.unitId);
+    const terrain=assessAncientsTerrainMovement({
+      unitType:state.footLab.unitTypes[command.unitId],
+      origin:{col:moving.col,row:moving.row},
+      path:command.path,terrain:state.footLab.terrain??[]
+    });
+    if(terrain.status!=='CANDIDATE')
+      return reject(terrain.reason??'FOOT_LAB_TERRAIN_BLOCKED');
+    const battleAfterMovement=terrain.battleOnEntry==='UNAVAILABLE'
+      ? 'UNAVAILABLE':result.transition.battleAfterMovement;
     // The reducer determines every changed cell and public event field.
     // A client cannot supply its own board, rules or movement result.
     next.board.units=result.nextState.board.units;
@@ -221,7 +251,10 @@ export function applySectionHistoryLabCommand(state,command={}){
       kind:'SECTION_FOOT_PATH_APPLIED_LAB',side,
       unitId:result.transition.unitId,from:result.transition.from,
       to:result.transition.to,path:result.transition.path,
-      battleAfterMovement:result.transition.battleAfterMovement
+      battleAfterMovement,
+      ...(Object.hasOwn(state.footLab,'terrain')?{
+        destinationTerrain:terrain.destinationTerrain
+      }:{})
     };
   }else if(command.type==='END_EXPERIMENTAL_TURN'){
     if(state.phase!=='LAB_RESOLUTION_PENDING')return reject('WRONG_PHASE');
@@ -274,7 +307,10 @@ export function projectSectionHistoryLab(state,side){
         id:u.id,side:u.side,col:u.col,row:u.row,
         unitType:state.footLab.unitTypes[u.id]
       })),
-      movedUnitIds:[...state.footLab.movedUnitIds]
+      movedUnitIds:[...state.footLab.movedUnitIds],
+      ...(Object.hasOwn(state.footLab,'terrain')?{
+        terrain:copy(state.footLab.terrain)
+      }:{})
     }:{}),
     cardPlayAuthorized:false,ordersAuthorized:false,
     attackAuthorized:false,combatResolved:false});
