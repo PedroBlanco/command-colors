@@ -22,7 +22,7 @@ export function createAncientsLoopbackSetup(){
   }
   return {
     cardInstances,handSizes:{A:3,B:3},startingSide:'A',
-    sectorPerspective:'PLAYER_RELATIVE',
+    sectorPerspective:'PLAYER_RELATIVE',enableLeaderLab:true,
     board:{units:[
       {id:'A_light',side:'A',col:2,row:7},
       {id:'A_medium',side:'A',col:6,row:7},
@@ -30,7 +30,10 @@ export function createAncientsLoopbackSetup(){
       {id:'B_heavy',side:'B',col:2,row:1},
       {id:'B_auxilia',side:'B',col:6,row:1},
       {id:'B_cavalry',side:'B',col:10,row:1}
-    ],leaders:[]},
+    ],leaders:[
+      {id:'A_leader',side:'A',col:2,row:7},
+      {id:'B_leader',side:'B',col:10,row:1}
+    ]},
     sectorCells,
     movementUnitTypes:{
       A_light:'LIGHT_INFANTRY',
