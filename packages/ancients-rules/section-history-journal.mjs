@@ -274,6 +274,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     });
     if(result.status!=='RULE_PATH_TRANSITION_CANDIDATE')
       return reject(result.reason??'FOOT_LAB_MOVE_REJECTED');
+    const moving=state.board.units.find(u=>u.id===command.unitId);
     const attached=state.leaderLab
       ?state.board.leaders.find(l=>l.side===side&&
         l.col===moving.col&&l.row===moving.row):null;
@@ -290,7 +291,6 @@ export function applySectionHistoryLabCommand(state,command={}){
     // Open-ground V2 checks card-independent movement/profile/occupancy;
     // the existing terrain policy independently rejects entry restrictions.
     // Both verdicts are required before any mutation or SQLite event.
-    const moving=state.board.units.find(u=>u.id===command.unitId);
     const terrain=assessAncientsTerrainMovement({
       unitType:state.footLab.unitTypes[command.unitId],
       origin:{col:moving.col,row:moving.row},
