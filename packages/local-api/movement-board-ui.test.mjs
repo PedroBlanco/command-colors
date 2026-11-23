@@ -369,3 +369,18 @@ test('terrain display rejects invalid/duplicated coordinates; generic unit label
  renderMovementBoard(svg,[{id:'genericA',side:'A',col:3,row:4}],null,()=>{},'A');
  assert.equal(cell(svg,3,4).children.find(x=>x.tag==='text').textContent,'A');
 });
+
+test('Ancients board shows leader attached to unit and refuses impossible rival overlap',()=>{
+ const {svg}=fixture();
+ const units=[{id:'unitA',side:'A',col:3,row:4,unitType:'MEDIUM_INFANTRY'}];
+ const leaders=[{id:'leaderA',side:'A',col:3,row:4},
+   {id:'leaderB',side:'B',col:9,row:2}];
+ renderMovementBoard(svg,units,null,()=>{},'A',{leaders});
+ assert.match(cell(svg,3,4).attrs['aria-label'],/unidad unitA.*líder leaderA/);
+ assert.match(cell(svg,9,2).attrs['aria-label'],/líder leaderB/);
+ assert.equal(cell(svg,3,4).children.some(x=>x.tag==='text'&&x.textContent==='L'),true);
+ assert.equal(cell(svg,9,2).children.some(x=>x.tag==='text'&&x.textContent==='L'),true);
+ assert.throws(()=>renderMovementBoard(svg,units,null,()=>{},'A',{
+  leaders:[{id:'leaderX',side:'B',col:3,row:4}]
+ }),/INVALID_MOVEMENT_LEADER_VIEW/);
+});
