@@ -5,6 +5,11 @@
  */
 import {randomInt} from 'node:crypto';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS} from './section-card-order-screen.mjs';
+import {ANCIENTS_RULESET} from './movement-profile.mjs';
+import {assessAncientsMovementRegime} from './movement-regimes.mjs';
+import {
+  OPEN_FOOT_PATH_CORE_KIND, OPEN_FOOT_PATH_CORE_POLICY, reduceCoreOpenFootPath
+} from './core-open-foot-path-v2.mjs';
 
 export const SECTION_HISTORY_LAB_KIND='ANCIENTS_SECTION_HISTORY_LAB_V1';
 const ID=/^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
@@ -20,9 +25,46 @@ const goodLoc=p=>Number.isSafeInteger(p.col)&&p.col>=0&&p.col<13&&Number.isSafeI
 const isCards=a=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validId(c.instanceId)&&
   Object.hasOwn(BASE_SECTION_CARD_LIMITS,c.definitionId));
 
+/**
+ * Strict opt-in, server-owned OPEN-GROUND LAB scope only. No terrain, leaders,
+ * special cards/scenario exceptions or unsupported movement regimes. Requiring
+ * a complete sector lookup lets moved units receive orders in later turns.
+ */
+function validFootLabSetup(board,sectorCells,types){
+  if(!isRecord(board)||Object.keys(board).length!==2||
+     !Array.isArray(board.units)||!Array.isArray(board.leaders)||
+     board.units.length<1||board.units.length>117||board.leaders.length!==0||
+     !isRecord(types)||Object.keys(types).length!==board.units.length||
+     !isRecord(sectorCells)||Reflect.ownKeys(sectorCells).length!==117)return false;
+  const ids=new Set(),positions=new Set();
+  for(const unit of board.units){
+    if(!isRecord(unit)||Object.keys(unit).length!==4||
+       !['id','side','col','row'].every(k=>Object.hasOwn(unit,k))||
+       !validId(unit.id)||!SIDES.includes(unit.side)||!goodLoc(unit)||
+       ids.has(unit.id)||positions.has(loc(unit))||
+       !Object.hasOwn(types,unit.id))return false;
+    const regime=assessAncientsMovementRegime({
+      unitType:types[unit.id],steps:1
+    });
+    if(regime.status!=='SUBSET_ELIGIBLE')return false;
+    ids.add(unit.id);positions.add(loc(unit));
+  }
+  for(let col=0;col<13;col++)for(let row=0;row<9;row++){
+    const sectors=sectorCells[col+','+row];
+    if(!Array.isArray(sectors)||sectors.length<1||sectors.length>2||
+       !sectors.every(x=>['LEFT','CENTER','RIGHT'].includes(x))||
+       !same(sectors)||
+       (sectors.length===2&&!(
+         (sectors.includes('LEFT')&&sectors.includes('CENTER'))||
+         (sectors.includes('CENTER')&&sectors.includes('RIGHT'))
+       )))return false;
+  }
+  return true;
+}
+
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
-  startingSide='A',randomIndex=randomInt}={}) {
+  startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -49,6 +91,11 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     drawPile,hands,discardPile:[],activeCard:null,
     handAtPlay:null,cardPlay:null,orderSnapshot:null,
     board:copy(board),sectorCells:copy(sectorCells)};
+  if(movementUnitTypes!==undefined){
+    if(!validFootLabSetup(board,sectorCells,movementUnitTypes))
+      fail('INVALID_FOOT_LAB_SETUP');
+    state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[]};
+  }
   assertSectionHistoryLab(state);
   return state;
 }
@@ -66,6 +113,20 @@ export function assertSectionHistoryLab(s){
   const all=[...s.drawPile,...s.discardPile,...s.hands.A,...s.hands.B,
     ...(s.activeCard?[s.activeCard]:[])];
   if(all.length!==s.totalCards||!same(all.map(c=>c.instanceId)))fail('SECTION_CARD_CONSERVATION_FAILED');
+  if(Object.hasOwn(s,'footLab')){
+    const info=s.footLab;
+    if(!isRecord(info)||Object.keys(info).length!==2||
+       !isRecord(info.unitTypes)||!Array.isArray(info.movedUnitIds)||
+       !validFootLabSetup(s.board,s.sectorCells,info.unitTypes)||
+       info.movedUnitIds.length>117||
+       !info.movedUnitIds.every(validId)||!same(info.movedUnitIds)||
+       (s.phase!=='LAB_RESOLUTION_PENDING'&&info.movedUnitIds.length>0)||
+       (s.phase==='LAB_RESOLUTION_PENDING'&&
+        (!isRecord(s.orderSnapshot)||
+         info.movedUnitIds.some(id=>!s.orderSnapshot.pieces.some(p=>
+           p.kind==='UNIT'&&p.id===id&&p.side===s.turn)))))
+      fail('INVALID_FOOT_LAB_STATE');
+  }
   if((s.phase==='AWAIT_CARD')!== (s.activeCard===null)||
      (s.phase==='AWAIT_CARD'&&(s.cardPlay!==null||s.handAtPlay!==null||s.orderSnapshot!==null))||
      (s.phase!=='AWAIT_CARD'&&(!isRecord(s.cardPlay)||!isRecord(s.handAtPlay)))||
@@ -123,6 +184,45 @@ export function applySectionHistoryLabCommand(state,command={}){
     next.phase='LAB_RESOLUTION_PENDING';
     publicEvent={kind:'SECTION_ORDERS_STAGED_LAB',side,unitCount:unitIds.length,
       leaderCount:leaderIds.length};
+  }else if(command.type==='MOVE_SECTION_FOOT_PATH_V2'){
+    if(state.phase!=='LAB_RESOLUTION_PENDING'||!Object.hasOwn(state,'footLab'))
+      return reject('FOOT_LAB_NOT_AVAILABLE');
+    // Orders were screened against the card when staged, and every command
+    // is replay-verified again inside the SQLite writer transaction.
+    const ids=state.orderSnapshot.pieces
+      .filter(p=>p.kind==='UNIT').map(p=>p.id);
+    const coreState={
+      kind:OPEN_FOOT_PATH_CORE_KIND,schemaVersion:2,
+      ruleset:ANCIENTS_RULESET,revision:state.revision,
+      turn:side,phase:'MOVE',
+      board:{units:state.board.units.map(u=>({
+        id:u.id,side:u.side,col:u.col,row:u.row
+      })),leaders:[]},
+      orderLedger:{issuedUnitIds:ids,
+        movedUnitIds:[...state.footLab.movedUnitIds]}
+    };
+    const policy={
+      scope:OPEN_FOOT_PATH_CORE_POLICY,ruleset:ANCIENTS_RULESET,
+      cardFamily:'ORDINARY_SECTION',terrain:[],scenarioExceptions:[],
+      unitTypes:copy(state.footLab.unitTypes)
+    };
+    const result=reduceCoreOpenFootPath({
+      state:coreState,policy,
+      action:{actor:side,expectedRevision:state.revision,
+        unitId:command.unitId,path:command.path}
+    });
+    if(result.status!=='RULE_PATH_TRANSITION_CANDIDATE')
+      return reject(result.reason??'FOOT_LAB_MOVE_REJECTED');
+    // The reducer determines every changed cell and public event field.
+    // A client cannot supply its own board, rules or movement result.
+    next.board.units=result.nextState.board.units;
+    next.footLab.movedUnitIds=result.nextState.orderLedger.movedUnitIds;
+    publicEvent={
+      kind:'SECTION_FOOT_PATH_APPLIED_LAB',side,
+      unitId:result.transition.unitId,from:result.transition.from,
+      to:result.transition.to,path:result.transition.path,
+      battleAfterMovement:result.transition.battleAfterMovement
+    };
   }else if(command.type==='END_EXPERIMENTAL_TURN'){
     if(state.phase!=='LAB_RESOLUTION_PENDING')return reject('WRONG_PHASE');
     next.discardPile.push(next.activeCard);
@@ -131,6 +231,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     if(drew)next.hands[side].push(next.drawPile.pop());
     next.turn=side==='A'?'B':'A';
     next.phase='AWAIT_CARD';next.handAtPlay=null;next.cardPlay=null;next.orderSnapshot=null;
+    if(next.footLab)next.footLab.movedUnitIds=[];
     publicEvent={kind:'LAB_TURN_ENDED_WITHOUT_COMBAT',side,drewCard:drew};
   }else return reject('UNSUPPORTED_LAB_COMMAND');
   next.revision=state.revision+1;
@@ -139,7 +240,8 @@ export function applySectionHistoryLabCommand(state,command={}){
     publicEvent:Object.freeze({sequence:next.revision,...publicEvent}),
     // Never serialize private command or nextState into a public event.
     cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,
-    combatResolved:false};
+    movementAppliedInLab:command.type==='MOVE_SECTION_FOOT_PATH_V2',
+    officialMovementAuthorized:false,combatResolved:false};
 }
 
 /** Rebuild an entire state from a server-only initial snapshot and private commands. */
@@ -167,6 +269,13 @@ export function projectSectionHistoryLab(state,side){
     discardPile:state.discardPile.map(c=>c.definitionId),
     cardInPlay:state.activeCard?.definitionId??null,
     ordersStaged:state.orderSnapshot!==null,
+    ...(state.footLab?{
+      board:state.board.units.map(u=>({
+        id:u.id,side:u.side,col:u.col,row:u.row,
+        unitType:state.footLab.unitTypes[u.id]
+      })),
+      movedUnitIds:[...state.footLab.movedUnitIds]
+    }:{}),
     cardPlayAuthorized:false,ordersAuthorized:false,
     attackAuthorized:false,combatResolved:false});
 }
