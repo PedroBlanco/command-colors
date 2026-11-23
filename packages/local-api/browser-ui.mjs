@@ -29,6 +29,7 @@ const privateScope = createPrivateViewScope();
 let movementBoard = null;
 let ancientsDraft = null;
 let ancientsDraftScope = null;
+let ancientsRetry = null;
 let ancientsWatch = null, ancientsWatchMatchId = null, ancientsWatchBusy = false;
 function syncAncientsWatch(){
   const id=cached?.status==='LAB_ONLY'&&signedInHandle
@@ -152,7 +153,7 @@ function renderAncients() {
   el('ancients-refresh').disabled=!ready;
   el('ancients-controls').hidden=!lab;
   if(!lab){
-    ancientsDraft=null;ancientsDraftScope=null;
+    ancientsDraft=null;ancientsDraftScope=null;ancientsRetry=null;
     el('ancients-status').textContent=ready
       ? 'Demo de Ancients no iniciada. Requiere activación local expresa.'
       : 'No hay partida preparada.';
@@ -160,7 +161,7 @@ function renderAncients() {
   }
   const isTurn=cached.turn===cached.you;
   const scope=[cached.matchId,cached.you,cached.revision,cached.phase].join(':');
-  if(ancientsDraftScope!==scope){ancientsDraft=null;ancientsDraftScope=scope;}
+  if(ancientsDraftScope!==scope){ancientsDraft=null;ancientsRetry=null;ancientsDraftScope=scope;}
   el('ancients-status').textContent=
     `Ancients experimental · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
   const terrainNames={FOREST:'bosque',HILL:'colina',
@@ -251,10 +252,18 @@ async function sendAncients(type,fields={},idempotencyKey=null){
     throw Error('LABORATORIO_NO_DISPONIBLE');
   const matchId=cached.matchId,ticket=privateScope.capture();
   if(!await confirmCurrentSession(ticket,matchId))return false;
+  const signature=JSON.stringify({matchId,side:cached.you,
+    revision:cached.revision,type,fields});
+  if(!ancientsRetry||ancientsRetry.signature!==signature){
+    ancientsRetry={signature,
+      key:idempotencyKey??crypto.randomUUID().replaceAll('-','')};
+  }
   const command={type,expectedRevision:cached.revision,
-    idempotencyKey:idempotencyKey??crypto.randomUUID().replaceAll('-',''),
-    ...fields};
+    idempotencyKey:ancientsRetry.key,...fields};
+  // Retry the exact same command with the exact same key after transport
+  // uncertainty. Never allow a network retry to create a second movement.
   await api('POST',`/api/matches/${matchId}/ancients-lab/commands`,command);
+  ancientsRetry=null;
   if(!privateScope.isCurrent(ticket,matchId))return false;
   await inspect();
   return privateScope.isCurrent(ticket,matchId);
