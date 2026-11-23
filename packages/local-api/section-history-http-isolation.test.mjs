@@ -513,3 +513,59 @@ test('Ancients HTTP: own hand, ordered movement and SQLite replay through explic
  assert.deepEqual(finalA.orderedUnitIds,[]);
  assert.equal(JSON.stringify(finalA).includes(bCard.instanceId),false);
 }));
+
+test('Ancients HTTP SSE: opt-in stream notifies revision only; generic SSE remains denied',()=>fixture(async({app,matchId,start})=>{
+ const {origin}=await start({browser:true,ancientsBrowserLab:true,revisionPollMs:30});
+ const login=await fetch(origin+'/api/session',{
+  method:'POST',
+  headers:{'content-type':'application/json',origin,'x-ccw-request':'1'},
+  body:JSON.stringify({handle:'alice',password:PASSWORD})
+ });
+ assert.equal(login.status,200);
+ const cookie=login.headers.get('set-cookie').split(';')[0];
+ const token=cookie.split('=')[1];
+ const store=app.getStore(matchId);
+ const setupResult=store.initializeExperimentalSectionHistory({
+  sessionToken:token,trustedSetup:setup()
+ });
+ assert.equal(setupResult.status,201);
+ const generic=await fetch(origin+`/api/matches/${matchId}/updates`,{
+  headers:{cookie}
+ });
+ assert.equal(generic.status,409);
+ const controller=new AbortController();
+ const endpoint=origin+`/api/matches/${matchId}/ancients-lab/updates`;
+ const stream=await fetch(endpoint,{headers:{cookie},signal:controller.signal});
+ assert.equal(stream.status,200);
+ assert.match(stream.headers.get('content-type'),/text\/event-stream/);
+ const reader=stream.body.getReader(),decoder=new TextDecoder();
+ const readUntil=async pattern=>{
+  let output='';
+  for(let i=0;i<8&&!pattern.test(output);i++){
+   const next=await Promise.race([
+    reader.read(),
+    new Promise((_,reject)=>setTimeout(()=>reject(Error('PRIVATE_SSE_TIMEOUT')),2500))
+   ]);
+   if(next.done)throw Error('PRIVATE_SSE_ENDED_UNEXPECTEDLY');
+   output+=decoder.decode(next.value);
+  }
+  assert.match(output,pattern);
+  return output;
+ };
+ try{
+  const initial=await readUntil(/"gameRevision":0/);
+  assert.match(initial,/event: revision/);
+  assert.doesNotMatch(initial,/card_a_left|yourHand|privateJournal|unitId|path/);
+  const own=store.viewExperimentalSectionHistory({sessionToken:token}).view.yourHand[0];
+  const play=store.dispatchExperimentalSectionHistory({
+   sessionToken:token,type:'PLAY_SECTION_CARD',expectedRevision:0,
+   idempotencyKey:'private_sse_play_a_001',cardInstanceId:own.instanceId
+  });
+  assert.equal(play.status,200);
+  const next=await readUntil(/"gameRevision":1/);
+  assert.match(next,/event: revision/);
+  assert.doesNotMatch(next,/card_a_left|yourHand|privateJournal|unitId|path/);
+ }finally{
+  controller.abort();
+ }
+}));
