@@ -120,3 +120,76 @@ test('client cannot change server state by mutating a projection',()=>{
  view.yourHand.push({instanceId:'fake_card',definitionId:'ORDER_2_LEFT'});
  assert.equal(project(s,'A').yourHand.length,2);
 });
+
+const completeFootSetup=()=>{
+ const c=config();
+ c.board.leaders=[];
+ c.sectorCells=Object.fromEntries(Array.from({length:117},(_,i)=>{
+  const col=Math.floor(i/9),row=i%9;
+  return [col+','+row,[col<4?'LEFT':col>8?'RIGHT':'CENTER']];
+ }));
+ c.movementUnitTypes={a1:'LIGHT_INFANTRY',b1:'HEAVY_INFANTRY'};
+ return c;
+};
+
+test('foot lab: two-hex ordered path mutates a detached board and replays deterministically',()=>{
+ const initial=init(completeFootSetup()),original=structuredClone(initial);
+ const playCmd=cmd('PLAY_SECTION_CARD',0,{cardInstanceId:initial.hands.A[0].instanceId});
+ const one=apply(initial,playCmd);
+ assert.equal(one.accepted,true);
+ const orderCmd=cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:[]});
+ const two=apply(one.nextState,orderCmd);
+ assert.equal(two.accepted,true);
+ const moveCmd=cmd('MOVE_SECTION_FOOT_PATH_V2',2,{unitId:'a1',path:[
+  {col:3,row:4},{col:4,row:4}
+ ]});
+ const moved=apply(two.nextState,moveCmd);
+ assert.equal(moved.accepted,true);
+ assert.equal(moved.movementAppliedInLab,true);
+ assert.equal(moved.officialMovementAuthorized,false);
+ assert.deepEqual(moved.nextState.board.units.find(u=>u.id==='a1'),
+  {id:'a1',side:'A',col:4,row:4});
+ assert.deepEqual(moved.nextState.footLab.movedUnitIds,['a1']);
+ assert.equal(moved.publicEvent.kind,'SECTION_FOOT_PATH_APPLIED_LAB');
+ assert.equal(moved.publicEvent.battleAfterMovement,'POSSIBLE');
+ assert.deepEqual(replay(initial,[playCmd,orderCmd,moveCmd]),moved.nextState);
+ assert.deepEqual(initial,original);
+ const view=project(moved.nextState,'B');
+ assert.deepEqual(view.board.find(u=>u.id==='a1'),
+  {id:'a1',side:'A',col:4,row:4,unitType:'LIGHT_INFANTRY'});
+ assert.equal(JSON.stringify(view).includes(initial.hands.A[0].instanceId),false);
+});
+
+test('foot lab: illegal trajectories, double movement and unsupported scope never advance',()=>{
+ const initial=init(completeFootSetup());
+ const afterCard=apply(initial,cmd('PLAY_SECTION_CARD',0,{
+  cardInstanceId:initial.hands.A[0].instanceId
+ })).nextState;
+ const waiting=apply(afterCard,cmd('ASSIGN_SECTION_ORDERS',1,{
+  unitIds:['a1'],leaderIds:[]
+ })).nextState;
+ const move=(state,id,path)=>apply(state,cmd('MOVE_SECTION_FOOT_PATH_V2',
+  state.revision,{unitId:id,path}));
+ const snapshot=structuredClone(waiting);
+ assert.equal(move(waiting,'b1',[{col:9,row:4}]).accepted,false);
+ assert.equal(move(waiting,'a1',[{col:10,row:4}]).accepted,false);
+ assert.equal(move(waiting,'a1',[{col:3,row:4},{col:2,row:4}]).accepted,false);
+ assert.deepEqual(waiting,snapshot);
+ const accepted=move(waiting,'a1',[{col:3,row:4}]);
+ assert.equal(accepted.accepted,true);
+ assert.equal(move(accepted.nextState,'a1',[{col:4,row:4}]).code,'UNIT_ALREADY_MOVED');
+ const done=apply(accepted.nextState,cmd('END_EXPERIMENTAL_TURN',3));
+ assert.equal(done.accepted,true);
+ assert.deepEqual(done.nextState.footLab.movedUnitIds,[]);
+ const old=setup();
+ assert.equal(apply(old,cmd('MOVE_SECTION_FOOT_PATH_V2',0,{
+  unitId:'a1',path:[{col:3,row:4}]
+ })).accepted,false);
+ const bad=completeFootSetup();delete bad.sectorCells['3,4'];
+ assert.throws(()=>init(bad),/INVALID_FOOT_LAB_SETUP/);
+ const leader=completeFootSetup();
+ leader.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
+ assert.throws(()=>init(leader),/INVALID_FOOT_LAB_SETUP/);
+ const mounted=completeFootSetup();mounted.movementUnitTypes.a1='LIGHT_CAVALRY';
+ assert.throws(()=>init(mounted),/INVALID_FOOT_LAB_SETUP/);
+});
