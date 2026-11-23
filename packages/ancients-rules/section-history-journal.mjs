@@ -134,7 +134,7 @@ export function assertSectionHistoryLab(s){
          (Object.keys(info).length===3&&Object.hasOwn(info,'terrain')))||
        !isRecord(info.unitTypes)||!Array.isArray(info.movedUnitIds)||
        !validFootLabSetup(s.board,s.sectorCells,info.unitTypes,
-         info.terrain??[])||
+         Object.hasOwn(info,'terrain')?info.terrain:[])||
        info.movedUnitIds.length>117||
        !info.movedUnitIds.every(validId)||!same(info.movedUnitIds)||
        (s.phase!=='LAB_RESOLUTION_PENDING'&&info.movedUnitIds.length>0)||
