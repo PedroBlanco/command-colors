@@ -382,3 +382,28 @@ test('CCWB: a rejected laboratory movement writes no event or command',()=>fixtu
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,2);
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,2);
 }));
+
+test('CCWB: server-owned forest blocks through-movement without any SQLite write',()=>fixture(({root,connect})=>{
+ const c=footSetup();
+ c.movementTerrain=[{col:3,row:4,kind:'FOREST'}];
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const before=root.getRow(MATCH);
+ const forbidden=root.bridge.dispatch(req('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'unitA',path:[{col:3,row:4},{col:4,row:4}]
+ },'foot_forest_long_0001'));
+ assert.equal(forbidden.code,'MUST_STOP_ON_FOREST_ENTRY');
+ assert.equal(root.getRow(MATCH).private_state,before.private_state);
+ assert.equal(root.getRow(MATCH).game_revision,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,2);
+ const accepted=root.bridge.dispatch(req('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'unitA',path:[{col:3,row:4}]
+ },'foot_forest_stop_0001'));
+ assert.equal(accepted.code,'SECTION_LAB_APPLIED');
+ assert.equal(accepted.view.board.find(u=>u.id==='unitA').col,3);
+ assert.equal(accepted.view.terrain[0].kind,'FOREST');
+ const second=connect().bridge.view('B');
+ assert.equal(second.board.find(u=>u.id==='unitA').col,3);
+ const last=root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=3').get(MATCH);
+ assert.equal(JSON.parse(last.payload).destinationTerrain,'FOREST');
+}));
