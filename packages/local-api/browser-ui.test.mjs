@@ -384,6 +384,8 @@ test('browser: explicit loopback Ancients mode uses distinct authenticated route
  assert.equal(ctx.element('turn').disabled,true);
  assert.equal(ctx.element('ancients-controls').hidden,false);
  assert.equal(ctx.feeds[0].closed,true);
+ assert.equal(ctx.feeds[1].closed,false);
+ assert.equal(ctx.feeds[1].url,`/api/matches/${MATCH}/ancients-lab/updates`);
  assert.equal(ctx.element('ancients-play').disabled,false);
  assert.match(ctx.element('ancients-status').textContent,/AWAIT_CARD/);
  const init=ctx.requests.find(r=>r.path===`/api/matches/${MATCH}/ancients-lab/initialize`);
