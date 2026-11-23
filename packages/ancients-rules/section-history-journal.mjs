@@ -8,6 +8,7 @@ import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS} from './s
 import {ANCIENTS_RULESET} from './movement-profile.mjs';
 import {assessAncientsMovementRegime} from './movement-regimes.mjs';
 import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
+import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
 import {
   OPEN_FOOT_PATH_CORE_KIND, OPEN_FOOT_PATH_CORE_POLICY, reduceCoreOpenFootPath
 } from './core-open-foot-path-v2.mjs';
@@ -27,9 +28,9 @@ const isCards=a=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validI
   Object.hasOwn(BASE_SECTION_CARD_LIMITS,c.definitionId));
 
 /**
- * Strict opt-in, server-owned LAB scope: normal foot plus three verified base
- * terrain types only. No leaders, special cards/scenario exceptions or unsupported
- * movement regimes. Full sector lookup supports ordering pieces in later turns.
+ * Strict server-owned LAB scope: ordinary foot or five mounted base types,
+ * with three verified terrain types. No leaders, special cards, charge,
+ * battles or scenario exceptions. Full sector lookup survives later turns.
  */
 function validFootLabSetup(board,sectorCells,types,terrain=[]){
   if(!isRecord(board)||Object.keys(board).length!==2||
@@ -56,7 +57,8 @@ function validFootLabSetup(board,sectorCells,types,terrain=[]){
     const regime=assessAncientsMovementRegime({
       unitType:types[unit.id],steps:1
     });
-    if(regime.status!=='SUBSET_ELIGIBLE')return false;
+    if(regime.status!=='SUBSET_ELIGIBLE'&&
+       !BASE_MOUNTED_TYPES.includes(types[unit.id]))return false;
     ids.add(unit.id);positions.add(loc(unit));
   }
   for(let col=0;col<13;col++)for(let row=0;row<9;row++){
@@ -256,6 +258,37 @@ export function applySectionHistoryLabCommand(state,command={}){
         destinationTerrain:terrain.destinationTerrain
       }:{})
     };
+  }else if(command.type==='MOVE_SECTION_MOUNTED_PATH_V1'){
+    if(state.phase!=='LAB_RESOLUTION_PENDING'||!Object.hasOwn(state,'footLab'))
+      return reject('MOUNTED_LAB_NOT_AVAILABLE');
+    const piece=state.board.units.find(u=>u.id===command.unitId);
+    if(!piece||piece.side!==side||
+       !state.orderSnapshot.pieces.some(p=>p.kind==='UNIT'&&p.id===piece.id))
+      return reject('UNIT_NOT_ORDERED');
+    if(state.footLab.movedUnitIds.includes(piece.id))
+      return reject('UNIT_ALREADY_MOVED');
+    // All inputs are derived from replayed CCWB state, not the request:
+    // only piece identity/path are selectable by the acting participant.
+    const checked=previewBaseMountedPath({
+      unitType:state.footLab.unitTypes[piece.id],
+      from:{col:piece.col,row:piece.row},
+      path:command.path,occupiedCells:state.board.units,
+      terrain:state.footLab.terrain??[]
+    });
+    if(checked.status!=='MOUNTED_PATH_PROPOSAL')
+      return reject(checked.reason??'MOUNTED_LAB_MOVE_REJECTED');
+    const target=next.board.units.find(u=>u.id===piece.id);
+    target.col=checked.destination.col;
+    target.row=checked.destination.row;
+    next.footLab.movedUnitIds.push(piece.id);
+    publicEvent={
+      kind:'SECTION_MOUNTED_PATH_APPLIED_LAB',side,unitId:piece.id,
+      from:{col:piece.col,row:piece.row},
+      to:{col:target.col,row:target.row},
+      path:command.path.map(p=>({col:p.col,row:p.row})),
+      battleAfterMovement:checked.battleAfterMovement,
+      destinationTerrain:checked.destinationTerrain
+    };
   }else if(command.type==='END_EXPERIMENTAL_TURN'){
     if(state.phase!=='LAB_RESOLUTION_PENDING')return reject('WRONG_PHASE');
     next.discardPile.push(next.activeCard);
@@ -273,7 +306,8 @@ export function applySectionHistoryLabCommand(state,command={}){
     publicEvent:Object.freeze({sequence:next.revision,...publicEvent}),
     // Never serialize private command or nextState into a public event.
     cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,
-    movementAppliedInLab:command.type==='MOVE_SECTION_FOOT_PATH_V2',
+    movementAppliedInLab:['MOVE_SECTION_FOOT_PATH_V2',
+      'MOVE_SECTION_MOUNTED_PATH_V1'].includes(command.type),
     officialMovementAuthorized:false,combatResolved:false};
 }
 
