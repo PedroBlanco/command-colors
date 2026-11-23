@@ -9,6 +9,7 @@ import {ANCIENTS_RULESET} from './movement-profile.mjs';
 import {assessAncientsMovementRegime} from './movement-regimes.mjs';
 import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
+import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {
   OPEN_FOOT_PATH_CORE_KIND, OPEN_FOOT_PATH_CORE_POLICY, reduceCoreOpenFootPath
 } from './core-open-foot-path-v2.mjs';
@@ -33,10 +34,12 @@ const isCards=a=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validI
  * with three verified terrain types. No leaders, special cards, charge,
  * battles or scenario exceptions. Full sector lookup survives later turns.
  */
-function validFootLabSetup(board,sectorCells,types,terrain=[]){
+function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false){
   if(!isRecord(board)||Object.keys(board).length!==2||
      !Array.isArray(board.units)||!Array.isArray(board.leaders)||
-     board.units.length<1||board.units.length>117||board.leaders.length!==0||
+     board.units.length<1||board.units.length>117||
+     board.units.length+board.leaders.length>117||
+     (!allowLeaders&&board.leaders.length!==0)||
      !isRecord(types)||Object.keys(types).length!==board.units.length||
      !isRecord(sectorCells)||Reflect.ownKeys(sectorCells).length!==117||
      !Array.isArray(terrain)||terrain.length>117)return false;
@@ -62,6 +65,16 @@ function validFootLabSetup(board,sectorCells,types,terrain=[]){
        !BASE_MOUNTED_TYPES.includes(types[unit.id]))return false;
     ids.add(unit.id);positions.add(loc(unit));
   }
+  const leaderCells=new Set();
+  for(const leader of board.leaders){
+    if(!isRecord(leader)||Object.keys(leader).length!==4||
+       !['id','side','col','row'].every(k=>Object.hasOwn(leader,k))||
+       !validId(leader.id)||!SIDES.includes(leader.side)||!goodLoc(leader)||
+       ids.has(leader.id)||leaderCells.has(loc(leader)))return false;
+    const occupant=board.units.find(u=>loc(u)===loc(leader));
+    if(occupant&&occupant.side!==leader.side)return false;
+    ids.add(leader.id);leaderCells.add(loc(leader));
+  }
   for(let col=0;col<13;col++)for(let row=0;row<9;row++){
     const sectors=sectorCells[col+','+row];
     if(!Array.isArray(sectors)||sectors.length<1||sectors.length>2||
@@ -78,14 +91,15 @@ function validFootLabSetup(board,sectorCells,types,terrain=[]){
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED'}={}) {
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
     !SIDES.includes(startingSide)||!isRecord(board)||!Array.isArray(board.units)||
     !Array.isArray(board.leaders)||board.units.length+board.leaders.length>117||
     !isRecord(sectorCells)||typeof randomIndex!=='function'||
-    !['FIXED','PLAYER_RELATIVE'].includes(sectorPerspective))fail('INVALID_SECTION_HISTORY_SETUP');
+    !['FIXED','PLAYER_RELATIVE'].includes(sectorPerspective)||
+    typeof enableLeaderLab!=='boolean')fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -108,11 +122,12 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     board:copy(board),sectorCells:copy(sectorCells),
     ...(sectorPerspective==='PLAYER_RELATIVE'?{sectorPerspective}: {})};
   if(movementUnitTypes!==undefined){
-    if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain))
+    if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain,enableLeaderLab))
       fail('INVALID_FOOT_LAB_SETUP');
     state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[],
       terrain:copy(movementTerrain)};
-  }else if(!Array.isArray(movementTerrain)||movementTerrain.length>0){
+    if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
+  }else if(enableLeaderLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
   assertSectionHistoryLab(state);
@@ -141,7 +156,7 @@ export function assertSectionHistoryLab(s){
          (Object.keys(info).length===3&&Object.hasOwn(info,'terrain')))||
        !isRecord(info.unitTypes)||!Array.isArray(info.movedUnitIds)||
        !validFootLabSetup(s.board,s.sectorCells,info.unitTypes,
-         Object.hasOwn(info,'terrain')?info.terrain:[])||
+         Object.hasOwn(info,'terrain')?info.terrain:[],Object.hasOwn(s,'leaderLab'))||
        info.movedUnitIds.length>117||
        !info.movedUnitIds.every(validId)||!same(info.movedUnitIds)||
        (s.phase!=='LAB_RESOLUTION_PENDING'&&info.movedUnitIds.length>0)||
@@ -150,6 +165,21 @@ export function assertSectionHistoryLab(s){
          info.movedUnitIds.some(id=>!s.orderSnapshot.pieces.some(p=>
            p.kind==='UNIT'&&p.id===id&&p.side===s.turn)))))
       fail('INVALID_FOOT_LAB_STATE');
+  }
+  if(Object.hasOwn(s,'leaderLab')){
+    const info=s.leaderLab;
+    if(!Object.hasOwn(s,'footLab')||!isRecord(info)||
+       Object.keys(info).length!==2||
+       !['movedLeaderIds','joinedUnitIds'].every(k=>Object.hasOwn(info,k))||
+       !Array.isArray(info.movedLeaderIds)||!Array.isArray(info.joinedUnitIds)||
+       !same(info.movedLeaderIds)||!same(info.joinedUnitIds)||
+       !info.movedLeaderIds.every(validId)||!info.joinedUnitIds.every(validId)||
+       info.movedLeaderIds.some(id=>!s.board.leaders.some(l=>l.id===id&&l.side===s.turn))||
+       info.joinedUnitIds.some(id=>!s.board.units.some(u=>u.id===id&&u.side===s.turn))||
+       info.joinedUnitIds.some(id=>s.footLab.movedUnitIds.includes(id))||
+       (s.phase!=='LAB_RESOLUTION_PENDING'&&
+         (info.movedLeaderIds.length>0||info.joinedUnitIds.length>0)))
+      fail('INVALID_LEADER_LAB_STATE');
   }
   if((s.phase==='AWAIT_CARD')!== (s.activeCard===null)||
      (s.phase==='AWAIT_CARD'&&(s.cardPlay!==null||s.handAtPlay!==null||s.orderSnapshot!==null))||
