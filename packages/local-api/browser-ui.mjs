@@ -192,6 +192,38 @@ function renderAncients() {
     option.selected=selected.has(unit.id);
     unitSelect.appendChild(option);
   }
+  const leaderOrderSelect=el('ancients-leader-orders');
+  const chosenLeaders=new Set(Array.from(
+    leaderOrderSelect.selectedOptions??[],o=>o.value));
+  leaderOrderSelect.replaceChildren();
+  for(const leader of cached.leaders??[]){
+    if(leader.side!==cached.you)continue;
+    const option=document.createElement('option');
+    option.value=leader.id;
+    option.textContent=`${leader.id} (${leader.col+1},${leader.row+1})`;
+    option.selected=chosenLeaders.has(leader.id);
+    leaderOrderSelect.appendChild(option);
+  }
+  const orderedLeaders=new Set(cached.orderedLeaderIds??[]);
+  const movedLeaders=new Set(cached.movedLeaderIds??[]);
+  const availableLeaders=(cached.leaders??[]).filter(l=>l.side===cached.you&&
+    orderedLeaders.has(l.id)&&!movedLeaders.has(l.id));
+  const leaderChoice=el('ancients-leader-choice');
+  const previousLeader=leaderChoice.value;
+  leaderChoice.replaceChildren();
+  const blank=document.createElement('option');
+  blank.value='';blank.textContent='Selecciona un líder';
+  leaderChoice.appendChild(blank);
+  for(const leader of availableLeaders){
+    const option=document.createElement('option');
+    option.value=leader.id;
+    option.textContent=leader.id;
+    leaderChoice.appendChild(option);
+  }
+  if(availableLeaders.some(l=>l.id===previousLeader))
+    leaderChoice.value=previousLeader;
+  el('ancients-select-leader').disabled=!isTurn||
+    cached.phase!=='LAB_RESOLUTION_PENDING'||availableLeaders.length===0;
   const ordered=new Set(Array.isArray(cached.orderedUnitIds)?cached.orderedUnitIds:[]);
   const moved=new Set(Array.isArray(cached.movedUnitIds)?cached.movedUnitIds:[]);
   const selectable=(cached.board??[]).filter(u=>u.side===cached.you&&
@@ -204,13 +236,14 @@ function renderAncients() {
   el('ancients-move').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||
     !ancientsDraft?.path.length;
   el('ancients-route-status').textContent=ancientsDraft
-    ? `Unidad ${ancientsDraft.unitId}: ${ancientsDraft.path.length} hexágonos. Confirma para validar en el servidor.`
+    ? `${ancientsDraft.kind==='LEADER'?'Líder':'Unidad'} ${ancientsDraft.unitId}: ${ancientsDraft.path.length} hexágonos. Confirma para validar en el servidor.`
     : `${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
   const svg=el('ancients-board');
   if(svg?.ownerDocument?.createElementNS){
     renderMovementBoard(svg,cached.board??[],ancientsDraft,selectAncientsHex,cached.you,{
       terrain:Array.isArray(cached.terrain)?cached.terrain:[],
-      selectableUnitIds:selectable
+      selectableUnitIds:selectable,
+      leaders:Array.isArray(cached.leaders)?cached.leaders:[]
     });
   }
 }
@@ -221,7 +254,7 @@ function selectAncientsHex(cell){
   const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
   const ordered=new Set(cached.orderedUnitIds??[]);
   const moved=new Set(cached.movedUnitIds??[]);
-  if(at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)){
+  if(ancientsDraft?.kind!=='LEADER'&&at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)){
     ancientsDraft={unitId:at.id,origin:{col:at.col,row:at.row},
       path:[],revision:cached.revision};
   }else if(ancientsDraft){
@@ -235,11 +268,11 @@ function selectAncientsHex(cell){
     }else if(distance(previous,cell)!==1){
       el('ancients-route-status').textContent='El siguiente hexágono debe ser contiguo.';
       return;
-    }else if(at){
+    }else if(at && !(ancientsDraft.kind==='LEADER'&&at.side===cached.you)){
       el('ancients-route-status').textContent='El hexágono está ocupado.';
       return;
-    }else if(ancientsDraft.path.length>=4){
-      el('ancients-route-status').textContent='Superado el máximo provisional de cuatro hexágonos.';
+    }else if(ancientsDraft.path.length >= (ancientsDraft.kind==='LEADER'?3:4)){
+      el('ancients-route-status').textContent='Superado el máximo de recorrido de esta pieza.';
       return;
     }else{
       ancientsDraft.path.push({col:cell.col,row:cell.row});
@@ -673,22 +706,38 @@ action('ancients-play',()=>sendAncients('PLAY_SECTION_CARD',{
 }));
 action('ancients-order',()=>sendAncients('ASSIGN_SECTION_ORDERS',{
   unitIds:Array.from(el('ancients-units').selectedOptions??[],x=>x.value),
-  leaderIds:[]
+  leaderIds:Array.from(el('ancients-leader-orders').selectedOptions??[],x=>x.value)
 }));
+action('ancients-select-leader',async()=>{
+  if(cached?.status!=='LAB_ONLY'||cached.turn!==cached.you||
+     cached.phase!=='LAB_RESOLUTION_PENDING')throw Error('ACCION_NO_DISPONIBLE');
+  const leader=(cached.leaders??[]).find(l=>l.id===
+    el('ancients-leader-choice').value&&l.side===cached.you);
+  if(!leader||!(cached.orderedLeaderIds??[]).includes(leader.id)||
+     (cached.movedLeaderIds??[]).includes(leader.id))
+    throw Error('LIDER_NO_DISPONIBLE');
+  ancientsDraft={kind:'LEADER',unitId:leader.id,leaderId:leader.id,
+    origin:{col:leader.col,row:leader.row},path:[],
+    revision:cached.revision};
+  renderAncients();
+  return false;
+});
 action('ancients-clear-path',async()=>{
   ancientsDraft=null;renderAncients();return false;
 });
 action('ancients-move',()=>{
   if(!ancientsDraft?.path.length||ancientsDraft.revision!==cached?.revision)
     throw Error('BORRADOR_DESACTUALIZADO');
+  const path=ancientsDraft.path.map(p=>({col:p.col,row:p.row}));
+  if(ancientsDraft.kind==='LEADER')
+    return sendAncients('MOVE_SECTION_LEADER_PATH_V1',{
+      leaderId:ancientsDraft.leaderId,path
+    });
   const selected=(cached?.board??[]).find(u=>u.id===ancientsDraft.unitId);
   const type=['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY',
     'ELEPHANT','HEAVY_CHARIOT'].includes(selected?.unitType)
     ?'MOVE_SECTION_MOUNTED_PATH_V1':'MOVE_SECTION_FOOT_PATH_V2';
-  return sendAncients(type,{
-    unitId:ancientsDraft.unitId,
-    path:ancientsDraft.path.map(p=>({col:p.col,row:p.row}))
-  });
+  return sendAncients(type,{unitId:ancientsDraft.unitId,path});
 });
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));
 action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));
