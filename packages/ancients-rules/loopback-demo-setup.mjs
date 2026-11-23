@@ -30,7 +30,10 @@ export function createAncientsLoopbackSetup(){
       {id:'B_heavy',side:'B',col:2,row:1},
       {id:'B_auxilia',side:'B',col:6,row:1},
       {id:'B_cavalry',side:'B',col:10,row:1}
-    ],leaders:[]},
+    ],leaders:[
+      {id:'A_commander',side:'A',col:6,row:7},
+      {id:'B_commander',side:'B',col:2,row:1}
+    ]},
     sectorCells,
     movementUnitTypes:{
       A_light:'LIGHT_INFANTRY',

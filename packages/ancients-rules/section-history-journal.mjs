@@ -9,6 +9,7 @@ import {ANCIENTS_RULESET} from './movement-profile.mjs';
 import {assessAncientsMovementRegime} from './movement-regimes.mjs';
 import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
+import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {
   OPEN_FOOT_PATH_CORE_KIND, OPEN_FOOT_PATH_CORE_POLICY, reduceCoreOpenFootPath
 } from './core-open-foot-path-v2.mjs';
@@ -30,13 +31,13 @@ const isCards=a=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validI
 
 /**
  * Strict server-owned LAB scope: ordinary foot or five mounted base types,
- * with three verified terrain types. No leaders, special cards, charge,
- * battles or scenario exceptions. Full sector lookup survives later turns.
+ * with three verified terrain types and opt-in leader movement/attachment.
+ * No special cards, charge, combat or scenario exceptions.
  */
 function validFootLabSetup(board,sectorCells,types,terrain=[]){
   if(!isRecord(board)||Object.keys(board).length!==2||
      !Array.isArray(board.units)||!Array.isArray(board.leaders)||
-     board.units.length<1||board.units.length>117||board.leaders.length!==0||
+     board.units.length<1||board.units.length+board.leaders.length>117||
      !isRecord(types)||Object.keys(types).length!==board.units.length||
      !isRecord(sectorCells)||Reflect.ownKeys(sectorCells).length!==117||
      !Array.isArray(terrain)||terrain.length>117)return false;
@@ -61,6 +62,15 @@ function validFootLabSetup(board,sectorCells,types,terrain=[]){
     if(regime.status!=='SUBSET_ELIGIBLE'&&
        !BASE_MOUNTED_TYPES.includes(types[unit.id]))return false;
     ids.add(unit.id);positions.add(loc(unit));
+  }
+  const leaderCells=new Set();
+  for(const leader of board.leaders){
+    if(!isRecord(leader)||Object.keys(leader).length!==4||
+       !validId(leader.id)||!SIDES.includes(leader.side)||
+       !goodLoc(leader)||ids.has(leader.id)||leaderCells.has(loc(leader))||
+       board.units.some(u=>loc(u)===loc(leader)&&u.side!==leader.side))
+       return false;
+    ids.add(leader.id);leaderCells.add(loc(leader));
   }
   for(let col=0;col<13;col++)for(let row=0;row<9;row++){
     const sectors=sectorCells[col+','+row];
@@ -111,7 +121,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain))
       fail('INVALID_FOOT_LAB_SETUP');
     state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[],
-      terrain:copy(movementTerrain)};
+      terrain:copy(movementTerrain),
+      ...(board.leaders.length?{movedLeaderIds:[]}: {})};
   }else if(!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
@@ -136,10 +147,14 @@ export function assertSectionHistoryLab(s){
   if(all.length!==s.totalCards||!same(all.map(c=>c.instanceId)))fail('SECTION_CARD_CONSERVATION_FAILED');
   if(Object.hasOwn(s,'footLab')){
     const info=s.footLab;
-    if(!isRecord(info)||
-       !(Object.keys(info).length===2||
-         (Object.keys(info).length===3&&Object.hasOwn(info,'terrain')))||
+    const names=Object.keys(info);
+    const hasLeaders=Object.hasOwn(info,'movedLeaderIds');
+    if(!isRecord(info)||!names.includes('unitTypes')||
+       !names.includes('movedUnitIds')||
+       !names.every(k=>['unitTypes','movedUnitIds','terrain','movedLeaderIds'].includes(k))||
+       (s.board.leaders.length>0)!==hasLeaders||
        !isRecord(info.unitTypes)||!Array.isArray(info.movedUnitIds)||
+       (hasLeaders&&!Array.isArray(info.movedLeaderIds))||
        !validFootLabSetup(s.board,s.sectorCells,info.unitTypes,
          Object.hasOwn(info,'terrain')?info.terrain:[])||
        info.movedUnitIds.length>117||
@@ -150,6 +165,21 @@ export function assertSectionHistoryLab(s){
          info.movedUnitIds.some(id=>!s.orderSnapshot.pieces.some(p=>
            p.kind==='UNIT'&&p.id===id&&p.side===s.turn)))))
       fail('INVALID_FOOT_LAB_STATE');
+    if(hasLeaders){
+      const ids=info.movedLeaderIds;
+      if(ids.length>s.board.leaders.length||!ids.every(validId)||!same(ids)||
+         (s.phase!=='LAB_RESOLUTION_PENDING'&&ids.length>0)||
+         (s.phase==='LAB_RESOLUTION_PENDING'&&ids.some(id=>{
+           const leader=s.board.leaders.find(x=>x.id===id);
+           if(!leader||leader.side!==s.turn)return true;
+           const ordered=s.orderSnapshot?.pieces.some(p=>
+             p.kind==='LEADER'&&p.id===id&&p.side===s.turn);
+           const accompanied=s.board.units.some(u=>
+             u.side===s.turn&&loc(u)===loc(leader)&&
+             info.movedUnitIds.includes(u.id));
+           return !ordered&&!accompanied;
+         })))fail('INVALID_LEADER_LAB_STATE');
+    }
   }
   if((s.phase==='AWAIT_CARD')!== (s.activeCard===null)||
      (s.phase==='AWAIT_CARD'&&(s.cardPlay!==null||s.handAtPlay!==null||s.orderSnapshot!==null))||
@@ -157,6 +187,38 @@ export function assertSectionHistoryLab(s){
      (s.phase==='LAB_RESOLUTION_PENDING'&&!isRecord(s.orderSnapshot))||
      (s.phase==='ASSIGN_ORDERS'&&s.orderSnapshot!==null))fail('SECTION_HISTORY_PHASE_MISMATCH');
   return true;
+}
+
+/**
+ * A unit carries its attached leader. It can stop on a friendly lone
+ * leader but cannot pass through one or enter any enemy leader's cell.
+ */
+function screenUnitLeaderPassage(state,unit,path){
+  if(!Object.hasOwn(state.footLab,'movedLeaderIds'))
+    return {ok:true,carried:null,joined:null};
+  const leaders=state.board.leaders;
+  const carried=leaders.find(l=>loc(l)===loc(unit))??null;
+  if(carried&&state.footLab.movedLeaderIds.includes(carried.id))
+    return {ok:false,reason:'ATTACHED_LEADER_ALREADY_MOVED'};
+  let joined=null;
+  for(let i=0;i<path.length;i++){
+    const leader=leaders.find(l=>loc(l)===loc(path[i]));
+    if(!leader)continue;
+    if(leader.side!==unit.side)return {ok:false,reason:'ENEMY_LEADER_BLOCKS_PATH'};
+    if(i<path.length-1)return {ok:false,reason:'UNIT_MUST_STOP_ON_LEADER'};
+    if(carried)return {ok:false,reason:'LEADER_ALREADY_ATTACHED_TO_UNIT'};
+    joined=leader;
+  }
+  return {ok:true,carried,joined};
+}
+function commitUnitLeaderPassage(next,check,destination){
+  const leader=check.carried??check.joined;
+  if(!leader)return null;
+  const target=next.board.leaders.find(x=>x.id===leader.id);
+  target.col=destination.col;target.row=destination.row;
+  if(!next.footLab.movedLeaderIds.includes(target.id))
+    next.footLab.movedLeaderIds.push(target.id);
+  return target.id;
 }
 
 /** Deterministic command step; the caller controls actor via authenticated session. */
@@ -257,15 +319,18 @@ export function applySectionHistoryLabCommand(state,command={}){
       return reject(terrain.reason??'FOOT_LAB_TERRAIN_BLOCKED');
     const battleAfterMovement=terrain.battleOnEntry==='UNAVAILABLE'
       ? 'UNAVAILABLE':result.transition.battleAfterMovement;
-    // The reducer determines every changed cell and public event field.
-    // A client cannot supply its own board, rules or movement result.
+    const leaders=screenUnitLeaderPassage(state,moving,command.path);
+    if(!leaders.ok)return reject(leaders.reason);
+    // Moving an ordered unit carries any attached leader in this same event.
     next.board.units=result.nextState.board.units;
+    const attachedLeaderId=commitUnitLeaderPassage(next,leaders,result.transition.to);
     next.footLab.movedUnitIds=result.nextState.orderLedger.movedUnitIds;
     publicEvent={
       kind:'SECTION_FOOT_PATH_APPLIED_LAB',side,
       unitId:result.transition.unitId,from:result.transition.from,
       to:result.transition.to,path:result.transition.path,
       battleAfterMovement,
+      ...(attachedLeaderId?{attachedLeaderId}:{}),
       ...(Object.hasOwn(state.footLab,'terrain')?{
         destinationTerrain:terrain.destinationTerrain
       }:{})
@@ -289,17 +354,54 @@ export function applySectionHistoryLabCommand(state,command={}){
     });
     if(checked.status!=='MOUNTED_PATH_PROPOSAL')
       return reject(checked.reason??'MOUNTED_LAB_MOVE_REJECTED');
+    const leaders=screenUnitLeaderPassage(state,piece,command.path);
+    if(!leaders.ok)return reject(leaders.reason);
     const target=next.board.units.find(u=>u.id===piece.id);
     target.col=checked.destination.col;
     target.row=checked.destination.row;
     next.footLab.movedUnitIds.push(piece.id);
+    const attachedLeaderId=commitUnitLeaderPassage(next,leaders,checked.destination);
     publicEvent={
       kind:'SECTION_MOUNTED_PATH_APPLIED_LAB',side,unitId:piece.id,
       from:{col:piece.col,row:piece.row},
       to:{col:target.col,row:target.row},
       path:command.path.map(p=>({col:p.col,row:p.row})),
       battleAfterMovement:checked.battleAfterMovement,
+      ...(attachedLeaderId?{attachedLeaderId}:{}),
       destinationTerrain:checked.destinationTerrain
+    };
+  }else if(command.type==='MOVE_SECTION_LEADER_PATH_V1'){
+    if(state.phase!=='LAB_RESOLUTION_PENDING'||!Object.hasOwn(state,'footLab')||
+       !Object.hasOwn(state.footLab,'movedLeaderIds'))
+      return reject('LEADER_LAB_NOT_AVAILABLE');
+    const leader=state.board.leaders.find(l=>l.id===command.leaderId);
+    if(!leader||leader.side!==side||
+       !state.orderSnapshot.pieces.some(p=>
+         p.kind==='LEADER'&&p.side===side&&p.id===leader.id))
+      return reject('LEADER_NOT_ORDERED');
+    if(state.footLab.movedLeaderIds.includes(leader.id))
+      return reject('LEADER_ALREADY_MOVED');
+    if(!Array.isArray(command.path)||command.path.length<1||
+       command.path.length>3||!command.path.every(p=>
+         isRecord(p)&&Object.keys(p).length===2&&goodLoc(p)))
+      return reject('INVALID_LEADER_PATH');
+    const check=precheckAncientsLeaderPath({
+      units:state.board.units,leaders:state.board.leaders,
+      leaderId:leader.id,path:command.path,
+      terrain:state.footLab.terrain??[]
+    });
+    if(check.status!=='CANDIDATE')
+      return reject(check.reason??'LEADER_MOVE_REJECTED');
+    const target=next.board.leaders.find(l=>l.id===leader.id);
+    target.col=check.destination.col;target.row=check.destination.row;
+    next.footLab.movedLeaderIds.push(leader.id);
+    publicEvent={
+      kind:'SECTION_LEADER_PATH_APPLIED_LAB',side,leaderId:leader.id,
+      from:{col:leader.col,row:leader.row},
+      to:{col:target.col,row:target.row},
+      path:command.path.map(p=>({col:p.col,row:p.row})),
+      detachedFromUnit:check.detachesFromUnit,
+      attachedToUnit:check.attachesToUnit
     };
   }else if(command.type==='END_EXPERIMENTAL_TURN'){
     if(state.phase!=='LAB_RESOLUTION_PENDING')return reject('WRONG_PHASE');
@@ -309,7 +411,10 @@ export function applySectionHistoryLabCommand(state,command={}){
     if(drew)next.hands[side].push(next.drawPile.pop());
     next.turn=side==='A'?'B':'A';
     next.phase='AWAIT_CARD';next.handAtPlay=null;next.cardPlay=null;next.orderSnapshot=null;
-    if(next.footLab)next.footLab.movedUnitIds=[];
+    if(next.footLab){
+      next.footLab.movedUnitIds=[];
+      if(Object.hasOwn(next.footLab,'movedLeaderIds'))next.footLab.movedLeaderIds=[];
+    }
     publicEvent={kind:'LAB_TURN_ENDED_WITHOUT_COMBAT',side,drewCard:drew};
   }else return reject('UNSUPPORTED_LAB_COMMAND');
   next.revision=state.revision+1;
@@ -319,7 +424,8 @@ export function applySectionHistoryLabCommand(state,command={}){
     // Never serialize private command or nextState into a public event.
     cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,
     movementAppliedInLab:['MOVE_SECTION_FOOT_PATH_V2',
-      'MOVE_SECTION_MOUNTED_PATH_V1'].includes(command.type),
+      'MOVE_SECTION_MOUNTED_PATH_V1',
+      'MOVE_SECTION_LEADER_PATH_V1'].includes(command.type),
     officialMovementAuthorized:false,combatResolved:false};
 }
 
@@ -354,6 +460,13 @@ export function projectSectionHistoryLab(state,side){
         unitType:state.footLab.unitTypes[u.id]
       })),
       movedUnitIds:[...state.footLab.movedUnitIds],
+      ...(Object.hasOwn(state.footLab,'movedLeaderIds')?{
+        leaders:copy(state.board.leaders),
+        movedLeaderIds:[...state.footLab.movedLeaderIds],
+        orderedLeaderIds:state.turn===side&&state.phase==='LAB_RESOLUTION_PENDING'
+          ?state.orderSnapshot.pieces.filter(p=>
+            p.kind==='LEADER'&&p.side===side).map(p=>p.id):[]
+      }:{}),
       // A participant may select ONLY their own ordered units. Do not
       // expose the opponent's still-private selection.
       orderedUnitIds:state.turn===side&&state.phase==='LAB_RESOLUTION_PENDING'
