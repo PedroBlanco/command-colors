@@ -248,3 +248,75 @@ test('foot lab: unsupported or tampered terrain is never admitted',()=>{
  const s=init(c);s.footLab.terrain=null;
  assert.throws(()=>validate(s),/INVALID_FOOT_LAB_STATE/);
 });
+
+test('mounted laboratory: cavalry moves four hexes but cannot move again this turn',()=>{
+ const c=completeFootSetup();c.movementUnitTypes.a1='LIGHT_CAVALRY';
+ const s0=init(c);
+ const playCmd=cmd('PLAY_SECTION_CARD',0,{cardInstanceId:s0.hands.A[0].instanceId});
+ const s1=apply(s0,playCmd).nextState;
+ const orderCmd=cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:[]});
+ const s2=apply(s1,orderCmd).nextState;
+ const moveCmd=cmd('MOVE_SECTION_MOUNTED_PATH_V1',2,{
+  unitId:'a1',path:[{col:3,row:4},{col:4,row:4},{col:5,row:4},{col:6,row:4}]
+ });
+ const moved=apply(s2,moveCmd);
+ assert.equal(moved.accepted,true);
+ assert.equal(moved.nextState.board.units[0].col,6);
+ assert.deepEqual(moved.nextState.footLab.movedUnitIds,['a1']);
+ assert.equal(moved.publicEvent.kind,'SECTION_MOUNTED_PATH_APPLIED_LAB');
+ assert.equal(moved.publicEvent.battleAfterMovement,'POSSIBLE');
+ assert.equal(moved.officialMovementAuthorized,false);
+ assert.deepEqual(replay(s0,[playCmd,orderCmd,moveCmd]),moved.nextState);
+ assert.equal(apply(moved.nextState,cmd('MOVE_SECTION_MOUNTED_PATH_V1',3,{
+  unitId:'a1',path:[{col:7,row:4}]
+ })).code,'UNIT_ALREADY_MOVED');
+ assert.equal(apply(s2,cmd('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'a1',path:[{col:3,row:4}]
+ })).accepted,false);
+});
+
+test('mounted laboratory: mounted ranges and terrain deny without mutating the board',()=>{
+ for(const [type,max] of [
+  ['MEDIUM_CAVALRY',3],['HEAVY_CAVALRY',2],['ELEPHANT',2],['HEAVY_CHARIOT',2]
+ ]){
+  const c=completeFootSetup();c.movementUnitTypes.a1=type;
+  const s0=init(c);
+  const s1=apply(s0,cmd('PLAY_SECTION_CARD',0,{cardInstanceId:s0.hands.A[0].instanceId})).nextState;
+  const s2=apply(s1,cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:[]})).nextState;
+  const path=[{col:3,row:4},{col:4,row:4},{col:5,row:4},{col:6,row:4}].slice(0,max);
+  assert.equal(apply(s2,cmd('MOVE_SECTION_MOUNTED_PATH_V1',2,{
+   unitId:'a1',path
+  })).accepted,true);
+  const extra=[...path,{col:7,row:4}];
+  const denied=apply(s2,cmd('MOVE_SECTION_MOUNTED_PATH_V1',2,{
+   unitId:'a1',path:extra
+  }));
+  assert.equal(denied.accepted,false);
+  assert.deepEqual(s2.board.units[0],s0.board.units[0]);
+ }
+ const terrainCases=[
+  {terrain:[{col:4,row:4,kind:'BROKEN_GROUND'}],
+   path:[{col:3,row:4},{col:4,row:4},{col:5,row:4}],
+   rejection:'MOUNTED_MUST_STOP_ON_BROKEN_GROUND'},
+  {terrain:[{col:3,row:4,kind:'FOREST'}],
+   path:[{col:3,row:4},{col:4,row:4}],
+   rejection:'MUST_STOP_ON_FOREST_ENTRY'}
+ ];
+ for(const {terrain,path,rejection} of terrainCases){
+  const c=completeFootSetup();c.movementUnitTypes.a1='LIGHT_CAVALRY';c.movementTerrain=terrain;
+  const s0=init(c);
+  const s1=apply(s0,cmd('PLAY_SECTION_CARD',0,{cardInstanceId:s0.hands.A[0].instanceId})).nextState;
+  const s2=apply(s1,cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:[]})).nextState;
+  const before=structuredClone(s2);
+  assert.equal(apply(s2,cmd('MOVE_SECTION_MOUNTED_PATH_V1',2,{
+   unitId:'a1',path
+  })).code,rejection);
+  assert.deepEqual(s2,before);
+  const stopped=apply(s2,cmd('MOVE_SECTION_MOUNTED_PATH_V1',2,{
+   unitId:'a1',path:rejection==='MUST_STOP_ON_FOREST_ENTRY'
+    ?[{col:3,row:4}]:[{col:3,row:4},{col:4,row:4}]
+  }));
+  assert.equal(stopped.accepted,true);
+  assert.equal(stopped.publicEvent.battleAfterMovement,'UNAVAILABLE');
+ }
+});
