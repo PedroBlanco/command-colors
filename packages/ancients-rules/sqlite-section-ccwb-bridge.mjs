@@ -161,8 +161,19 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       });
       if(pathV2.status==='CORRUPT')
         return denied(409,'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED');
-      if(pathV2.status==='KEY_CONFLICT')
-        return denied(409,'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE');
+      if(pathV2.status==='KEY_CONFLICT'){
+        // A private V2 draft is NEVER movement authority. A matching draft
+        // may reuse its key only for this exact LAB foot command; the reducer
+        // above has already independently validated the current replayed board,
+        // card/orders, type and complete path under this writer lock.
+        const draft=persisted.ancientsFootPathJournalV2Lab?.entries?.[0]?.command;
+        const sameFootRequest=request.type==='MOVE_SECTION_FOOT_PATH_V2'&&
+          record(draft)&&draft.actor===request.actor&&
+          draft.expectedRevision===request.expectedRevision&&
+          draft.unitId===request.unitId&&exact(draft.path,request.path);
+        if(!sameFootRequest)
+          return denied(409,'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE');
+      }
       if(pathV2.status!=='ABSENT'&&Object.hasOwn(persisted,'ancientsFootMovementJournalLab'))
         return denied(409,'SECTION_LAB_FOOT_STAGE_VERSION_CONFLICT');
       const next=result.nextState;
