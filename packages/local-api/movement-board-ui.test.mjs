@@ -324,3 +324,48 @@ test('safe Spanish feedback separates stale, authorization, network and opaque e
   assert.match(describeCommandError(Error('RUTA_INVALIDA')),/ruta indicada/);
   assert.equal(describeCommandError(Error('409: UNKNOWN_PRIVATE_DETAIL')).includes('PRIVATE_DETAIL'),false);
 });
+
+test('public Ancients markers show unit classes and terrain without changing movement permissions',()=>{
+ const {svg}=fixture(),board=[
+  {id:'archerA',side:'A',col:3,row:4,unitType:'LIGHT_BOW_INFANTRY'},
+  {id:'horseB',side:'B',col:9,row:4,unitType:'MEDIUM_CAVALRY'}
+ ];
+ const original=structuredClone(board);
+ const terrain=[
+  {col:3,row:4,kind:'FOREST'},
+  {col:4,row:4,kind:'HILL'},
+  {col:9,row:4,kind:'BROKEN_GROUND'}
+ ];
+ renderMovementBoard(svg,board,null,()=>{},'A',{terrain});
+ assert.equal(cell(svg,3,4).classes.has('terrain-forest'),true);
+ assert.equal(cell(svg,4,4).classes.has('terrain-hill'),true);
+ assert.equal(cell(svg,9,4).classes.has('terrain-broken'),true);
+ assert.match(cell(svg,3,4).attrs['aria-label'],/arqueros ligeros.*bosque/);
+ assert.match(cell(svg,9,4).attrs['aria-label'],/caballería media.*terreno accidentado/);
+ const archer=cell(svg,3,4).children.find(x=>x.tag==='text'&&x.textContent==='AR');
+ const horse=cell(svg,9,4).children.find(x=>x.tag==='text'&&x.textContent==='CM');
+ assert.ok(archer);assert.ok(horse);
+ assert.deepEqual(board,original);
+ assert.equal(cell(svg,3,4).classes.has('hex-selectable'),false);
+ assert.equal(cell(svg,4,4).classes.has('hex-next'),false);
+ assert.equal(cell(svg,3,4).attrs['data-col'],'3');
+ renderMovementBoard(svg,board,null,()=>{},'B',{terrain});
+ assert.equal(cell(svg,3,4).classes.has('terrain-forest'),true);
+ assert.equal(cell(svg,3,4).attrs['data-row'],'4');
+ assert.match(cell(svg,3,4).attrs['aria-label'],/bosque/);
+});
+
+test('terrain display rejects invalid/duplicated coordinates; generic unit labels still work',()=>{
+ const {svg}=fixture();
+ for(const terrain of [
+  [{col:3,row:4,kind:'UNKNOWN'}],
+  [{col:3,row:4,kind:'FOREST'},{col:3,row:4,kind:'HILL'}],
+  [{col:13,row:4,kind:'FOREST'}],
+  [{col:3,row:4,kind:'FOREST',actor:'A'}]
+ ]){
+  assert.throws(()=>renderMovementBoard(svg,[],null,()=>{},'A',{terrain}),
+   /INVALID_MOVEMENT_TERRAIN_VIEW/);
+ }
+ renderMovementBoard(svg,[{id:'genericA',side:'A',col:3,row:4}],null,()=>{},'A');
+ assert.equal(cell(svg,3,4).children.find(x=>x.tag==='text').textContent,'A');
+});
