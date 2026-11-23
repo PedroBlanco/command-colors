@@ -320,3 +320,46 @@ test('mounted laboratory: mounted ranges and terrain deny without mutating the b
   assert.equal(stopped.publicEvent.battleAfterMovement,'UNAVAILABLE');
  }
 });
+
+test('player-relative sections: B left orders canonical right, not canonical left, with deterministic replay',()=>{
+ const setup={
+  cardInstances:[
+   {instanceId:'reserve_a',definitionId:'ORDER_2_RIGHT'},
+   {instanceId:'reserve_b',definitionId:'ORDER_2_CENTER'},
+   {instanceId:'card_b_left',definitionId:'ORDER_2_LEFT'},
+   {instanceId:'card_a_left',definitionId:'ORDER_2_LEFT'}
+  ],handSizes:{A:1,B:1},randomIndex:n=>n-1,startingSide:'A',
+  sectorPerspective:'PLAYER_RELATIVE',
+  board:{units:[
+   {id:'a1',side:'A',col:2,row:4},
+   {id:'b1',side:'B',col:10,row:4},
+   {id:'b2',side:'B',col:2,row:5}
+  ],leaders:[]},
+  sectorCells:{'2,4':['LEFT'],'10,4':['RIGHT'],'2,5':['LEFT']}
+ };
+ const s0=init(setup);
+ const commands=[];
+ let state=s0;
+ const advance=(actor,type,fields={})=>{
+  const command={actor,type,expectedRevision:state.revision,...fields};
+  const result=apply(state,command);
+  assert.equal(result.accepted,true,result.code);
+  commands.push(command);
+  state=result.nextState;
+ };
+ advance('A','PLAY_SECTION_CARD',{cardInstanceId:s0.hands.A[0].instanceId});
+ advance('A','ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});
+ advance('A','END_EXPERIMENTAL_TURN');
+ assert.equal(state.turn,'B');
+ assert.equal(state.hands.B[0].definitionId,'ORDER_2_LEFT');
+ advance('B','PLAY_SECTION_CARD',{cardInstanceId:state.hands.B[0].instanceId});
+ assert.equal(apply(state,{actor:'B',type:'ASSIGN_SECTION_ORDERS',
+  expectedRevision:state.revision,unitIds:['b2'],leaderIds:[]}).code,'ORDERS_NOT_ELIGIBLE');
+ advance('B','ASSIGN_SECTION_ORDERS',{unitIds:['b1'],leaderIds:[]});
+ assert.deepEqual(state.orderSnapshot.sectorCells['10,4'],['LEFT']);
+ assert.deepEqual(state.orderSnapshot.sectorCells['2,5'],['RIGHT']);
+ assert.deepEqual(replay(s0,commands),state);
+ const legacy=init({...setup,sectorPerspective:'FIXED'});
+ assert.equal(Object.hasOwn(legacy,'sectorPerspective'),false);
+ assert.throws(()=>init({...setup,sectorPerspective:'UNKNOWN'}),/INVALID_SECTION_HISTORY_SETUP/);
+});
