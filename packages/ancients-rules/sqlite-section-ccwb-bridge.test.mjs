@@ -407,3 +407,48 @@ test('CCWB: server-owned forest blocks through-movement without any SQLite write
  const last=root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=3').get(MATCH);
  assert.equal(JSON.parse(last.payload).destinationTerrain,'FOREST');
 }));
+
+test('CCWB: mounted path writes one replayable SQLite event, revision and command',()=>fixture(({root,connect})=>{
+ const c=footSetup();c.movementUnitTypes.unitA='LIGHT_CAVALRY';
+ root.bridge.initialize('A',c);play(root);order(root);
+ const move=req('MOVE_SECTION_MOUNTED_PATH_V1',2,{unitId:'unitA',
+  path:[{col:3,row:4},{col:4,row:4},{col:5,row:4},{col:6,row:4}]
+ },'mounted_path_lab_001');
+ const r=root.bridge.dispatch(move);
+ assert.equal(r.code,'SECTION_LAB_APPLIED');
+ assert.equal(r.movementAppliedInLab,true);
+ assert.equal(r.officialMovementAuthorized,false);
+ assert.equal(r.view.board.find(u=>u.id==='unitA').col,6);
+ assert.deepEqual(r.view.movedUnitIds,['unitA']);
+ assert.equal(root.getRow(MATCH).game_revision,3);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,3);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,3);
+ const event=JSON.parse(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=3')
+  .get(MATCH).payload);
+ assert.equal(event.kind,'SECTION_MOUNTED_PATH_APPLIED_LAB');
+ assert.equal(event.unitId,'unitA');
+ assert.equal(event.battleAfterMovement,'POSSIBLE');
+ const reopened=connect();
+ assert.equal(reopened.bridge.view('B').board.find(u=>u.id==='unitA').col,6);
+ assert.equal(reopened.bridge.dispatch(move).code,'ALREADY_APPLIED');
+ assert.equal(reopened.bridge.dispatch({...move,path:[{col:3,row:4}]}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(reopened.bridge.dispatch(req('MOVE_SECTION_MOUNTED_PATH_V1',2,{
+  unitId:'unitA',path:[{col:3,row:4}]
+ },'mounted_path_lab_002')).code,'STALE_REVISION');
+}));
+
+test('CCWB: mounted terrain rejection preserves all persisted rows',()=>fixture(({root})=>{
+ const c=footSetup();
+ c.movementUnitTypes.unitA='LIGHT_CAVALRY';
+ c.movementTerrain=[{col:3,row:4,kind:'FOREST'}];
+ root.bridge.initialize('A',c);play(root);order(root);
+ const before=root.getRow(MATCH).private_state;
+ const rejected=root.bridge.dispatch(req('MOVE_SECTION_MOUNTED_PATH_V1',2,{
+  unitId:'unitA',path:[{col:3,row:4},{col:4,row:4}]
+ },'mounted_path_lab_003'));
+ assert.equal(rejected.code,'MUST_STOP_ON_FOREST_ENTRY');
+ assert.equal(root.getRow(MATCH).private_state,before);
+ assert.equal(root.getRow(MATCH).game_revision,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,2);
+}));
