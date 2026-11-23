@@ -467,6 +467,7 @@ export function projectSectionHistoryLab(state,side){
       ...(state.leaderLab?{
         leaders:copy(state.board.leaders),
         movedLeaderIds:[...state.leaderLab.movedLeaderIds],
+        unitsLockedByLeader:[...state.leaderLab.joinedUnitIds],
         orderedLeaderIds:state.turn===side&&state.phase==='LAB_RESOLUTION_PENDING'
           ?state.orderSnapshot.pieces.filter(p=>p.kind==='LEADER'&&p.side===side)
             .map(p=>p.id):[]
