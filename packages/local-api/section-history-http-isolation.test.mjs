@@ -478,4 +478,38 @@ test('Ancients HTTP: own hand, ordered movement and SQLite replay through explic
  const finalB=(await request(cookies.bob)).body.state;
  assert.equal(finalB.board.find(p=>p.id===unit).col,at.col);
  assert.equal(JSON.stringify(finalB).includes(a.body.state.yourHand[1].instanceId),false);
+ // The other player now gets a complete turn, with LEFT/RIGHT understood
+ // from B's rotated viewpoint rather than from side A's board coordinates.
+ const finished=await request(cookies.alice,'/commands','POST',{
+  type:'END_EXPERIMENTAL_TURN',expectedRevision:3,
+  idempotencyKey:'browser_finish_a_001'
+ });
+ assert.equal(finished.status,200);
+ const turnB=(await request(cookies.bob)).body.state;
+ assert.equal(turnB.turn,'B');
+ assert.equal(turnB.revision,4);
+ const bCard=turnB.yourHand[0];
+ const bSection=bCard.definitionId.split('_').at(-1);
+ const bUnit=bSection==='LEFT'?'B_cavalry':
+  bSection==='RIGHT'?'B_heavy':'B_auxilia';
+ const bPath=bSection==='LEFT'?[{col:9,row:1}]:
+  bSection==='RIGHT'?[{col:3,row:1}]:[{col:6,row:2}];
+ const bCommand=async(type,revision,key,fields)=>request(cookies.bob,
+  '/commands','POST',{type,expectedRevision:revision,
+   idempotencyKey:key,...fields});
+ assert.equal((await bCommand('PLAY_SECTION_CARD',4,'browser_card_b_001',{
+  cardInstanceId:bCard.instanceId
+ })).status,200);
+ assert.equal((await bCommand('ASSIGN_SECTION_ORDERS',5,'browser_order_b_001',{
+  unitIds:[bUnit],leaderIds:[]
+ })).status,200);
+ const bType=bUnit==='B_cavalry'?'MOVE_SECTION_MOUNTED_PATH_V1':
+  'MOVE_SECTION_FOOT_PATH_V2';
+ assert.equal((await bCommand(bType,6,'browser_move_b_001',{
+  unitId:bUnit,path:bPath
+ })).status,200);
+ const finalA=(await request(cookies.alice)).body.state;
+ assert.equal(finalA.board.find(x=>x.id===bUnit).col,bPath[0].col);
+ assert.deepEqual(finalA.orderedUnitIds,[]);
+ assert.equal(JSON.stringify(finalA).includes(bCard.instanceId),false);
 }));
