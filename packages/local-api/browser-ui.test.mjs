@@ -27,6 +27,7 @@ async function withBrowser(run,{owner='alice'}={}) {
   const window={addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
   const state={login:false,lobby:'INVITING',revision:0,deckPhase:null,
     lab:false,labRevision:0,labPhase:'AWAIT_CARD',labTurn:'A',
+    labLeaderOrders:[],labMovedLeaders:[],
     board:[{id:'synthetic-a',side:'A',col:2,row:4},
       {id:'synthetic-a2',side:'A',col:3,row:4},
       {id:'synthetic-b',side:'B',col:10,row:4}]};
@@ -61,6 +62,9 @@ async function withBrowser(run,{owner='alice'}={}) {
             {id:'unitA',side:'A',col:2,row:7,unitType:'LIGHT_INFANTRY'},
             {id:'unitB',side:'B',col:10,row:1,unitType:'MEDIUM_CAVALRY'}
           ],movedUnitIds:[],orderedUnitIds:state.labPhase==='LAB_RESOLUTION_PENDING'?['unitA']:[],
+          leaders:[{id:'generalA',side:'A',col:2,row:7}],
+          orderedLeaderIds:state.labPhase==='LAB_RESOLUTION_PENDING'?state.labLeaderOrders:[],
+          movedLeaderIds:state.labMovedLeaders,
           terrain:[]}};
       status=200;
     }
@@ -73,9 +77,15 @@ async function withBrowser(run,{owner='alice'}={}) {
           const phases={PLAY_SECTION_CARD:'ASSIGN_ORDERS',
             ASSIGN_SECTION_ORDERS:'LAB_RESOLUTION_PENDING',
             END_EXPERIMENTAL_TURN:'AWAIT_CARD'};
-          if(!Object.hasOwn(phases,command.type)){status=400;response={code:'INVALID_SECTION_LAB_COMMAND'}}
-          else{
-            state.labPhase=phases[command.type];state.labRevision++;
+          if(!Object.hasOwn(phases,command.type) &&
+             command.type!=='MOVE_SECTION_LEADER_PATH_V1'){
+            status=400;response={code:'INVALID_SECTION_LAB_COMMAND'}
+          }else{
+            if(command.type==='ASSIGN_SECTION_ORDERS')
+              state.labLeaderOrders=[...command.leaderIds];
+            if(command.type==='MOVE_SECTION_LEADER_PATH_V1')
+              state.labMovedLeaders.push(command.leaderId);
+            state.labPhase=phases[command.type]??state.labPhase;state.labRevision++;
             if(command.type==='END_EXPERIMENTAL_TURN')state.labTurn='B';
             status=200;response={code:'SECTION_LAB_APPLIED'};
           }
@@ -417,4 +427,27 @@ test('browser: explicit loopback Ancients mode uses distinct authenticated route
  assert.equal(ctx.element('ancients-play').disabled,true);
  assert.equal(ctx.requests.filter(r=>r.path===`/api/matches/${MATCH}`).length>2,true);
  assert.equal(ctx.requests.some(r=>r.path===`/api/matches/${MATCH}/ancients-lab`),true);
+}));
+
+test('browser: commander orders are separated from unit orders, without passing actor',()=>withBrowser(async ctx=>{
+ await ctx.element('login-form').dispatch('submit');
+ await ctx.element('create').dispatch('click');
+ ctx.state.lobby='READY';
+ await ctx.element('refresh').dispatch('click');
+ await ctx.element('ancients-start').dispatch('click');
+ await ctx.element('ancients-play').dispatch('click');
+ const leader=ctx.element('ancients-units').children.find(x=>x.value==='leader:generalA');
+ assert.ok(leader);
+ leader.selected=true;
+ await ctx.element('ancients-order').dispatch('click');
+ const order=ctx.requests.filter(x=>x.path.endsWith('/ancients-lab/commands'))
+  .map(x=>JSON.parse(x.body)).find(x=>x.type==='ASSIGN_SECTION_ORDERS');
+ assert.deepEqual(order.leaderIds,['generalA']);
+ assert.deepEqual(order.unitIds,[]);
+ assert.equal(Object.hasOwn(order,'actor'),false);
+ assert.equal(ctx.element('ancients-select-leader').disabled,false);
+ ctx.element('ancients-leader-mover').value='generalA';
+ await ctx.element('ancients-select-leader').dispatch('click');
+ assert.match(ctx.element('ancients-route-status').textContent,/Líder generalA/);
+ assert.equal(ctx.element('ancients-move').disabled,true);
 }));
