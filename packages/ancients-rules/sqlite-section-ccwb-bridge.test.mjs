@@ -452,3 +452,59 @@ test('CCWB: mounted terrain rejection preserves all persisted rows',()=>fixture(
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,2);
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,2);
 }));
+
+test('CCWB: attached commander moves atomically with ordered infantry, replays and retries',()=>fixture(({root,connect})=>{
+ const setupWithLeader=footSetup();
+ setupWithLeader.board.leaders=[{id:'captainA',side:'A',col:2,row:4}];
+ assert.equal(root.bridge.initialize('A',setupWithLeader).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const command=req('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'unitA',path:[{col:3,row:4}]
+ },'attached_leader_move_001');
+ const accepted=root.bridge.dispatch(command);
+ assert.equal(accepted.status,200);
+ assert.equal(accepted.view.leaders[0].col,3);
+ assert.deepEqual(accepted.view.movedLeaderIds,['captainA']);
+ assert.equal(root.getRow(MATCH).game_revision,3);
+ const event=JSON.parse(root.db.prepare(
+  'SELECT payload FROM game_events WHERE match_id=? AND sequence=3'
+ ).get(MATCH).payload);
+ assert.equal(event.attachedLeaderId,'captainA');
+ assert.equal(event.kind,'SECTION_FOOT_PATH_APPLIED_LAB');
+ const after=root.getRow(MATCH).private_state;
+ const reopened=connect();
+ assert.equal(reopened.bridge.view('B').leaders[0].col,3);
+ assert.equal(reopened.bridge.dispatch(command).code,'ALREADY_APPLIED');
+ assert.equal(root.getRow(MATCH).private_state,after);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,3);
+}));
+test('CCWB: individually ordered commander moves through one transaction and cannot move twice',()=>fixture(({root,connect})=>{
+ const c=footSetup();
+ c.board.leaders=[{id:'captainA',side:'A',col:2,row:4}];
+ assert.equal(root.bridge.initialize('A',c).status,201);
+ play(root);
+ assert.equal(root.bridge.dispatch(req('ASSIGN_SECTION_ORDERS',1,{
+  unitIds:[],leaderIds:['captainA']
+ },'leader_order_001')).code,'SECTION_LAB_APPLIED');
+ const command=req('MOVE_SECTION_LEADER_PATH_V1',2,{
+  leaderId:'captainA',path:[{col:3,row:4},{col:4,row:4}]
+ },'leader_move_001');
+ const accepted=root.bridge.dispatch(command);
+ assert.equal(accepted.code,'SECTION_LAB_APPLIED');
+ assert.equal(accepted.view.leaders[0].col,4);
+ assert.equal(accepted.view.board.find(x=>x.id==='unitA').col,2);
+ assert.deepEqual(accepted.view.movedLeaderIds,['captainA']);
+ const reopened=connect();
+ assert.equal(reopened.bridge.view('B').leaders[0].col,4);
+ const replayed=JSON.parse(root.db.prepare(
+  'SELECT payload FROM game_events WHERE match_id=? AND sequence=3'
+ ).get(MATCH).payload);
+ assert.equal(replayed.kind,'SECTION_LEADER_PATH_APPLIED_LAB');
+ assert.equal(replayed.detachedFromUnit,true);
+ const before=root.getRow(MATCH);
+ const denied=reopened.bridge.dispatch(req('MOVE_SECTION_LEADER_PATH_V1',3,{
+  leaderId:'captainA',path:[{col:5,row:4}]
+ },'leader_move_002'));
+ assert.equal(denied.code,'LEADER_ALREADY_MOVED');
+ assert.deepEqual(root.getRow(MATCH),before);
+}));
