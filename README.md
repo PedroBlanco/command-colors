@@ -106,6 +106,23 @@ El primer arranque crea cuentas de prueba `alice` y `bob` con contraseñas aleat
 
 Esta interfaz mínima **no sustituye** a la del tablero SVG de la PR #27, pendiente de validación. No incorpora reglas de movimiento ni datos oficiales.
 
+## Ancients: puente de navegador experimental (PR apilada, no disponible en main)
+
+La rama de integración introduce una **opción expresamente desactivada por defecto** para conectar el historial de cartas y movimientos reglados parciales de *Ancients* a dos jugadores autenticados en el laboratorio local. Se habilita únicamente cuando el servidor se inicia en `127.0.0.1` en modo de navegador inseguro de desarrollo y la variable `CCW_ANCIENTS_BROWSER_LAB` vale exactamente `1`.
+
+Para una futura validación en **PowerShell nativo de Windows** (no ejecutar hasta que la rama esté preparada):
+
+```powershell
+$env:CCW_ANCIENTS_BROWSER_LAB = '1'
+node scripts/browser-lab.mjs
+```
+
+Una vez que las cuentas de prueba han aceptado la invitación y la sala figura como `READY`, el propietario puede abrir **Ancients — laboratorio reglado de movimientos** e iniciar un escenario **original y ficticio creado por el servidor**. Se juegan cartas ordinarias de sección, se seleccionan unidades para las órdenes y se desplazan unidades de infantería o montadas por el tablero de 13 × 9; se puede terminar el turno. La interfaz muestra la propia mano, el terreno y el estado público; también actualiza la vista al regresar del servidor y consulta las revisiones aproximadamente cada 2,5 segundos mientras la pestaña esté visible. La selección de ruta del cliente es orientativa: la autoridad permanece en SQLite.
+
+El transporte de este modo usa exclusivamente las rutas separadas `GET /api/matches/:uuid/ancients-lab`, `POST /api/matches/:uuid/ancients-lab/initialize` y `POST /api/matches/:uuid/ancients-lab/commands`. Estas rutas exigen cookie, sesión vigente, membresía, control de origen para escrituras, escenario generado por el servidor y opt-in local. Las rutas genéricas de partida, comandos, eventos y SSE **siguen rechazando** las partidas privadas del laboratorio con `SECTION_LAB_INTERNAL_ONLY`. No se habilita ningún servicio en red, API pública o despliegue.
+
+**Límites:** no es una edición jugable completa ni un escenario oficial de GMT; todavía no resuelve combate, líderes, guerreros, máquinas de guerra, cartas especiales, reglas de excepciones o victoria. La representación de colores y abreviaturas de terreno/unidades está preparada en la PR independiente #179; puede no estar integrada al inicio. No incorporar partidas ni credenciales reales. Las nuevas pruebas de integración Node/SQLite siguen pendientes y la PR se conserva en borrador.
+
 ## Primera validación guiada (laboratorio I2)
 
 La rama `main` contiene la [guía de aceptación](docs/18-guia-primera-validacion.md), un diagnóstico **de solo lectura** y una nueva prueba HTTP de dos usuarios contra SQLite real.
