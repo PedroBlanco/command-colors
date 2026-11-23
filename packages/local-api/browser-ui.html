@@ -47,6 +47,10 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .unit-a{fill:#2d607b;stroke:white;stroke-width:2}
 .unit-b{fill:#a34d43;stroke:white;stroke-width:2}
 .unit-label{fill:white;font-weight:700;font-size:13px}
+.leader-a{fill:#f6dd84;stroke:#243f57;stroke-width:2}
+.leader-b{fill:#ffe0b1;stroke:#722d29;stroke-width:2}
+.leader-symbol{fill:#26323a;font-weight:700;font-size:10px}
+.hex-leader-selectable .hex-shape{stroke:#9e6c16;stroke-width:3}
 .route-number{fill:#27421c;font-weight:700;font-size:13px}
 #movement-status{min-height:2em}
 @media(max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
@@ -118,10 +122,13 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <div id="ancients-controls" hidden>
 <label>Carta propia de sección<select id="ancients-card"></select></label>
 <button id="ancients-play" disabled>Jugar carta de sección</button>
-<label>Unidades propias a ordenar (selección múltiple)
+<label>Unidades y líderes propios a ordenar (selección múltiple)
 <select id="ancients-units" multiple size="6"></select></label>
 <button id="ancients-order" disabled>Asignar órdenes</button>
-<p>Selecciona una unidad ordenada en el tablero y después los hexágonos consecutivos de su ruta. El servidor valida cada acción.</p>
+<label>Líder ordenado que deseas mover por separado
+<select id="ancients-leader-mover"><option value="">Selecciona un líder</option></select></label>
+<button id="ancients-select-leader" disabled>Elegir líder para mover</button>
+<p>Selecciona una unidad ordenada en el tablero, o elige un líder ordenado con el desplegable, y después los hexágonos consecutivos de su ruta. El servidor valida cada acción.</p>
 <p id="ancients-terrain-info">Terrenos de la demostración pendientes de consultar.</p>
 <div id="ancients-board-viewport">
 <svg id="ancients-board" role="group" aria-label="Tablero experimental de Ancients" viewBox="0 0 510 430"></svg>
