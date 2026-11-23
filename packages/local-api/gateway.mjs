@@ -6,7 +6,7 @@ import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {browserConfig, cookieSession, sessionCookie, allowedBrowserRequest, validBrowserMutation} from './browser-session.mjs';
-import {startRevisionStream} from './revision-stream.mjs';
+import {startRevisionStream,startAncientsLabRevisionStream} from './revision-stream.mjs';
 import {createAncientsLoopbackSetup} from '../ancients-rules/loopback-demo-setup.mjs';
 
 const MAX_BODY = 8192;
@@ -170,7 +170,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const result = invitations.rejectInvitation({sessionToken: token, invitationToken: body.invitationToken});
         return reply(res, ...Object.values(domainReply(result)));
       }
-      const matchRoute = /^\/api\/matches\/([0-9a-fA-F-]{36})(?:\/(invitations|commands|events|updates|deck\/initialize|ancients-lab(?:\/(?:initialize|commands))?))?$/.exec(route);
+      const matchRoute = /^\/api\/matches\/([0-9a-fA-F-]{36})(?:\/(invitations|commands|events|updates|deck\/initialize|ancients-lab(?:\/(?:initialize|commands|updates))?))?$/.exec(route);
       if (!matchRoute) return reply(res, 404, {code: 'NOT_FOUND'});
       const [, matchId, resource] = matchRoute;
       const lobby = invitations.getMatch({sessionToken: token, matchId});
@@ -243,6 +243,25 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
             return reply(res,503,{code:'SERVICE_UNAVAILABLE'});
           return reply(res,200,{matchId,status:lobby.status,
             players:lobby.players,state:result.view});
+        }
+        if (req.method==='GET' && resource==='ancients-lab/updates') {
+          if(typeof store.viewExperimentalSectionHistory!=='function')
+            return reply(res,404,{code:'NOT_FOUND'});
+          const result=store.viewExperimentalSectionHistory({sessionToken:token});
+          if(result.status!==200)
+            return reply(res,result.status,{code:result.code});
+          if(result.view?.matchId!==matchId||
+             result.view.status!=='LAB_ONLY'||result.view.you!==actor)
+            return reply(res,503,{code:'SERVICE_UNAVAILABLE'});
+          if(revisionStreams>=MAX_REVISION_STREAMS)
+            return reply(res,429,{code:'TOO_MANY_STREAMS'});
+          revisionStreams++;
+          res.once('close',()=>{revisionStreams--;});
+          startAncientsLabRevisionStream({
+            res,token,matchId,identity,invitations,getStore,
+            intervalMs:revisionPollMs
+          });
+          return;
         }
         if (req.method==='POST' && resource==='ancients-lab/initialize') {
           const body=await jsonRequest(req);
