@@ -363,3 +363,85 @@ test('player-relative sections: B left orders canonical right, not canonical lef
  assert.equal(Object.hasOwn(legacy,'sectorPerspective'),false);
  assert.throws(()=>init({...setup,sectorPerspective:'UNKNOWN'}),/INVALID_SECTION_HISTORY_SETUP/);
 });
+
+test('leader lab: ordered detach, double-move block and replay; legacy foot still refuses leaders',()=>{
+ const c=completeFootSetup();
+ c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
+ assert.throws(()=>init(c),/INVALID_FOOT_LAB_SETUP/);
+ c.enableLeaderLab=true;
+ const s0=init(c),command0=cmd('PLAY_SECTION_CARD',0,{
+  cardInstanceId:s0.hands.A[0].instanceId
+ });
+ const s1=apply(s0,command0).nextState;
+ const command1=cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:['a_leader']});
+ const s2=apply(s1,command1).nextState;
+ const leaderCmd=cmd('MOVE_SECTION_LEADER_PATH_V1',2,{
+  leaderId:'a_leader',path:[{col:2,row:3}]
+ });
+ const moved=apply(s2,leaderCmd);
+ assert.equal(moved.accepted,true);
+ assert.deepEqual(moved.nextState.board.leaders[0],{
+  id:'a_leader',side:'A',col:2,row:3
+ });
+ assert.deepEqual(moved.nextState.leaderLab.movedLeaderIds,['a_leader']);
+ assert.equal(moved.publicEvent.kind,'SECTION_LEADER_PATH_APPLIED_LAB');
+ assert.equal(moved.publicEvent.detachedFromUnit,'a1');
+ assert.equal(moved.publicEvent.joinedUnit,null);
+ assert.equal(moved.officialMovementAuthorized,false);
+ assert.equal(apply(moved.nextState,cmd('MOVE_SECTION_LEADER_PATH_V1',3,{
+  leaderId:'a_leader',path:[{col:3,row:3}]
+ })).code,'LEADER_ALREADY_MOVED');
+ assert.equal(apply(moved.nextState,cmd('MOVE_SECTION_FOOT_PATH_V2',3,{
+  unitId:'a1',path:[{col:3,row:4}]
+ })).accepted,true);
+ assert.deepEqual(replay(s0,[command0,command1,leaderCmd]),moved.nextState);
+ const enemy=project(moved.nextState,'B');
+ assert.deepEqual(enemy.orderedLeaderIds,[]);
+ assert.equal(enemy.leaders[0].id,'a_leader');
+});
+
+test('leader lab: carrying on foot and cavalry, joining unit prevents later move',()=>{
+ for(const type of ['LIGHT_INFANTRY','LIGHT_CAVALRY']){
+  const c=completeFootSetup();
+  c.enableLeaderLab=true;
+  c.movementUnitTypes.a1=type;
+  c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
+  const initial=init(c);
+  const one=apply(initial,cmd('PLAY_SECTION_CARD',0,{
+   cardInstanceId:initial.hands.A[0].instanceId
+  })).nextState;
+  const two=apply(one,cmd('ASSIGN_SECTION_ORDERS',1,{
+   unitIds:['a1'],leaderIds:['a_leader']
+  })).nextState;
+  const moveType=type==='LIGHT_CAVALRY'?'MOVE_SECTION_MOUNTED_PATH_V1':'MOVE_SECTION_FOOT_PATH_V2';
+  const moved=apply(two,cmd(moveType,2,{unitId:'a1',path:[{col:3,row:4}]}));
+  assert.equal(moved.accepted,true);
+  assert.equal(moved.publicEvent.leaderCarried,'a_leader');
+  assert.equal(moved.nextState.board.leaders[0].col,3);
+  assert.deepEqual(moved.nextState.leaderLab.movedLeaderIds,['a_leader']);
+  assert.equal(apply(moved.nextState,cmd('MOVE_SECTION_LEADER_PATH_V1',3,{
+   leaderId:'a_leader',path:[{col:4,row:4}]
+  })).code,'LEADER_ALREADY_MOVED');
+  const end=apply(moved.nextState,cmd('END_EXPERIMENTAL_TURN',3));
+  assert.deepEqual(end.nextState.leaderLab.movedLeaderIds,[]);
+ }
+ const c=completeFootSetup();
+ c.enableLeaderLab=true;
+ c.board.units.push({id:'a2',side:'A',col:3,row:4});
+ c.movementUnitTypes.a2='LIGHT_INFANTRY';
+ c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
+ const s0=init(c),s1=apply(s0,cmd('PLAY_SECTION_CARD',0,{
+  cardInstanceId:s0.hands.A[0].instanceId
+ })).nextState;
+ const s2=apply(s1,cmd('ASSIGN_SECTION_ORDERS',1,{
+  unitIds:['a2'],leaderIds:['a_leader']
+ })).nextState;
+ const joined=apply(s2,cmd('MOVE_SECTION_LEADER_PATH_V1',2,{
+  leaderId:'a_leader',path:[{col:3,row:4}]
+ }));
+ assert.equal(joined.accepted,true);
+ assert.deepEqual(joined.nextState.leaderLab.joinedUnitIds,['a2']);
+ assert.equal(apply(joined.nextState,cmd('MOVE_SECTION_FOOT_PATH_V2',3,{
+  unitId:'a2',path:[{col:4,row:4}]
+ })).code,'UNIT_LOCKED_BY_LEADER_MOVE');
+});
