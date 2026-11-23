@@ -319,15 +319,18 @@ export function applySectionHistoryLabCommand(state,command={}){
       return reject(terrain.reason??'FOOT_LAB_TERRAIN_BLOCKED');
     const battleAfterMovement=terrain.battleOnEntry==='UNAVAILABLE'
       ? 'UNAVAILABLE':result.transition.battleAfterMovement;
-    // The reducer determines every changed cell and public event field.
-    // A client cannot supply its own board, rules or movement result.
+    const leaders=screenUnitLeaderPassage(state,moving,command.path);
+    if(!leaders.ok)return reject(leaders.reason);
+    // Moving an ordered unit carries any attached leader in this same event.
     next.board.units=result.nextState.board.units;
+    const attachedLeaderId=commitUnitLeaderPassage(next,leaders,result.transition.to);
     next.footLab.movedUnitIds=result.nextState.orderLedger.movedUnitIds;
     publicEvent={
       kind:'SECTION_FOOT_PATH_APPLIED_LAB',side,
       unitId:result.transition.unitId,from:result.transition.from,
       to:result.transition.to,path:result.transition.path,
       battleAfterMovement,
+      ...(attachedLeaderId?{attachedLeaderId}:{}),
       ...(Object.hasOwn(state.footLab,'terrain')?{
         destinationTerrain:terrain.destinationTerrain
       }:{})
@@ -351,17 +354,54 @@ export function applySectionHistoryLabCommand(state,command={}){
     });
     if(checked.status!=='MOUNTED_PATH_PROPOSAL')
       return reject(checked.reason??'MOUNTED_LAB_MOVE_REJECTED');
+    const leaders=screenUnitLeaderPassage(state,piece,command.path);
+    if(!leaders.ok)return reject(leaders.reason);
     const target=next.board.units.find(u=>u.id===piece.id);
     target.col=checked.destination.col;
     target.row=checked.destination.row;
     next.footLab.movedUnitIds.push(piece.id);
+    const attachedLeaderId=commitUnitLeaderPassage(next,leaders,checked.destination);
     publicEvent={
       kind:'SECTION_MOUNTED_PATH_APPLIED_LAB',side,unitId:piece.id,
       from:{col:piece.col,row:piece.row},
       to:{col:target.col,row:target.row},
       path:command.path.map(p=>({col:p.col,row:p.row})),
       battleAfterMovement:checked.battleAfterMovement,
+      ...(attachedLeaderId?{attachedLeaderId}:{}),
       destinationTerrain:checked.destinationTerrain
+    };
+  }else if(command.type==='MOVE_SECTION_LEADER_PATH_V1'){
+    if(state.phase!=='LAB_RESOLUTION_PENDING'||!Object.hasOwn(state,'footLab')||
+       !Object.hasOwn(state.footLab,'movedLeaderIds'))
+      return reject('LEADER_LAB_NOT_AVAILABLE');
+    const leader=state.board.leaders.find(l=>l.id===command.leaderId);
+    if(!leader||leader.side!==side||
+       !state.orderSnapshot.pieces.some(p=>
+         p.kind==='LEADER'&&p.side===side&&p.id===leader.id))
+      return reject('LEADER_NOT_ORDERED');
+    if(state.footLab.movedLeaderIds.includes(leader.id))
+      return reject('LEADER_ALREADY_MOVED');
+    if(!Array.isArray(command.path)||command.path.length<1||
+       command.path.length>3||!command.path.every(p=>
+         isRecord(p)&&Object.keys(p).length===2&&goodLoc(p)))
+      return reject('INVALID_LEADER_PATH');
+    const check=precheckAncientsLeaderPath({
+      units:state.board.units,leaders:state.board.leaders,
+      leaderId:leader.id,path:command.path,
+      terrain:state.footLab.terrain??[]
+    });
+    if(check.status!=='CANDIDATE')
+      return reject(check.reason??'LEADER_MOVE_REJECTED');
+    const target=next.board.leaders.find(l=>l.id===leader.id);
+    target.col=check.destination.col;target.row=check.destination.row;
+    next.footLab.movedLeaderIds.push(leader.id);
+    publicEvent={
+      kind:'SECTION_LEADER_PATH_APPLIED_LAB',side,leaderId:leader.id,
+      from:{col:leader.col,row:leader.row},
+      to:{col:target.col,row:target.row},
+      path:command.path.map(p=>({col:p.col,row:p.row})),
+      detachedFromUnit:check.detachesFromUnit,
+      attachedToUnit:check.attachesToUnit
     };
   }else if(command.type==='END_EXPERIMENTAL_TURN'){
     if(state.phase!=='LAB_RESOLUTION_PENDING')return reject('WRONG_PHASE');
@@ -371,7 +411,10 @@ export function applySectionHistoryLabCommand(state,command={}){
     if(drew)next.hands[side].push(next.drawPile.pop());
     next.turn=side==='A'?'B':'A';
     next.phase='AWAIT_CARD';next.handAtPlay=null;next.cardPlay=null;next.orderSnapshot=null;
-    if(next.footLab)next.footLab.movedUnitIds=[];
+    if(next.footLab){
+      next.footLab.movedUnitIds=[];
+      if(Object.hasOwn(next.footLab,'movedLeaderIds'))next.footLab.movedLeaderIds=[];
+    }
     publicEvent={kind:'LAB_TURN_ENDED_WITHOUT_COMBAT',side,drewCard:drew};
   }else return reject('UNSUPPORTED_LAB_COMMAND');
   next.revision=state.revision+1;
@@ -381,7 +424,8 @@ export function applySectionHistoryLabCommand(state,command={}){
     // Never serialize private command or nextState into a public event.
     cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,
     movementAppliedInLab:['MOVE_SECTION_FOOT_PATH_V2',
-      'MOVE_SECTION_MOUNTED_PATH_V1'].includes(command.type),
+      'MOVE_SECTION_MOUNTED_PATH_V1',
+      'MOVE_SECTION_LEADER_PATH_V1'].includes(command.type),
     officialMovementAuthorized:false,combatResolved:false};
 }
 
@@ -416,6 +460,13 @@ export function projectSectionHistoryLab(state,side){
         unitType:state.footLab.unitTypes[u.id]
       })),
       movedUnitIds:[...state.footLab.movedUnitIds],
+      ...(Object.hasOwn(state.footLab,'movedLeaderIds')?{
+        leaders:copy(state.board.leaders),
+        movedLeaderIds:[...state.footLab.movedLeaderIds],
+        orderedLeaderIds:state.turn===side&&state.phase==='LAB_RESOLUTION_PENDING'
+          ?state.orderSnapshot.pieces.filter(p=>
+            p.kind==='LEADER'&&p.side===side).map(p=>p.id):[]
+      }:{}),
       // A participant may select ONLY their own ordered units. Do not
       // expose the opponent's still-private selection.
       orderedUnitIds:state.turn===side&&state.phase==='LAB_RESOLUTION_PENDING'
