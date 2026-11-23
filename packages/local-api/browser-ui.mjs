@@ -220,8 +220,8 @@ function renderAncients() {
     option.textContent=leader.id;
     leaderChoice.appendChild(option);
   }
-  if(availableLeaders.some(l=>l.id===previousLeader))
-    leaderChoice.value=previousLeader;
+  leaderChoice.value=availableLeaders.some(l=>l.id===previousLeader)
+    ?previousLeader:(availableLeaders[0]?.id??'');
   el('ancients-select-leader').disabled=!isTurn||
     cached.phase!=='LAB_RESOLUTION_PENDING'||availableLeaders.length===0;
   const ordered=new Set(Array.isArray(cached.orderedUnitIds)?cached.orderedUnitIds:[]);
