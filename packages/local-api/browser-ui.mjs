@@ -192,10 +192,35 @@ function renderAncients() {
     option.selected=selected.has(unit.id);
     unitSelect.appendChild(option);
   }
+  for(const leader of cached.leaders??[]){
+    if(leader.side!==cached.you)continue;
+    const option=document.createElement('option');
+    option.value='leader:'+leader.id;
+    option.textContent=`Líder ${leader.id} (${leader.col+1},${leader.row+1})`;
+    option.selected=selected.has(option.value);
+    unitSelect.appendChild(option);
+  }
   const ordered=new Set(Array.isArray(cached.orderedUnitIds)?cached.orderedUnitIds:[]);
   const moved=new Set(Array.isArray(cached.movedUnitIds)?cached.movedUnitIds:[]);
   const selectable=(cached.board??[]).filter(u=>u.side===cached.you&&
     ordered.has(u.id)&&!moved.has(u.id)).map(u=>u.id);
+  const orderedLeaders=new Set(cached.orderedLeaderIds??[]);
+  const movedLeaders=new Set(cached.movedLeaderIds??[]);
+  const selectableLeaders=(cached.leaders??[]).filter(l=>
+    l.side===cached.you&&orderedLeaders.has(l.id)&&!movedLeaders.has(l.id));
+  const leaderSelect=el('ancients-leader-mover');
+  const chosenLeader=leaderSelect.value;
+  leaderSelect.replaceChildren();
+  for(const leader of selectableLeaders){
+    const option=document.createElement('option');
+    option.value=leader.id;
+    option.textContent=`${leader.id} (${leader.col+1},${leader.row+1})`;
+    leaderSelect.appendChild(option);
+  }
+  if(selectableLeaders.some(l=>l.id===chosenLeader))
+    leaderSelect.value=chosenLeader;
+  el('ancients-select-leader').disabled=!isTurn||
+    cached.phase!=='LAB_RESOLUTION_PENDING'||selectableLeaders.length===0;
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
@@ -204,26 +229,47 @@ function renderAncients() {
   el('ancients-move').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||
     !ancientsDraft?.path.length;
   el('ancients-route-status').textContent=ancientsDraft
-    ? `Unidad ${ancientsDraft.unitId}: ${ancientsDraft.path.length} hexágonos. Confirma para validar en el servidor.`
-    : `${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
+    ? `${ancientsDraft.kind==='LEADER'?'Líder':'Unidad'} ${ancientsDraft.id}: ${ancientsDraft.path.length} hexágonos. Confirma para validar en el servidor.`
+    : `${selectable.length} unidades y ${selectableLeaders.length} líderes ordenados disponibles.`;
   const svg=el('ancients-board');
   if(svg?.ownerDocument?.createElementNS){
     renderMovementBoard(svg,cached.board??[],ancientsDraft,selectAncientsHex,cached.you,{
       terrain:Array.isArray(cached.terrain)?cached.terrain:[],
-      selectableUnitIds:selectable
+      selectableUnitIds:selectable,
+      leaders:Array.isArray(cached.leaders)?cached.leaders:[],
+      selectableLeaderIds:selectableLeaders.map(l=>l.id)
     });
   }
+}
+function chooseAncientsLeader(leaderId){
+  const leader=(cached?.leaders??[]).find(l=>l.id===leaderId);
+  if(!leader||cached?.turn!==cached?.you||
+     cached?.phase!=='LAB_RESOLUTION_PENDING'||
+     leader.side!==cached.you||
+     !(cached.orderedLeaderIds??[]).includes(leaderId)||
+     (cached.movedLeaderIds??[]).includes(leaderId))
+    throw Error('LEADER_NOT_ORDERED');
+  ancientsDraft={kind:'LEADER',id:leader.id,
+    origin:{col:leader.col,row:leader.row},
+    path:[],revision:cached.revision};
+  renderAncients();
 }
 function selectAncientsHex(cell){
   if(cached?.status!=='LAB_ONLY'||cached.turn!==cached.you||
      cached.phase!=='LAB_RESOLUTION_PENDING')return;
-  const units=cached.board??[];
-  const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
+  const unit=(cached.board??[]).find(u=>u.col===cell.col&&u.row===cell.row);
+  const leader=(cached.leaders??[]).find(l=>l.col===cell.col&&l.row===cell.row);
   const ordered=new Set(cached.orderedUnitIds??[]);
   const moved=new Set(cached.movedUnitIds??[]);
-  if(at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)){
-    ancientsDraft={unitId:at.id,origin:{col:at.col,row:at.row},
-      path:[],revision:cached.revision};
+  const orderedLeaders=new Set(cached.orderedLeaderIds??[]);
+  const movedLeaders=new Set(cached.movedLeaderIds??[]);
+  if(unit?.side===cached.you&&ordered.has(unit.id)&&!moved.has(unit.id)){
+    ancientsDraft={kind:'UNIT',id:unit.id,
+      origin:{col:unit.col,row:unit.row},path:[],revision:cached.revision};
+  }else if(leader?.side===cached.you&&orderedLeaders.has(leader.id)&&
+           !movedLeaders.has(leader.id)&&!ancientsDraft){
+    ancientsDraft={kind:'LEADER',id:leader.id,
+      origin:{col:leader.col,row:leader.row},path:[],revision:cached.revision};
   }else if(ancientsDraft){
     const key=p=>`${p.col},${p.row}`;
     const previous=ancientsDraft.path.at(-1)??ancientsDraft.origin;
@@ -235,11 +281,15 @@ function selectAncientsHex(cell){
     }else if(distance(previous,cell)!==1){
       el('ancients-route-status').textContent='El siguiente hexágono debe ser contiguo.';
       return;
-    }else if(at){
+    }else if(unit&&!(ancientsDraft.kind==='LEADER'&&unit.side===cached.you)){
       el('ancients-route-status').textContent='El hexágono está ocupado.';
       return;
-    }else if(ancientsDraft.path.length>=4){
-      el('ancients-route-status').textContent='Superado el máximo provisional de cuatro hexágonos.';
+    }else if(leader&&leader.side!==cached.you){
+      el('ancients-route-status').textContent='El hexágono contiene un líder rival.';
+      return;
+    }else if(ancientsDraft.path.length>=
+      (ancientsDraft.kind==='LEADER'?3:4)){
+      el('ancients-route-status').textContent='La ruta excede el límite del tipo de pieza.';
       return;
     }else{
       ancientsDraft.path.push({col:cell.col,row:cell.row});
@@ -247,6 +297,7 @@ function selectAncientsHex(cell){
   }
   renderAncients();
 }
+
 async function sendAncients(type,fields={},idempotencyKey=null){
   if(cached?.status!=='LAB_ONLY'||!cached?.matchId)
     throw Error('LABORATORIO_NO_DISPONIBLE');
@@ -671,22 +722,35 @@ action('ancients-refresh',inspect);
 action('ancients-play',()=>sendAncients('PLAY_SECTION_CARD',{
   cardInstanceId:el('ancients-card').value
 }));
-action('ancients-order',()=>sendAncients('ASSIGN_SECTION_ORDERS',{
-  unitIds:Array.from(el('ancients-units').selectedOptions??[],x=>x.value),
-  leaderIds:[]
-}));
+action('ancients-order',()=>{
+  const selected=Array.from(el('ancients-units').selectedOptions??[],x=>x.value);
+  return sendAncients('ASSIGN_SECTION_ORDERS',{
+    unitIds:selected.filter(id=>!id.startsWith('leader:')),
+    leaderIds:selected.filter(id=>id.startsWith('leader:')).map(id=>id.slice(7))
+  });
+});
+action('ancients-select-leader',async()=>{
+  chooseAncientsLeader(el('ancients-leader-mover').value);
+  return false;
+});
 action('ancients-clear-path',async()=>{
   ancientsDraft=null;renderAncients();return false;
 });
 action('ancients-move',()=>{
   if(!ancientsDraft?.path.length||ancientsDraft.revision!==cached?.revision)
     throw Error('BORRADOR_DESACTUALIZADO');
-  const selected=(cached?.board??[]).find(u=>u.id===ancientsDraft.unitId);
+  if(ancientsDraft.kind==='LEADER'){
+    return sendAncients('MOVE_SECTION_LEADER_PATH_V1',{
+      leaderId:ancientsDraft.id,
+      path:ancientsDraft.path.map(p=>({col:p.col,row:p.row}))
+    });
+  }
+  const selected=(cached?.board??[]).find(u=>u.id===ancientsDraft.id);
   const type=['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY',
     'ELEPHANT','HEAVY_CHARIOT'].includes(selected?.unitType)
     ?'MOVE_SECTION_MOUNTED_PATH_V1':'MOVE_SECTION_FOOT_PATH_V2';
   return sendAncients(type,{
-    unitId:ancientsDraft.unitId,
+    unitId:ancientsDraft.id,
     path:ancientsDraft.path.map(p=>({col:p.col,row:p.row}))
   });
 });
