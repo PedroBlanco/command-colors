@@ -163,6 +163,12 @@ function renderAncients() {
   if(ancientsDraftScope!==scope){ancientsDraft=null;ancientsDraftScope=scope;}
   el('ancients-status').textContent=
     `Ancients experimental · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
+  const terrainNames={FOREST:'bosque',HILL:'colina',
+    BROKEN_GROUND:'terreno accidentado'};
+  el('ancients-terrain-info').textContent='Terreno del escenario: '+
+    (cached.terrain?.length
+      ?cached.terrain.map(x=>`${terrainNames[x.kind]??'desconocido'} (${x.col+1},${x.row+1})`).join('; ')
+      :'solo hexágonos despejados')+'.';
   const cardSelect=el('ancients-card');
   const chosen=cardSelect.value;
   cardSelect.replaceChildren();
