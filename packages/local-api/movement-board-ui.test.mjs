@@ -369,3 +369,42 @@ test('terrain display rejects invalid/duplicated coordinates; generic unit label
  renderMovementBoard(svg,[{id:'genericA',side:'A',col:3,row:4}],null,()=>{},'A');
  assert.equal(cell(svg,3,4).children.find(x=>x.tag==='text').textContent,'A');
 });
+
+test('Ancients board: renders attached and lone leaders without exposing private information',()=>{
+ const {svg}=fixture();
+ const board=[{id:'footA',side:'A',col:2,row:4,unitType:'MEDIUM_INFANTRY'}];
+ const leaders=[
+  {id:'generalA',side:'A',col:2,row:4},
+  {id:'generalB',side:'B',col:10,row:3}
+ ];
+ const original=structuredClone(leaders);
+ renderMovementBoard(svg,board,null,()=>{},'A',{
+  leaders,selectableLeaderIds:['generalA']
+ });
+ const attached=cell(svg,2,4),lone=cell(svg,10,3);
+ assert.match(attached.attrs['aria-label'],/generalA.*unido a la unidad/);
+ assert.match(lone.attrs['aria-label'],/generalB.*aislado/);
+ assert.equal(attached.classes.has('hex-leader-selectable'),true);
+ assert.equal(lone.classes.has('hex-leader-selectable'),false);
+ assert.ok(attached.children.some(x=>x.tag==='text'&&x.textContent==='L'));
+ assert.ok(lone.children.some(x=>x.tag==='text'&&x.textContent==='L'));
+ assert.deepEqual(leaders,original);
+ renderMovementBoard(svg,board,null,()=>{},'B',{leaders});
+ assert.match(cell(svg,2,4).attrs['aria-label'],/generalA/);
+ assert.equal(cell(svg,10,3).attrs['data-col'],'10');
+});
+test('Ancients board: reject illegal leader overlap and undisclosed selection hints',()=>{
+ const {svg}=fixture();
+ const board=[{id:'footA',side:'A',col:2,row:4}];
+ for(const options of [
+  {leaders:[{id:'enemyB',side:'B',col:2,row:4}]},
+  {leaders:[{id:'generalA',side:'A',col:2,row:4},
+            {id:'generalB',side:'B',col:2,row:4}]},
+  {leaders:[],selectableLeaderIds:['not_present']},
+  {leaders:[{id:'footA',side:'A',col:4,row:4}]},
+  {leaders:[{id:'generalA',side:'A',col:13,row:4}]}
+ ]){
+  assert.throws(()=>renderMovementBoard(svg,board,null,()=>{},'A',options),
+   /INVALID_MOVEMENT_LEADER_VIEW/);
+ }
+});
