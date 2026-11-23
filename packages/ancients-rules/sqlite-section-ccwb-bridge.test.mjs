@@ -328,3 +328,57 @@ test('CCWB: staged movement screen reads private persisted orders without mutati
  assert.equal(root.bridge.view('A').revision,2);
  assert.equal(root.bridge.view('B').revision,2);
 }));
+
+const footSetup=()=>{
+ const c=setup();
+ c.sectorCells=Object.fromEntries(Array.from({length:117},(_,i)=>{
+  const col=Math.floor(i/9),row=i%9;
+  return [col+','+row,[col<4?'LEFT':col>8?'RIGHT':'CENTER']];
+ }));
+ c.movementUnitTypes={unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'};
+ return c;
+};
+
+test('CCWB: committed LAB foot path atomically updates board, event, key and full replay',()=>fixture(({root,connect})=>{
+ assert.equal(root.bridge.initialize('A',footSetup()).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const move=req('MOVE_SECTION_FOOT_PATH_V2',2,{unitId:'unitA',
+  path:[{col:3,row:4},{col:4,row:4}]},'foot_move_lab_0001');
+ const applied=root.bridge.dispatch(move);
+ assert.equal(applied.code,'SECTION_LAB_APPLIED');
+ assert.equal(applied.movementAppliedInLab,true);
+ assert.equal(applied.officialMovementAuthorized,false);
+ assert.equal(applied.view.revision,3);
+ assert.deepEqual(applied.view.movedUnitIds,['unitA']);
+ assert.equal(applied.view.board.find(u=>u.id==='unitA').col,4);
+ const third=root.db.prepare('SELECT visibility,payload FROM game_events WHERE match_id=? AND sequence=3').get(MATCH);
+ assert.equal(third.visibility,'public');
+ const event=JSON.parse(third.payload);
+ assert.equal(event.kind,'SECTION_FOOT_PATH_APPLIED_LAB');
+ assert.equal(event.unitId,'unitA');
+ assert.equal(Object.hasOwn(event,'unitTypes'),false);
+ assert.equal(JSON.stringify(event).includes('card_'),false);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,3);
+ const other=connect();
+ assert.equal(other.bridge.view('B').board.find(u=>u.id==='unitA').col,4);
+ assert.equal(other.bridge.dispatch(move).code,'ALREADY_APPLIED');
+ assert.equal(other.bridge.dispatch({...move,path:[{col:3,row:4}]}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(other.bridge.dispatch(req('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'unitA',path:[{col:3,row:4}]
+ },'foot_move_lab_0002')).code,'STALE_REVISION');
+ assert.equal(root.getRow(MATCH).game_revision,3);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,3);
+}));
+
+test('CCWB: a rejected laboratory movement writes no event or command',()=>fixture(({root})=>{
+ root.bridge.initialize('A',footSetup());play(root);order(root);
+ const before=root.getRow(MATCH).private_state;
+ const rejected=root.bridge.dispatch(req('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'unitB',path:[{col:9,row:4}]
+ },'foot_move_lab_0003'));
+ assert.equal(rejected.status,409);
+ assert.equal(root.getRow(MATCH).game_revision,2);
+ assert.equal(root.getRow(MATCH).private_state,before);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,2);
+}));
