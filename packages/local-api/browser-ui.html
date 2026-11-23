@@ -29,6 +29,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 #ancients-board{display:block;width:100%;min-width:510px;height:auto;aspect-ratio:510 / 430}
 #ancients-board-viewport{overflow-x:auto;border:1px solid #a4b5b0;border-radius:8px;background:#e7e8de}
 #ancients-units{min-height:95px}
+#ancients-leader-orders{min-height:60px}
+.leader-marker{fill:#512e8a;stroke:#fff;stroke-width:.8px;paint-order:stroke;font-size:14px;font-weight:900}
 .hex-shape{stroke:#859b91;stroke-width:1.3;fill:#e9ede6}
 .hex-target:nth-child(even) .hex-shape{fill:#e0e6df}
 .hex-target.terrain-forest .hex-shape{fill:#b9d4bc}
@@ -120,8 +122,13 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button id="ancients-play" disabled>Jugar carta de sección</button>
 <label>Unidades propias a ordenar (selección múltiple)
 <select id="ancients-units" multiple size="6"></select></label>
+<label>Líderes propios que reciben orden (independiente de la unidad)
+<select id="ancients-leader-orders" multiple size="3"></select></label>
 <button id="ancients-order" disabled>Asignar órdenes</button>
-<p>Selecciona una unidad ordenada en el tablero y después los hexágonos consecutivos de su ruta. El servidor valida cada acción.</p>
+<p>Selecciona una unidad ordenada en el tablero o elige un líder ordenado. Después, traza la ruta por hexágonos contiguos. El servidor decide si es válida. Un líder unido a una unidad puede desplazarse con ella sin recibir una orden independiente; moverlo por separado sí exige orden.</p>
+<label>Líder ordenado para movimiento independiente
+<select id="ancients-leader-choice"><option value="">Selecciona un líder</option></select></label>
+<button id="ancients-select-leader" disabled>Trazar ruta del líder</button>
 <p id="ancients-terrain-info">Terrenos de la demostración pendientes de consultar.</p>
 <div id="ancients-board-viewport">
 <svg id="ancients-board" role="group" aria-label="Tablero experimental de Ancients" viewBox="0 0 510 430"></svg>
