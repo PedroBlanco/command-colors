@@ -363,3 +363,70 @@ test('player-relative sections: B left orders canonical right, not canonical lef
  assert.equal(Object.hasOwn(legacy,'sectorPerspective'),false);
  assert.throws(()=>init({...setup,sectorPerspective:'UNKNOWN'}),/INVALID_SECTION_HISTORY_SETUP/);
 });
+
+test('leader lab: a unit carries its attached commander and consumes leader movement',()=>{
+ const c=completeFootSetup();
+ c.board.leaders=[{id:'captainA',side:'A',col:2,row:4}];
+ const initial=init(c),history=[];
+ let s=initial;
+ const go=(type,fields={})=>{
+  const action=cmd(type,s.revision,fields);
+  const result=apply(s,action);
+  assert.equal(result.accepted,true,result.code);
+  history.push(action);s=result.nextState;return result;
+ };
+ const card=initial.hands.A[0].instanceId;
+ go('PLAY_SECTION_CARD',{cardInstanceId:card});
+ go('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:['captainA']});
+ const r=go('MOVE_SECTION_FOOT_PATH_V2',{unitId:'a1',path:[{col:3,row:4}]});
+ assert.equal(r.publicEvent.attachedLeaderId,'captainA');
+ assert.equal(s.board.units.find(x=>x.id==='a1').col,3);
+ assert.equal(s.board.leaders.find(x=>x.id==='captainA').col,3);
+ assert.deepEqual(s.footLab.movedLeaderIds,['captainA']);
+ assert.equal(apply(s,cmd('MOVE_SECTION_LEADER_PATH_V1',s.revision,{
+  leaderId:'captainA',path:[{col:4,row:4}]
+ })).code,'LEADER_ALREADY_MOVED');
+ assert.deepEqual(replay(initial,history),s);
+ go('END_EXPERIMENTAL_TURN');
+ assert.deepEqual(s.footLab.movedLeaderIds,[]);
+ assert.equal(project(s,'B').leaders[0].col,3);
+});
+test('leader lab: a separately ordered commander detaches and joins another unit',()=>{
+ const c=completeFootSetup();
+ c.board.units.push({id:'a2',side:'A',col:3,row:4});
+ c.movementUnitTypes.a2='LIGHT_INFANTRY';
+ c.board.leaders=[{id:'captainA',side:'A',col:2,row:4}];
+ const s0=init(c);
+ const s1=apply(s0,cmd('PLAY_SECTION_CARD',0,{
+  cardInstanceId:s0.hands.A[0].instanceId
+ })).nextState;
+ const s2=apply(s1,cmd('ASSIGN_SECTION_ORDERS',1,{
+  unitIds:['a2'],leaderIds:['captainA']
+ })).nextState;
+ const before=structuredClone(s2);
+ const forged=apply(s2,cmd('MOVE_SECTION_LEADER_PATH_V1',2,{
+  leaderId:'captainA',path:[{col:3,row:4,actor:'B'}]
+ }));
+ assert.equal(forged.code,'INVALID_LEADER_PATH');
+ assert.deepEqual(s2,before);
+ const moved=apply(s2,cmd('MOVE_SECTION_LEADER_PATH_V1',2,{
+  leaderId:'captainA',path:[{col:3,row:4}]
+ }));
+ assert.equal(moved.accepted,true,moved.code);
+ assert.equal(moved.publicEvent.detachedFromUnit,true);
+ assert.equal(moved.publicEvent.attachedToUnit,true);
+ assert.equal(moved.nextState.board.units.find(x=>x.id==='a1').col,2);
+ assert.equal(moved.nextState.board.leaders[0].col,3);
+ assert.equal(apply(moved.nextState,cmd('MOVE_SECTION_FOOT_PATH_V2',3,{
+  unitId:'a2',path:[{col:4,row:4}]
+ })).code,'ATTACHED_LEADER_ALREADY_MOVED');
+ const ignored=apply(s2,cmd('MOVE_SECTION_LEADER_PATH_V1',2,{
+  leaderId:'captainA',path:[{col:8,row:4}]
+ }));
+ assert.equal(ignored.code,'NON_ADJACENT_HEX');
+ assert.deepEqual(replay(s0,[
+  cmd('PLAY_SECTION_CARD',0,{cardInstanceId:s0.hands.A[0].instanceId}),
+  cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a2'],leaderIds:['captainA']}),
+  cmd('MOVE_SECTION_LEADER_PATH_V1',2,{leaderId:'captainA',path:[{col:3,row:4}]})
+ ]),moved.nextState);
+});
