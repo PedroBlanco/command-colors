@@ -17,6 +17,7 @@ const ANCIENTS_LAB_COMMAND_FIELDS=Object.freeze({
   ASSIGN_SECTION_ORDERS:['unitIds','leaderIds'],
   MOVE_SECTION_FOOT_PATH_V2:['unitId','path'],
   MOVE_SECTION_MOUNTED_PATH_V1:['unitId','path'],
+  MOVE_SECTION_LEADER_PATH_V1:['leaderId','path'],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied = (code, status = 403) => ({status, body: {code}});
