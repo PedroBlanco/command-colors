@@ -243,8 +243,8 @@ function renderDeck() {
     orderSelectionContext = orderContext;
   }
   el('deck-panel').hidden = !isDeck;
-  el('deck-initialize').disabled = !cached || cached.you !== 'A' || cached.revision !== 0 || isDeck;
-  el('turn').disabled = Boolean(isDeck);
+  el('deck-initialize').disabled = !cached || cached.you !== 'A' || cached.revision !== 0 || isDeck || cached.status === 'LAB_ONLY';
+  el('turn').disabled = Boolean(isDeck || cached?.status === 'LAB_ONLY');
   const select = el('deck-card');
   const selected = select.value;
   select.replaceChildren();
