@@ -452,3 +452,36 @@ test('CCWB: mounted terrain rejection preserves all persisted rows',()=>fixture(
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,2);
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,2);
 }));
+
+test('CCWB: ordered leader move persists atomically and binds idempotent retry',()=>fixture(({root,connect})=>{
+ const c=footSetup();
+ c.enableLeaderLab=true;
+ c.board.leaders=[{id:'leaderA',side:'A',col:2,row:4}];
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);
+ const orderRequest=req('ASSIGN_SECTION_ORDERS',1,{
+  unitIds:['unitA'],leaderIds:['leaderA']
+ },'section_leader_order_0001');
+ assert.equal(root.bridge.dispatch(orderRequest).code,'SECTION_LAB_APPLIED');
+ const command=req('MOVE_SECTION_LEADER_PATH_V1',2,{
+  leaderId:'leaderA',path:[{col:2,row:3}]
+ },'section_leader_move_0001');
+ const applied=root.bridge.dispatch(command);
+ assert.equal(applied.code,'SECTION_LAB_APPLIED');
+ assert.equal(applied.movementAppliedInLab,true);
+ assert.deepEqual(applied.view.movedLeaderIds,['leaderA']);
+ assert.equal(applied.view.leaders[0].row,3);
+ const saved=root.db.prepare('SELECT visibility,payload FROM game_events WHERE match_id=? AND sequence=3')
+  .get(MATCH);
+ assert.equal(saved.visibility,'public');
+ assert.equal(JSON.parse(saved.payload).kind,'SECTION_LEADER_PATH_APPLIED_LAB');
+ assert.equal(JSON.stringify(saved).includes('card_'),false);
+ const next=connect();
+ assert.equal(next.bridge.view('B').leaders[0].row,3);
+ assert.equal(next.bridge.dispatch(command).code,'ALREADY_APPLIED');
+ assert.equal(next.bridge.dispatch({...command,path:[{col:3,row:3}]}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(next.bridge.dispatch(req('MOVE_SECTION_LEADER_PATH_V1',3,{
+  leaderId:'leaderA',path:[{col:3,row:3}]
+ },'section_leader_move_0002')).code,'LEADER_ALREADY_MOVED');
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,3);
+}));
