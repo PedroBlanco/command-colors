@@ -47,7 +47,7 @@ function syncAncientsWatch(){
     try{await inspect();}
     catch{/* The next authenticated poll can retry; never reveal old state. */}
     finally{ancientsWatchBusy=false;}
-  },2500);
+  },12000); // Fallback in case a private SSE notice is missed.
   ancientsWatch.unref?.();
 }
 let updates = null, updateMatchId = null, inspectionSequence = 0;
@@ -361,12 +361,14 @@ function closeUpdates() {
   revisionRefresh.reset();
   el('connection').textContent = 'Avisos en tiempo real desconectados';
 }
-function subscribeTo(matchId) {
+function subscribeTo(matchId,kind='synthetic') {
   if (typeof EventSource !== 'function') return;
-  if (updates && updateMatchId === matchId) return;
+  const subscriptionKey=matchId+':'+kind;
+  if (updates && updateMatchId === subscriptionKey) return;
   closeUpdates();
-  updateMatchId = matchId;
-  const stream = new EventSource(`/api/matches/${matchId}/updates`);
+  updateMatchId = subscriptionKey;
+  const stream = new EventSource(`/api/matches/${matchId}/${kind==='ancients'
+    ?'ancients-lab/updates':'updates'}`);
   const ticket = privateScope.capture();
   updates = stream;
   const active = () => updates === stream && privateScope.isCurrent(ticket,matchId) &&
@@ -497,8 +499,7 @@ async function inspect() {
     message('La respuesta de partida no corresponde a la sesión vigente.');
     return false;
   }
-  if(lobby.state?.status==='LAB_ONLY')closeUpdates();
-  else subscribeTo(id);
+  subscribeTo(id,lobby.state?.status==='LAB_ONLY'?'ancients':'synthetic');
   el('lobby').textContent=JSON.stringify({status:lobby.status,players:lobby.players},null,2);
   lobbyStatus = lobby.status;
   cached=lobby.state??null;
