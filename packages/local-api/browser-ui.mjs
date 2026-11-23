@@ -263,7 +263,8 @@ function selectAncientsHex(cell){
   const moved=new Set(cached.movedUnitIds??[]);
   const orderedLeaders=new Set(cached.orderedLeaderIds??[]);
   const movedLeaders=new Set(cached.movedLeaderIds??[]);
-  if(unit?.side===cached.you&&ordered.has(unit.id)&&!moved.has(unit.id)){
+  if(unit?.side===cached.you&&ordered.has(unit.id)&&!moved.has(unit.id)&&
+     ancientsDraft?.kind!=='LEADER'){
     ancientsDraft={kind:'UNIT',id:unit.id,
       origin:{col:unit.col,row:unit.row},path:[],revision:cached.revision};
   }else if(leader?.side===cached.you&&orderedLeaders.has(leader.id)&&
