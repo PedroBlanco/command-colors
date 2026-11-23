@@ -274,6 +274,19 @@ export function applySectionHistoryLabCommand(state,command={}){
     });
     if(result.status!=='RULE_PATH_TRANSITION_CANDIDATE')
       return reject(result.reason??'FOOT_LAB_MOVE_REJECTED');
+    const attached=state.leaderLab
+      ?state.board.leaders.find(l=>l.side===side&&
+        l.col===moving.col&&l.row===moving.row):null;
+    if(state.leaderLab&&(
+       state.leaderLab.joinedUnitIds.includes(command.unitId)||
+       (attached&&state.leaderLab.movedLeaderIds.includes(attached.id))))
+      return reject('UNIT_LOCKED_BY_LEADER_MOVE');
+    if(state.leaderLab){
+      const ending=command.path.at(-1);
+      if(ending&&state.board.leaders.some(l=>l.col===ending.col&&
+         l.row===ending.row&&l.id!==attached?.id))
+        return reject('LEADER_DESTINATION_NEEDS_REVIEW');
+    }
     // Open-ground V2 checks card-independent movement/profile/occupancy;
     // the existing terrain policy independently rejects entry restrictions.
     // Both verdicts are required before any mutation or SQLite event.
@@ -291,11 +304,18 @@ export function applySectionHistoryLabCommand(state,command={}){
     // A client cannot supply its own board, rules or movement result.
     next.board.units=result.nextState.board.units;
     next.footLab.movedUnitIds=result.nextState.orderLedger.movedUnitIds;
+    if(attached){
+      const destination=result.transition.to;
+      const carried=next.board.leaders.find(l=>l.id===attached.id);
+      carried.col=destination.col;carried.row=destination.row;
+      next.leaderLab.movedLeaderIds.push(attached.id);
+    }
     publicEvent={
       kind:'SECTION_FOOT_PATH_APPLIED_LAB',side,
       unitId:result.transition.unitId,from:result.transition.from,
       to:result.transition.to,path:result.transition.path,
       battleAfterMovement,
+      ...(attached?{leaderCarried:attached.id}:{}),
       ...(Object.hasOwn(state.footLab,'terrain')?{
         destinationTerrain:terrain.destinationTerrain
       }:{})
@@ -311,6 +331,19 @@ export function applySectionHistoryLabCommand(state,command={}){
       return reject('UNIT_ALREADY_MOVED');
     // All inputs are derived from replayed CCWB state, not the request:
     // only piece identity/path are selectable by the acting participant.
+    const attached=state.leaderLab
+      ?state.board.leaders.find(l=>l.side===side&&
+        l.col===piece.col&&l.row===piece.row):null;
+    if(state.leaderLab&&(
+       state.leaderLab.joinedUnitIds.includes(piece.id)||
+       (attached&&state.leaderLab.movedLeaderIds.includes(attached.id))))
+      return reject('UNIT_LOCKED_BY_LEADER_MOVE');
+    if(state.leaderLab){
+      const ending=command.path.at(-1);
+      if(ending&&state.board.leaders.some(l=>l.col===ending.col&&
+         l.row===ending.row&&l.id!==attached?.id))
+        return reject('LEADER_DESTINATION_NEEDS_REVIEW');
+    }
     const checked=previewBaseMountedPath({
       unitType:state.footLab.unitTypes[piece.id],
       from:{col:piece.col,row:piece.row},
@@ -323,13 +356,59 @@ export function applySectionHistoryLabCommand(state,command={}){
     target.col=checked.destination.col;
     target.row=checked.destination.row;
     next.footLab.movedUnitIds.push(piece.id);
+    if(attached){
+      const carried=next.board.leaders.find(l=>l.id===attached.id);
+      carried.col=checked.destination.col;carried.row=checked.destination.row;
+      next.leaderLab.movedLeaderIds.push(attached.id);
+    }
     publicEvent={
       kind:'SECTION_MOUNTED_PATH_APPLIED_LAB',side,unitId:piece.id,
       from:{col:piece.col,row:piece.row},
       to:{col:target.col,row:target.row},
       path:command.path.map(p=>({col:p.col,row:p.row})),
       battleAfterMovement:checked.battleAfterMovement,
+      ...(attached?{leaderCarried:attached.id}:{}),
       destinationTerrain:checked.destinationTerrain
+    };
+  }else if(command.type==='MOVE_SECTION_LEADER_PATH_V1'){
+    if(state.phase!=='LAB_RESOLUTION_PENDING'||!Object.hasOwn(state,'leaderLab'))
+      return reject('LEADER_LAB_NOT_AVAILABLE');
+    const leader=state.board.leaders.find(l=>l.id===command.leaderId);
+    if(!leader||leader.side!==side||
+       !state.orderSnapshot.pieces.some(p=>p.kind==='LEADER'&&p.id===leader.id))
+      return reject('LEADER_NOT_ORDERED');
+    if(state.leaderLab.movedLeaderIds.includes(leader.id))
+      return reject('LEADER_ALREADY_MOVED');
+    const host=state.board.units.find(u=>u.side===side&&u.col===leader.col&&
+       u.row===leader.row);
+    if(host&&state.footLab.movedUnitIds.includes(host.id))
+      return reject('ATTACHED_UNIT_ALREADY_MOVED');
+    let candidate;
+    try{
+      candidate=precheckAncientsLeaderPath({
+        units:state.board.units,leaders:state.board.leaders,
+        leaderId:leader.id,path:command.path,terrain:state.footLab.terrain??[]
+      });
+    }catch{
+      return reject('INVALID_LEADER_PATH');
+    }
+    if(candidate.status!=='CANDIDATE')
+      return reject(candidate.reason??'LEADER_LAB_MOVE_REJECTED');
+    const targetUnit=state.board.units.find(u=>u.col===candidate.destination.col&&
+      u.row===candidate.destination.row);
+    if(targetUnit&&state.footLab.movedUnitIds.includes(targetUnit.id))
+      return reject('UNIT_ALREADY_MOVED');
+    const updated=next.board.leaders.find(l=>l.id===leader.id);
+    updated.col=candidate.destination.col;updated.row=candidate.destination.row;
+    next.leaderLab.movedLeaderIds.push(leader.id);
+    if(targetUnit)next.leaderLab.joinedUnitIds.push(targetUnit.id);
+    publicEvent={
+      kind:'SECTION_LEADER_PATH_APPLIED_LAB',side,leaderId:leader.id,
+      from:{col:leader.col,row:leader.row},to:candidate.destination,
+      path:command.path.map(p=>({col:p.col,row:p.row})),
+      detachedFromUnit:host?.id??null,
+      joinedUnit:targetUnit?.id??null,
+      combatResolved:false
     };
   }else if(command.type==='END_EXPERIMENTAL_TURN'){
     if(state.phase!=='LAB_RESOLUTION_PENDING')return reject('WRONG_PHASE');
@@ -340,6 +419,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     next.turn=side==='A'?'B':'A';
     next.phase='AWAIT_CARD';next.handAtPlay=null;next.cardPlay=null;next.orderSnapshot=null;
     if(next.footLab)next.footLab.movedUnitIds=[];
+    if(next.leaderLab){next.leaderLab.movedLeaderIds=[];next.leaderLab.joinedUnitIds=[];}
     publicEvent={kind:'LAB_TURN_ENDED_WITHOUT_COMBAT',side,drewCard:drew};
   }else return reject('UNSUPPORTED_LAB_COMMAND');
   next.revision=state.revision+1;
@@ -349,7 +429,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     // Never serialize private command or nextState into a public event.
     cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,
     movementAppliedInLab:['MOVE_SECTION_FOOT_PATH_V2',
-      'MOVE_SECTION_MOUNTED_PATH_V1'].includes(command.type),
+      'MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1'].includes(command.type),
     officialMovementAuthorized:false,combatResolved:false};
 }
 
@@ -384,6 +464,13 @@ export function projectSectionHistoryLab(state,side){
         unitType:state.footLab.unitTypes[u.id]
       })),
       movedUnitIds:[...state.footLab.movedUnitIds],
+      ...(state.leaderLab?{
+        leaders:copy(state.board.leaders),
+        movedLeaderIds:[...state.leaderLab.movedLeaderIds],
+        orderedLeaderIds:state.turn===side&&state.phase==='LAB_RESOLUTION_PENDING'
+          ?state.orderSnapshot.pieces.filter(p=>p.kind==='LEADER'&&p.side===side)
+            .map(p=>p.id):[]
+      }:{}),
       // A participant may select ONLY their own ordered units. Do not
       // expose the opponent's still-private selection.
       orderedUnitIds:state.turn===side&&state.phase==='LAB_RESOLUTION_PENDING'
