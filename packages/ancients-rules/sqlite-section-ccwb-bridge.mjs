@@ -20,6 +20,8 @@ const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
   PLAY_SECTION_CARD:['cardInstanceId'],
   ASSIGN_SECTION_ORDERS:['unitIds','leaderIds'],
+  // LAB_ONLY: this is persisted on the lab board, not an official scenario.
+  MOVE_SECTION_FOOT_PATH_V2:['unitId','path'],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied=(status,code)=>Object.freeze({status,code});
@@ -175,7 +177,9 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       keyInsert.run(row.id,request.actor,request.idempotencyKey,signature,next.revision);
       return Object.freeze({status:200,code:'SECTION_LAB_APPLIED',revision:next.revision,
         view:safeView({...row,private_state:JSON.stringify(updated),game_revision:next.revision},request.actor),
-        cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,combatResolved:false});
+        cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,
+        movementAppliedInLab:result.movementAppliedInLab,
+        officialMovementAuthorized:false,combatResolved:false});
     });
   }
   /** Verified, private CCWB snapshot. Caller MUST authenticate actor and hold
