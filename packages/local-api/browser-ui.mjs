@@ -228,7 +228,7 @@ function renderAncients() {
   const moved=new Set(Array.isArray(cached.movedUnitIds)?cached.movedUnitIds:[]);
   const locked=new Set(Array.isArray(cached.unitsLockedByLeader)?cached.unitsLockedByLeader:[]);
   const selectable=(cached.board??[]).filter(u=>u.side===cached.you&&
-    ordered.has(u.id)&&!moved.has(u.id)).map(u=>u.id);
+    ordered.has(u.id)&&!moved.has(u.id)&&!locked.has(u.id)).map(u=>u.id);
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
@@ -255,7 +255,8 @@ function selectAncientsHex(cell){
   const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
   const ordered=new Set(cached.orderedUnitIds??[]);
   const moved=new Set(cached.movedUnitIds??[]);
-  if(ancientsDraft?.kind!=='LEADER'&&at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)){
+  const locked=new Set(cached.unitsLockedByLeader??[]);
+  if(ancientsDraft?.kind!=='LEADER'&&at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)&&!locked.has(at.id)){
     ancientsDraft={unitId:at.id,origin:{col:at.col,row:at.row},
       path:[],revision:cached.revision};
   }else if(ancientsDraft){
