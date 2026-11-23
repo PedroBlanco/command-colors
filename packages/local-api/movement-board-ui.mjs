@@ -54,7 +54,7 @@ function svgNode(doc, name, attrs = {}) {
 /** Render public cells/units with keyboard and pointer selection. */
 export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
-    terrain=[]}={}) {
+    terrain=[],leaders=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -71,6 +71,23 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     }
     units.set(unit.id,unit);
     cellsById.set(key(unit),unit);
+  }
+  if(!Array.isArray(leaders)||leaders.length+board.length>117)
+    throw new TypeError('INVALID_MOVEMENT_LEADER_VIEW');
+  const leadersByCell=new Map(),leaderIds=new Set();
+  for(const leader of leaders){
+    if(!leader||typeof leader!=='object'||Array.isArray(leader)||
+       !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(leader.id)||
+       !['A','B'].includes(leader.side)||
+       !Number.isSafeInteger(leader.col)||!Number.isSafeInteger(leader.row)||
+       leader.col<0||leader.col>12||leader.row<0||leader.row>8||
+       leaderIds.has(leader.id)||units.has(leader.id)||
+       leadersByCell.has(key(leader))||
+       (cellsById.has(key(leader))&&
+        cellsById.get(key(leader)).side!==leader.side))
+      throw new TypeError('INVALID_MOVEMENT_LEADER_VIEW');
+    leaderIds.add(leader.id);
+    leadersByCell.set(key(leader),leader);
   }
   // Terrain comes only from an authorized server view. Presentation is inert:
   // never infer the legality of an action from a color, label or SVG class.
@@ -109,6 +126,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   const group = svgNode(doc,'g',{'aria-label':'Tablero hexagonal de laboratorio'});
   for (const cell of boardCells) {
     const unit = cellsById.get(key(cell));
+    const leader=leadersByCell.get(key(cell));
     const unitType=unit&&Object.hasOwn(TYPE_LABELS,unit.unitType)
       ? TYPE_LABELS[unit.unitType]:null;
     const terrainLabel=terrainByCell.get(key(cell));
@@ -121,7 +139,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}` : ', vacía'}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}` : leader ? ', sin unidad' : ', vacía'}${leader ? `, líder ${leader.id} del bando ${leader.side}`:''}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
       'aria-pressed':String(Boolean(origin || step)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -153,6 +171,14 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       const text = svgNode(doc,'text',{x:position.x,y:position.y+4,'text-anchor':'middle',class:'unit-label','pointer-events':'none'});
       text.textContent=unitType?unitType[0]:unit.side;
       hex.append(badge,text);
+    }
+    if (leader){
+      const leaderMarker=svgNode(doc,'text',{
+        x:position.x+15,y:position.y-11,class:'leader-marker',
+        'text-anchor':'middle','pointer-events':'none'
+      });
+      leaderMarker.textContent='L';
+      hex.append(leaderMarker);
     }
     if (step) {
       const indexLabel=svgNode(doc,'text',{x:position.x+14,y:position.y-11,class:'route-number','text-anchor':'middle','pointer-events':'none'});
