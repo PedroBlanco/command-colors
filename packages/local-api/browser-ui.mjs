@@ -226,6 +226,7 @@ function renderAncients() {
     cached.phase!=='LAB_RESOLUTION_PENDING'||availableLeaders.length===0;
   const ordered=new Set(Array.isArray(cached.orderedUnitIds)?cached.orderedUnitIds:[]);
   const moved=new Set(Array.isArray(cached.movedUnitIds)?cached.movedUnitIds:[]);
+  const locked=new Set(Array.isArray(cached.unitsLockedByLeader)?cached.unitsLockedByLeader:[]);
   const selectable=(cached.board??[]).filter(u=>u.side===cached.you&&
     ordered.has(u.id)&&!moved.has(u.id)).map(u=>u.id);
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
