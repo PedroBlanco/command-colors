@@ -5,6 +5,7 @@
  */
 import {allCells, pixelCenter, polygonPoints} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
+import {describeCommandError} from './command-feedback.mjs';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
   nextMovementHexes, truncateMovementDraft, extendMovementDraftTo} from './hex-selection.mjs';
 
@@ -177,11 +178,8 @@ export function createMovementBoard({svg,status,undoButton,cancelButton,confirmB
   });
   const reportError=error=>{
     const code=error?.message;
-    const serverCode=typeof code==='string' &&
-      /^[1-5][0-9]{2}: [A-Z][A-Z0-9_]{0,79}$/.test(code);
-    activeError=Object.hasOwn(localErrors,code) ? localErrors[code] :
-      serverCode ? `El servidor rechazó el comando (${code}).` :
-        'No se pudo completar la acción. Revisa la conexión y reintenta.';
+    activeError=Object.hasOwn(localErrors,code)
+      ? localErrors[code] : describeCommandError(error);
     message(activeError);
     onError(error);
   };

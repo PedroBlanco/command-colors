@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {renderMovementBoard,createMovementBoard} from './movement-board-ui.mjs';
+import {describeCommandError} from './command-feedback.mjs';
 
 class Node {
   constructor(doc,tag){this.ownerDocument=doc;this.tag=tag;this.attrs={};this.children=[];
@@ -295,14 +296,14 @@ test('rejected server movement stays visible by board confirm and keeps retry ke
   },onError:e=>errors.push(e.message),makeIdempotencyKey:()=> 'retry_key_1'});
   ctrl.setView(view());ctrl.select({col:3,row:4});ctrl.select({col:4,row:4});
   await ctrl.confirm();
-  assert.match(ui.status.textContent,/servidor rechazó.*409: STALE_REVISION/);
+  assert.match(ui.status.textContent,/partida ha cambiado.*Actualiza su estado/);
   assert.deepEqual(errors,['409: STALE_REVISION']);
   assert.ok(ctrl.getDraft());
   await ctrl.confirm();
   assert.deepEqual(keys,['retry_key_1','retry_key_1']);
-  assert.match(ui.status.textContent,/409: STALE_REVISION/);
+  assert.match(ui.status.textContent,/partida ha cambiado.*Actualiza su estado/);
   ctrl.setView({...view(),revision:6});
-  assert.doesNotMatch(ui.status.textContent,/409: STALE_REVISION/);
+  assert.doesNotMatch(ui.status.textContent,/partida ha cambiado.*Actualiza su estado/);
 });
 test('superseded movement response cannot discard its local pending route',async()=>{
   const ui=fixture(),ctrl=createMovementBoard({...ui,onConfirm:async()=>false});
@@ -310,4 +311,16 @@ test('superseded movement response cannot discard its local pending route',async
   await ctrl.confirm();
   assert.deepEqual(ctrl.getDraft().path,[{col:4,row:4}]);
   assert.equal(ui.confirmButton.disabled,false);
+});
+
+test('safe Spanish feedback separates stale, authorization, network and opaque errors',()=>{
+  assert.match(describeCommandError(Error('409: STALE_REVISION')),/Actualiza su estado/);
+  assert.match(describeCommandError(Error('403: NOT_YOUR_TURN')),/permiso/);
+  assert.match(describeCommandError(Error('401: UNAUTHENTICATED')),/sesión ha caducado/);
+  assert.match(describeCommandError(Error('500: INTERNAL_SECRETS')),/servidor no está disponible/);
+  assert.match(describeCommandError(Error('404: OPPONENT_HAND_DETAILS')),/ya no están disponibles/);
+  assert.match(describeCommandError(Error('409: UNKNOWN_PRIVATE_DETAIL')),/servidor ha rechazado/);
+  assert.match(describeCommandError(Error('NETWORK_FAILURE')),/No se pudo completar/);
+  assert.match(describeCommandError(Error('RUTA_INVALIDA')),/ruta indicada/);
+  assert.equal(describeCommandError(Error('409: UNKNOWN_PRIVATE_DETAIL')).includes('PRIVATE_DETAIL'),false);
 });
