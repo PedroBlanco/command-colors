@@ -22,6 +22,7 @@ const TYPES=Object.freeze({
   ASSIGN_SECTION_ORDERS:['unitIds','leaderIds'],
   // LAB_ONLY: this is persisted on the lab board, not an official scenario.
   MOVE_SECTION_FOOT_PATH_V2:['unitId','path'],
+  MOVE_SECTION_MOUNTED_PATH_V1:['unitId','path'],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied=(status,code)=>Object.freeze({status,code});
