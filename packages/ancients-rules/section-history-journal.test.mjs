@@ -189,9 +189,14 @@ test('foot lab: illegal trajectories, double movement and unsupported scope neve
  assert.throws(()=>init(bad),/INVALID_FOOT_LAB_SETUP/);
  const leader=completeFootSetup();
  leader.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
- assert.throws(()=>init(leader),/INVALID_FOOT_LAB_SETUP/);
+ const withLeader=init(leader);
+ assert.deepEqual(withLeader.footLab.movedLeaderIds,[]);
+ assert.equal(withLeader.board.leaders[0].id,'a_leader');
+ const illegalLeader=completeFootSetup();
+ illegalLeader.board.leaders=[{id:'b_leader',side:'B',col:2,row:4}];
+ assert.throws(()=>init(illegalLeader),/INVALID_FOOT_LAB_SETUP/);
  const mounted=completeFootSetup();mounted.movementUnitTypes.a1='LIGHT_CAVALRY';
- assert.throws(()=>init(mounted),/INVALID_FOOT_LAB_SETUP/);
+ assert.equal(init(mounted).footLab.unitTypes.a1,'LIGHT_CAVALRY');
 });
 
 test('foot lab: trusted terrain stops a path on forest entry and adjusts combat',()=>{
