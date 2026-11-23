@@ -342,6 +342,11 @@ export function projectSectionHistoryLab(state,side){
         unitType:state.footLab.unitTypes[u.id]
       })),
       movedUnitIds:[...state.footLab.movedUnitIds],
+      // A participant may select ONLY their own ordered units. Do not
+      // expose the opponent's still-private selection.
+      orderedUnitIds:state.turn===side&&state.phase==='LAB_RESOLUTION_PENDING'
+        ?state.orderSnapshot.pieces.filter(p=>p.kind==='UNIT'&&p.side===side)
+          .map(p=>p.id):[],
       ...(Object.hasOwn(state.footLab,'terrain')?{
         terrain:copy(state.footLab.terrain)
       }:{})
