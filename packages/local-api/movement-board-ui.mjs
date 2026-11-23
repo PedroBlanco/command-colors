@@ -54,7 +54,7 @@ function svgNode(doc, name, attrs = {}) {
 /** Render public cells/units with keyboard and pointer selection. */
 export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
-    terrain=[]}={}) {
+    terrain=[],leaders=[],selectableLeaderIds=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -83,6 +83,26 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
      new Set(terrain.map(key)).size!==terrain.length)
     throw new TypeError('INVALID_MOVEMENT_TERRAIN_VIEW');
   const terrainByCell=new Map(terrain.map(t=>[key(t),TERRAIN_LABELS[t.kind]]));
+  if(!Array.isArray(leaders)||leaders.length>117||
+     !Array.isArray(selectableLeaderIds)||selectableLeaderIds.length>117)
+    throw new TypeError('INVALID_MOVEMENT_LEADER_VIEW');
+  const leaderCells=new Map(),leaderIds=new Set();
+  for(const leader of leaders){
+    if(!leader||typeof leader!=='object'||Array.isArray(leader)||
+       Object.keys(leader).length!==4||
+       typeof leader.id!=='string'||!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(leader.id)||
+       !['A','B'].includes(leader.side)||
+       !Number.isSafeInteger(leader.col)||!Number.isSafeInteger(leader.row)||
+       leader.col<0||leader.col>12||leader.row<0||leader.row>8||
+       leaderIds.has(leader.id)||units.has(leader.id)||leaderCells.has(key(leader))||
+       (cellsById.has(key(leader))&&cellsById.get(key(leader)).side!==leader.side))
+      throw new TypeError('INVALID_MOVEMENT_LEADER_VIEW');
+    leaderIds.add(leader.id);leaderCells.set(key(leader),leader);
+  }
+  if(selectableLeaderIds.some(id=>!leaderIds.has(id))||
+     new Set(selectableLeaderIds).size!==selectableLeaderIds.length)
+    throw new TypeError('INVALID_MOVEMENT_LEADER_VIEW');
+  const leaderSelectable=new Set(selectableLeaderIds);
   // Presentational hints cannot grant permission; validate their bounded shape.
   if (!Array.isArray(nextCells) || nextCells.length>6 ||
       nextCells.some(cell => !cell || !Number.isSafeInteger(cell.col) ||
@@ -109,6 +129,8 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   const group = svgNode(doc,'g',{'aria-label':'Tablero hexagonal de laboratorio'});
   for (const cell of boardCells) {
     const unit = cellsById.get(key(cell));
+    const leader=leaderCells.get(key(cell));
+    const leaderOwn=leader?.side===viewer&&leaderSelectable.has(leader.id);
     const unitType=unit&&Object.hasOwn(TYPE_LABELS,unit.unitType)
       ? TYPE_LABELS[unit.unitType]:null;
     const terrainLabel=terrainByCell.get(key(cell));
@@ -121,13 +143,14 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}` : ', vacía'}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}` : ', vacía'}${leader ? `, líder ${leader.id} del bando ${leader.side}${unit ? ', unido a la unidad' : ', aislado'}` : ''}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
       'aria-pressed':String(Boolean(origin || step)),
       'data-col':cell.col,'data-row':cell.row
     });
     hex.classList.add('hex-target');
     if (terrainLabel)hex.classList.add(terrainLabel[2]);
     if (selectableOwn) hex.classList.add('hex-selectable');
+    if (leaderOwn) hex.classList.add('hex-leader-selectable');
     if (rivalTarget) hex.classList.add('hex-combat-selectable');
     if (chosenTarget) hex.classList.add('hex-combat-selected');
     if (next) hex.classList.add('hex-next');
@@ -153,6 +176,20 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       const text = svgNode(doc,'text',{x:position.x,y:position.y+4,'text-anchor':'middle',class:'unit-label','pointer-events':'none'});
       text.textContent=unitType?unitType[0]:unit.side;
       hex.append(badge,text);
+    }
+    if(leader){
+      const leaderPos={x:position.x+13,y:position.y-13};
+      hex.append(svgNode(doc,'circle',{
+        cx:leaderPos.x,cy:leaderPos.y,r:9,
+        class:leader.side==='A'?'leader-a':'leader-b',
+        'pointer-events':'none'
+      }));
+      const mark=svgNode(doc,'text',{
+        x:leaderPos.x,y:leaderPos.y+3,'text-anchor':'middle',
+        class:'leader-symbol','pointer-events':'none'
+      });
+      mark.textContent='L';
+      hex.append(mark);
     }
     if (step) {
       const indexLabel=svgNode(doc,'text',{x:position.x+14,y:position.y-11,class:'route-number','text-anchor':'middle','pointer-events':'none'});
