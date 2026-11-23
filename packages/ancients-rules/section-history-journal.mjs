@@ -23,6 +23,7 @@ const copy=structuredClone;
 const fail=code=>{throw new TypeError(code)};
 const reject=code=>Object.freeze({accepted:false,code});
 const loc=p=>p.col+','+p.row;
+const reversedSection=sector=>sector==='LEFT'?'RIGHT':sector==='RIGHT'?'LEFT':sector;
 const goodLoc=p=>Number.isSafeInteger(p.col)&&p.col>=0&&p.col<13&&Number.isSafeInteger(p.row)&&p.row>=0&&p.row<9;
 const isCards=a=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validId(c.instanceId)&&
   Object.hasOwn(BASE_SECTION_CARD_LIMITS,c.definitionId));
@@ -77,13 +78,14 @@ function validFootLabSetup(board,sectorCells,types,terrain=[]){
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[]}={}) {
+  movementTerrain=[],sectorPerspective='FIXED'}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
     !SIDES.includes(startingSide)||!isRecord(board)||!Array.isArray(board.units)||
     !Array.isArray(board.leaders)||board.units.length+board.leaders.length>117||
-    !isRecord(sectorCells)||typeof randomIndex!=='function')fail('INVALID_SECTION_HISTORY_SETUP');
+    !isRecord(sectorCells)||typeof randomIndex!=='function'||
+    !['FIXED','PLAYER_RELATIVE'].includes(sectorPerspective))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -103,7 +105,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     turn:startingSide,phase:'AWAIT_CARD',totalCards:cardInstances.length,
     drawPile,hands,discardPile:[],activeCard:null,
     handAtPlay:null,cardPlay:null,orderSnapshot:null,
-    board:copy(board),sectorCells:copy(sectorCells)};
+    board:copy(board),sectorCells:copy(sectorCells),
+    ...(sectorPerspective==='PLAYER_RELATIVE'?{sectorPerspective}: {})};
   if(movementUnitTypes!==undefined){
     if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain))
       fail('INVALID_FOOT_LAB_SETUP');
@@ -125,7 +128,9 @@ export function assertSectionHistoryLab(s){
      !isCards(s.drawPile)||!isCards(s.discardPile)||!isRecord(s.hands)||
      !SIDES.every(side=>isCards(s.hands[side]))||
      !(s.activeCard===null||isCards([s.activeCard]))||
-     !isRecord(s.board)||!isRecord(s.sectorCells))fail('INVALID_SECTION_HISTORY_STATE');
+     !isRecord(s.board)||!isRecord(s.sectorCells)||
+     (Object.hasOwn(s,'sectorPerspective')&&s.sectorPerspective!=='PLAYER_RELATIVE'))
+     fail('INVALID_SECTION_HISTORY_STATE');
   const all=[...s.drawPile,...s.discardPile,...s.hands.A,...s.hands.B,
     ...(s.activeCard?[s.activeCard]:[])];
   if(all.length!==s.totalCards||!same(all.map(c=>c.instanceId)))fail('SECTION_CARD_CONSERVATION_FAILED');
@@ -189,8 +194,15 @@ export function applySectionHistoryLabCommand(state,command={}){
         pieces.push({id,kind,side,col:piece.col,row:piece.row});
       }
     }
+    // Ordinary section cards refer to each commander's own left and right.
+    // The canonical board sectors are defined from side A's viewpoint.
+    // Legacy journals without sectorPerspective retain their original scope.
+    const perspective=state.sectorPerspective==='PLAYER_RELATIVE'&&side==='B'
+      ?Object.fromEntries(Object.entries(state.sectorCells)
+        .map(([hex,sectors])=>[hex,sectors.map(reversedSection)]))
+      :copy(state.sectorCells);
     const proof={side,revision:state.revision+1,pieces,
-      sectorCells:copy(state.sectorCells)};
+      sectorCells:perspective};
     const screened=screenBaseAncientsSectionCardOrders({
       turnState:{schemaVersion:1,ruleset:'ancients-base-3e-2009',status:'ACTIVE',
         phase:'COMBAT',turn:side,revision:state.revision+1,
