@@ -29,6 +29,26 @@ const privateScope = createPrivateViewScope();
 let movementBoard = null;
 let ancientsDraft = null;
 let ancientsDraftScope = null;
+let ancientsWatch = null, ancientsWatchMatchId = null, ancientsWatchBusy = false;
+function syncAncientsWatch(){
+  const id=cached?.status==='LAB_ONLY'&&signedInHandle
+    ? privateScope.capture().matchId:null;
+  if(!id||ancientsWatchMatchId!==id){
+    if(ancientsWatch!==null)clearInterval(ancientsWatch);
+    ancientsWatch=null;ancientsWatchMatchId=null;
+  }
+  if(!id||ancientsWatch!==null)return;
+  ancientsWatchMatchId=id;
+  ancientsWatch=setInterval(async()=>{
+    if(ancientsWatchBusy||document.hidden||cached?.status!=='LAB_ONLY'||
+       privateScope.capture().matchId!==id)return;
+    ancientsWatchBusy=true;
+    try{await inspect();}
+    catch{/* The next authenticated poll can retry; never reveal old state. */}
+    finally{ancientsWatchBusy=false;}
+  },2500);
+  ancientsWatch.unref?.();
+}
 let updates = null, updateMatchId = null, inspectionSequence = 0;
 let lobbyStatus = null, panelKey = null;
 let lobbyWatch = null, lobbyWatchMatchId = null, lobbyWatchBusy = false;
@@ -125,6 +145,7 @@ revisionRefresh.setPaused(document.hidden);
 function renderAncients() {
   const lab=cached?.status==='LAB_ONLY';
   const ready=lobbyStatus==='READY'&&Boolean(cached?.matchId);
+  syncAncientsWatch();
   el('ancients-details').hidden=!ready;
   el('ancients-start').disabled=!ready||lab||cached?.you!=='A'||
     cached?.revision!==0||Boolean(cached?.phase);
