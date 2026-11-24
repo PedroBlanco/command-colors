@@ -14,7 +14,7 @@ import {screenAncientsCombatTurn} from './combat-turn-guard.mjs';
 import {precheckAncientsRangedAttack} from './ranged-precheck.mjs';
 import {createRangedDicePlan} from './dice-plan.mjs';
 import {initializeSectionDiceLab,assertSectionDiceLab,SECTION_DICE_COMMANDS,
-  applySectionDiceCommand,projectSectionDiceLab,resetSectionDiceTurn
+  applySectionDiceCommand,projectSectionDiceLab,resetSectionDiceTurn,sectionVictory,settleSectionVictory
 } from './section-ranged-roll-lab.mjs';
 import {
   OPEN_FOOT_PATH_CORE_KIND, OPEN_FOOT_PATH_CORE_POLICY, reduceCoreOpenFootPath
@@ -40,10 +40,10 @@ const isCards=a=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validI
  * with three verified terrain types. No leaders, special cards, charge,
  * battles or scenario exceptions. Full sector lookup survives later turns.
  */
-function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false){
+function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false,allowEmpty=false){
   if(!isRecord(board)||Object.keys(board).length!==2||
      !Array.isArray(board.units)||!Array.isArray(board.leaders)||
-     board.units.length<1||board.units.length>117||
+     (!allowEmpty&&board.units.length<1)||board.units.length>117||
      board.units.length+board.leaders.length>117||
      (!allowLeaders&&board.leaders.length!==0)||
      !isRecord(types)||Object.keys(types).length!==board.units.length||
@@ -97,7 +97,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false}={}) {
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -114,7 +114,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       typeof enableLeaderEscapeLab!=='boolean'||(enableLeaderEscapeLab&&!enableRetreatLeaderLab)||
       typeof enableRampageLab!=='boolean'||(enableRampageLab&&!enableLeaderEscapeLab)||
       typeof enableRampageLeaderLab!=='boolean'||(enableRampageLeaderLab&&!enableRampageLab)||
-      typeof enableElephantRetreatLeaderLab!=='boolean'||(enableElephantRetreatLeaderLab&&!enableRampageLeaderLab)))fail('INVALID_SECTION_HISTORY_SETUP');
+      typeof enableElephantRetreatLeaderLab!=='boolean'||(enableElephantRetreatLeaderLab&&!enableRampageLeaderLab)||
+      (victoryTargets!==null&&(!enableElephantRetreatLeaderLab||!movementUnitTypes))))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -143,7 +144,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
     if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
-    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab});
+    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets});
   }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
@@ -210,7 +211,7 @@ export function assertSectionHistoryLab(s){
          (Object.keys(info).length===3&&Object.hasOwn(info,'terrain')))||
        !isRecord(info.unitTypes)||!Array.isArray(info.movedUnitIds)||
        !validFootLabSetup(s.board,s.sectorCells,info.unitTypes,
-         Object.hasOwn(info,'terrain')?info.terrain:[],Object.hasOwn(s,'leaderLab'))||
+         Object.hasOwn(info,'terrain')?info.terrain:[],Object.hasOwn(s,'leaderLab'),s.diceLab?.version>=10&&s.revision>0)||
        info.movedUnitIds.length>117||
        !info.movedUnitIds.every(validId)||!same(info.movedUnitIds)||
        (s.phase!=='LAB_RESOLUTION_PENDING'&&info.movedUnitIds.length>0)||
@@ -270,6 +271,7 @@ export function applySectionHistoryLabCommand(state,command={}){
      !Number.isSafeInteger(command.expectedRevision)||command.expectedRevision<0)
     return reject('INVALID_LAB_COMMAND');
   if(command.expectedRevision!==state.revision)return reject('STALE_REVISION');
+  if(sectionVictory(state)?.winner)return reject('MATCH_FINISHED');
   // Defensive review and mandatory leader evasion belong to the opponent.
   // All other commands require the acting side.
   if(command.actor!==state.turn&&!['REVIEW_SECTION_RANGED_PHYSICAL_LAB',
@@ -534,6 +536,7 @@ export function applySectionHistoryLabCommand(state,command={}){
       ?'LAB_TURN_ENDED_AFTER_RANGED_REVIEW':'LAB_TURN_ENDED_WITHOUT_COMBAT',side,drewCard:drew};
   }else return reject('UNSUPPORTED_LAB_COMMAND');
   next.revision=state.revision+1;
+  publicEvent=settleSectionVictory(next,publicEvent);
   assertSectionHistoryLab(next);
   return {accepted:true,nextState:next,
     publicEvent:Object.freeze({sequence:next.revision,...publicEvent}),
@@ -580,7 +583,7 @@ export function projectSectionHistoryLab(state,side){
       ...(state.combatLab?{
         combatLab:{movementClosed:state.combatLab.movementClosed,
           plan:copy(state.combatLab.plan),
-          candidates:state.turn===side&&state.combatLab.movementClosed&&!state.combatLab.plan
+          candidates:!sectionVictory(state)?.winner&&state.turn===side&&state.combatLab.movementClosed&&!state.combatLab.plan
             ?state.orderSnapshot.pieces.filter(p=>p.kind==='UNIT'&&p.side===side)
               .flatMap(p=>state.board.units.filter(u=>u.side!==side).flatMap(u=>{
                 const checked=screenRangedPlan(state,p.id,u.id);

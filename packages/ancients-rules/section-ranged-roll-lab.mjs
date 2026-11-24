@@ -36,9 +36,10 @@ export function sectionRollIndex(key,rollId){
   };
 }
 
-export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false}={}){
+export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null}={}){
   if((morale&&!casualties)||(retreat&&!morale)||(retreatLeaders&&!retreat)||(leaderEscape&&!retreatLeaders)||(rampage&&!leaderEscape)||(rampageLeaders&&!rampage)||(elephantRetreatLeaders&&!rampageLeaders))fail();
-  return {version:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
+  if(victoryTargets!==null&&(!elephantRetreatLeaders||!validVictoryTargets(victoryTargets)))fail();
+  return {version:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
     blocks:Object.fromEntries(Object.entries(unitTypes).map(([id,type])=>[
       id,BASE_UNIT_STARTING_BLOCKS[type]
     ])),
@@ -47,7 +48,8 @@ export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=fals
     ...(morale?{morale:null}:{}),
     ...(retreatLeaders?{retreatPending:null}:{}),
     ...(rampage?{rampage:[]}:{}),
-    ...(elephantRetreatLeaders?{elephantRetreatPending:null}:{})};
+    ...(elephantRetreatLeaders?{elephantRetreatPending:null}:{}),
+    ...(victoryTargets!==null?{victoryTargets:{...victoryTargets}}:{})};
 }
 
 function derivePending(state,{revision,mode,faces,review}){
@@ -238,11 +240,12 @@ function deriveRampageWithLeader(state,piece,revision){
   const dice=n=>Array.from({length:n},()=>ANCIENTS_BATTLE_DIE_FACES[draw(6)]);
   const results=dice(2),blocksLost=unit?Math.min(d.blocks[unit.id],results.filter(f=>f===BASE_UNIT_DIE_SYMBOLS[state.footLab.unitTypes[unit.id]]).length):0;
   const eliminated=!!unit&&blocksLost===d.blocks[unit.id];
-  const leaderFaces=leader?(unit?(blocksLost?dice(eliminated?1:2):[]):results):[];
+  const winsOnUnit=!!d.victoryTargets&&eliminated&&banners(d)[unit.side==='A'?'B':'A']+1>=d.victoryTargets[unit.side==='A'?'B':'A'];
+  const leaderFaces=leader&&!winsOnUnit?(unit?(blocksLost?dice(eliminated?1:2):[]):results):[];
   const leaderEliminated=leaderFaces.length>0&&(unit?leaderFaces.every(f=>f==='LEADER'):leaderFaces.includes('LEADER'));
   return {revision,rollId,unitId:piece.id,side:piece.side,results,blocksLost,
     leaderId:leader?.id??null,leaderFaces,leaderEliminated,
-    needsEvasion:!!leader&&!leaderEliminated&&(!unit||eliminated),evasion:null};
+    needsEvasion:!!leader&&!winsOnUnit&&!leaderEliminated&&(!unit||eliminated),evasion:null};
 }
 function applyRampageRecord(next,roll,revision){
   applyRampageUnitLoss(next,roll.unitId,roll.blocksLost,revision);
@@ -257,7 +260,7 @@ function applyRampageRecord(next,roll,revision){
 function rampageShadow(state,ctx){
   const shadow=structuredClone(state),seen=new Set();
   let revision=state.diceLab.leaderCheck?.revision??state.diceLab.pending.revision,pending=null;
-  if(state.diceLab.version>=9)applyDirectLoss(state,shadow,state.combatLab.plan,state.diceLab.pending);
+  if(state.diceLab.version>=9)applyDirectLoss(state,shadow,state.combatLab.plan,state.diceLab.pending,state.diceLab.version>=10?state.revision:state.revision+1);
   else if(state.diceLab.leaderCheck?.outcome.leaderWouldBeEliminated)
     shadow.board.leaders=shadow.board.leaders.filter(l=>l.id!==state.diceLab.leaderCheck.leaderId);
   for(const roll of state.diceLab.rampage){
@@ -347,13 +350,16 @@ function elephantLossBoard(state,choice,revision){
       reused:unit.id===target.id&&state.diceLab.leaderCheck?.leaderId===leader.id});
     applyRampageUnitLoss(shadow,unit.id,loss.blocksLost,revision);
   }
+  if(sectionVictory(shadow)?.winner)return {shadow,checks:[]};
   const rollId='section_blocker_'+revision,draw=sectionRollIndex(state.diceLab.key,rollId);
-  const checks=affected.map(a=>{
+  const checks=[];
+  for(const a of affected){
     const faces=a.reused?[]:Array.from({length:a.eliminated?1:2},()=>ANCIENTS_BATTLE_DIE_FACES[draw(6)]);
     const leaderEliminated=faces.length>0&&faces.every(f=>f==='LEADER');
     if(leaderEliminated)rampageLeaderLoss(shadow,shadow.board.leaders.find(l=>l.id===a.leaderId),revision);
-    return {...a,faces,leaderEliminated,needsEvasion:a.eliminated&&!leaderEliminated};
-  });
+    checks.push({...a,faces,leaderEliminated,needsEvasion:a.eliminated&&!leaderEliminated});
+    if(sectionVictory(shadow)?.winner)break;
+  }
   return {shadow,checks};
 }
 function elephantStageShadow(state){
@@ -466,19 +472,19 @@ function applyRampageUnitLoss(next,id,amount,revision){
   }
 }
 
-function applyDirectLoss(state,next,plan,p){
+function applyDirectLoss(state,next,plan,p,revision=state.revision+1){
   const target=state.board.units.find(u=>u.id===plan.targetId);
   const leaderCheck=state.diceLab.leaderCheck;
   if(p.loss.unitWouldBeEliminated){
     next.board.units=next.board.units.filter(u=>u.id!==target.id);
     delete next.footLab.unitTypes[target.id];
     delete next.diceLab.blocks[target.id];
-    awardCasualty(next,target,'UNIT',state.turn,state.revision+1);
+    awardCasualty(next,target,'UNIT',state.turn,revision);
   }else next.diceLab.blocks[target.id]=p.loss.remainingBlocks;
   if(leaderCheck?.outcome.leaderWouldBeEliminated){
     const leader=state.board.leaders.find(l=>l.id===leaderCheck.leaderId);
     next.board.leaders=next.board.leaders.filter(l=>l.id!==leader.id);
-    awardCasualty(next,leader,'LEADER',state.turn,state.revision+1);
+    awardCasualty(next,leader,'LEADER',state.turn,revision);
   }
 }
 function banners(d){
@@ -486,10 +492,74 @@ function banners(d){
     B:d.casualties.filter(c=>c.awardedTo==='B').length};
 }
 
+function validVictoryTargets(t){
+  return record(t)&&Object.keys(t).length===2&&['A','B'].every(s=>Number.isSafeInteger(t[s])&&t[s]>=1&&t[s]<=117);
+}
+export function sectionVictory(state){
+  const d=state.diceLab;
+  if(d?.version<10||!d?.victoryTargets)return null;
+  const score=banners(d),targets={...d.victoryTargets};
+  const a=score.A>=targets.A,b=score.B>=targets.B;
+  return {targets,banners:score,winner:a&&b?'DRAW':a?'A':b?'B':null};
+}
+
+// Called once by the authoritative journal after each accepted command.
+// A pending combat is still on its original board; commit only a winning
+// prefix, never resolve later dice or require another player to confirm it.
+export function settleSectionVictory(next,event){
+  const d=next.diceLab;
+  if(d?.version!==10)return event;
+  let result=sectionVictory(next),source=next;
+  const p=d.pending,plan=next.combatLab.plan;
+  if(!result.winner&&p&&plan&&['ACCEPTED','SERVER_GENERATED'].includes(p.review)){
+    let shadow=structuredClone(next);
+    applyDirectLoss(next,shadow,plan,p,next.revision);
+    if(!sectionVictory(shadow).winner){
+      if(d.elephantRetreatPending)shadow=elephantStageShadow(next).shadow;
+      else if(d.rampage.length)shadow=rampageShadow(next,elephantContext(next)).shadow;
+      else if(d.retreatPending){
+        const choice=d.retreatPending.choice,target=shadow.board.units.find(u=>u.id===plan.targetId);
+        const leader=shadow.board.leaders.find(l=>l.side===target.side&&hex(l)===hex(target));
+        const dest=choice.path.at(-1);
+        if(dest){Object.assign(target,dest);if(leader)Object.assign(leader,dest);}
+        applyRampageUnitLoss(shadow,target.id,choice.blocksLost,next.revision);
+        if(leader&&d.retreatPending.leaderCheck?.outcome.leaderWouldBeEliminated&&!sectionVictory(shadow).winner)
+          rampageLeaderLoss(shadow,leader,next.revision);
+      }
+    }
+    const staged=sectionVictory(shadow);
+    if(staged.winner){source=shadow;result=staged;}
+  }
+  if(result.winner){
+    if(source!==next){
+      next.board=source.board;next.footLab.unitTypes=source.footLab.unitTypes;
+      d.blocks=source.diceLab.blocks;d.casualties=source.diceLab.casualties;
+      d.resolvedUnitIds.push(plan.attackerId);
+      d.last={attackerId:plan.attackerId,targetId:plan.targetId,roll:p.roll,review:p.review,
+        interpretation:p.interpretation,loss:p.loss,outcome:'DIRECT_HITS_APPLIED',reason:null,
+        blocksApplied:p.loss.originalBlocks-(d.blocks[plan.targetId]??0),blocksRemaining:d.blocks[plan.targetId]??0,
+        unitEliminated:!Object.hasOwn(d.blocks,plan.targetId),banners:result.banners,
+        leaderCheck:structuredClone(effectiveLeaderCheck(d)),morale:structuredClone(d.morale),
+        ...(d.rampage.length?{rampage:structuredClone(d.rampage)}:{}),
+        ...(d.elephantRetreatPending?{retreat:d.elephantRetreatPending.choice,elephantChecks:d.elephantRetreatPending.checks,elephantEvasions:d.elephantRetreatPending.evasions}:
+          d.retreatPending?{retreat:d.retreatPending.choice}:{})};
+      d.pending=null;d.leaderCheck=null;d.morale=null;d.retreatPending=null;
+      d.rampage=[];d.elephantRetreatPending=null;next.combatLab.plan=null;
+    }
+    if(d.last)d.last.victory=result;
+  }
+  // Rampage may eliminate an ordered friendly unit or a moved leader.
+  if(next.leaderLab){
+    next.leaderLab.movedLeaderIds=next.leaderLab.movedLeaderIds.filter(id=>next.board.leaders.some(l=>l.id===id));
+    next.leaderLab.joinedUnitIds=next.leaderLab.joinedUnitIds.filter(id=>next.board.units.some(u=>u.id===id));
+  }
+  return result.winner?{...event,victory:result}:event;
+}
+
 export function assertSectionDiceLab(state){
   const d=state.diceLab;
-  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9].includes(d.version)||!keyOK(d.key)||
-     Object.keys(d).length!==(d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
+  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10].includes(d.version)||!keyOK(d.key)||
+     Object.keys(d).length!==(d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
      Object.keys(d.blocks).length!==state.board.units.length||
      state.board.units.some(u=>!Object.hasOwn(d.blocks,u.id)||
        !Number.isSafeInteger(d.blocks[u.id])||d.blocks[u.id]<1||
@@ -570,6 +640,8 @@ export function assertSectionDiceLab(state){
     }
   }
   if(d.version>=9&&d.elephantRetreatPending!==null)elephantStageShadow(state);
+  if(d.version>=10&&(!validVictoryTargets(d.victoryTargets)||sectionVictory(state).winner&&
+     (d.pending!==null||state.combatLab.plan!==null||!same(d.last?.victory,sectionVictory(state)))))fail();
   return true;
 }
 
@@ -582,6 +654,7 @@ export const SECTION_DICE_COMMANDS=Object.freeze([
 
 export function applySectionDiceCommand(state,next,command){
   const d=state.diceLab,plan=state.combatLab?.plan;
+  if(sectionVictory(state)?.winner)return deny('MATCH_FINISHED');
   if(!d||!plan)return deny('NO_COMBAT_PLAN_PENDING');
   const p=d.pending,side=command.actor;
   let event;
@@ -821,6 +894,7 @@ export function projectSectionDiceLab(state,side){
       remaining:remaining.map(u=>({unitId:u.id,side:u.side})),
       canRoll:side===state.turn&&remaining.length>0,...(d.version>=8?{evasion:rampageReplay?.pending?{leaderId:rampageReplay.pending.leaderId,side:rampageReplay.pending.side,options:side===rampageReplay.pending.side?rampageReplay.pending.options:[]}:null}:{})}:null}:{}),
     ...(d.version>=9?{elephantRetreatPending:structuredClone(d.elephantRetreatPending)}:{}),
+    ...(d.version>=10?{victory:sectionVictory(state)}:{}),
     blocker};
 }
 

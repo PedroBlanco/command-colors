@@ -529,6 +529,7 @@ test('ranged lab: movement record and forest cap limit dice; out of range and ad
 function diceReady(options={}){
  const setup=rangedLabSetup(options);
  setup.enableDiceLab=true;
+ if(options.victoryTargets)options={...options,elephantRetreatLeaders:true};
  if(options.elephantRetreatLeaders)options={...options,rampageLeaders:true};
  if(options.rampageLeaders)options={...options,rampage:true};
  if(options.rampage)options={...options,escape:true,lethal:true};
@@ -541,6 +542,7 @@ function diceReady(options={}){
  setup.enableRampageLab=options.rampage===true;
  setup.enableRampageLeaderLab=options.rampageLeaders===true;
  setup.enableElephantRetreatLeaderLab=options.elephantRetreatLeaders===true;
+ if(options.victoryTargets)setup.victoryTargets=options.victoryTargets;
  if(options.rampageLeaders){setup.enableLeaderLab=true;setup.board.leaders=[{id:'lone',side:'A',col:5,row:4}];}
  if(options.escape){
   setup.board.units.push({id:'escape_enemy',side:'A',col:4,row:3});
@@ -853,4 +855,18 @@ test('elephant retreat leader lab: attached leader can accompany elephant after 
  const elephant=done.board.units.find(u=>u.id==='b1'),leader=done.board.leaders.find(l=>l.id==='b_leader');
  assert.deepEqual([leader.col,leader.row],[elephant.col,elephant.row]);
  assert.deepEqual(replay(initial,[...commands,declare,review,roll,retreat]),done);
+});
+
+test('victory lab: accepted lethal roll wins immediately, freezes commands and replays',()=>{
+ const {initial,prepared,commands}=diceReady({victoryTargets:{A:1,B:2}});
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']});
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const declared=apply(prepared,declare).nextState;
+ assert.equal(project(declared,'A').diceLab.victory.winner,null);
+ const result=apply(declared,review),done=result.nextState;
+ assert.equal(result.publicEvent.victory.winner,'A');
+ assert.equal(done.combatLab.plan,null);
+ assert.equal(project(done,'B').diceLab.victory.winner,'A');
+ assert.equal(apply(done,cmd('END_EXPERIMENTAL_TURN',6)).code,'MATCH_FINISHED');
+ assert.deepEqual(replay(initial,[...commands,declare,review]),done);
 });

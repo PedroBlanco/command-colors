@@ -174,7 +174,8 @@ function renderAncients() {
       : 'No hay partida preparada.';
     return;
   }
-  const isTurn=cached.turn===cached.you;
+  const victory=cached.diceLab?.victory,finished=!!victory?.winner;
+  const isTurn=!finished&&cached.turn===cached.you;
   const combat=cached.combatLab;
   const movementClosed=combat?.movementClosed===true;
   const scope=[cached.matchId,cached.you,cached.revision,cached.phase].join(':');
@@ -184,6 +185,7 @@ function renderAncients() {
     el('ancients-physical-die-2').value='';
   }
   el('ancients-status').textContent=
+    finished?`Partida terminada · ${victory.winner==='DRAW'?'Empate':victory.winner===cached.you?'Victoria':'Derrota'} · revisión ${cached.revision}`:
     `Ancients experimental · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
   const terrainNames={FOREST:'bosque',HILL:'colina',
     BROKEN_GROUND:'terreno accidentado'};
@@ -281,7 +283,7 @@ function renderAncients() {
     ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}).`
     :!isTurn?'El adversario prepara su combate.':candidates.length
       ?`${candidates.length} ataques a distancia candidatos.`:'No hay ataques a distancia candidatos en esta posición.';
-  el('ancients-banners').textContent=dice?.banners?`Medallas: A ${dice.banners.A} · B ${dice.banners.B}`:'';
+  el('ancients-banners').textContent=dice?.banners?`Medallas: A ${dice.banners.A}${victory?'/'+victory.targets.A:''} · B ${dice.banners.B}${victory?'/'+victory.targets.B:''}`+(finished?` · ${victory.winner==='DRAW'?'Empate':'Vencedor: '+victory.winner}`:''):'';
   el('ancients-dice-controls').hidden=!dice||!movementClosed;
   const mayRoll=!!dice&&isTurn&&!!plan&&!pending;
   el('ancients-roll-digital').disabled=!mayRoll;
