@@ -7,7 +7,7 @@
 import {randomBytes,createHmac} from 'node:crypto';
 import {neighbors} from '../hex-grid/hex.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
-import {captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice} from './battle-dice.mjs';
+import {ANCIENTS_BATTLE_DIE_FACES,captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS,previewBaseAncientsRangedBlockLoss} from './block-loss-preview.mjs';
 import {planBaseAncientsRangedResolution,captureBaseAncientsLeaderCasualtyDice,
   previewBaseAncientsLeaderCasualtyCheck} from './ranged-resolution-sequence.mjs';
@@ -23,7 +23,7 @@ const hex=p=>p.col+','+p.row;
 // is generated once by Node crypto at server setup and never projected.
 // Independent domain from the shuffled deck; stable version for old replay.
 export function sectionRollIndex(key,rollId){
-  if(!keyOK(key)||!/^section_(?:ranged|leader)_[1-9][0-9]*$/.test(rollId))fail();
+  if(!keyOK(key)||!/^section_(?:ranged|leader|escape)_[1-9][0-9]*$/.test(rollId))fail();
   let counter=0;
   return n=>{
     if(!Number.isSafeInteger(n)||n<2||n>256)fail();
@@ -36,9 +36,9 @@ export function sectionRollIndex(key,rollId){
   };
 }
 
-export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false}={}){
-  if((morale&&!casualties)||(retreat&&!morale)||(retreatLeaders&&!retreat))fail();
-  return {version:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
+export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false}={}){
+  if((morale&&!casualties)||(retreat&&!morale)||(retreatLeaders&&!retreat)||(leaderEscape&&!retreatLeaders))fail();
+  return {version:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
     blocks:Object.fromEntries(Object.entries(unitTypes).map(([id,type])=>[
       id,BASE_UNIT_STARTING_BLOCKS[type]
     ])),
@@ -120,8 +120,21 @@ function resolutionBlocker(state,p){
     ?'LEADER_EVASION_PENDING':null;
 }
 
+// Base attack dice (unmodified). Keep this separate from terrain, cards,
+// and battle-back modifiers so close combat can reuse it.
+export function baseCloseAttackDice(unitType,blocks){
+  const counts={LIGHT_INFANTRY:2,LIGHT_SLING_INFANTRY:2,LIGHT_BOW_INFANTRY:2,
+    AUXILIA_INFANTRY:3,WARRIOR_INFANTRY:blocks===BASE_UNIT_STARTING_BLOCKS.WARRIOR_INFANTRY?4:3,
+    MEDIUM_INFANTRY:4,HEAVY_INFANTRY:5,HEAVY_WAR_MACHINE:2,
+    LIGHT_CAVALRY:2,MEDIUM_CAVALRY:3,HEAVY_CAVALRY:4,HEAVY_CHARIOT:4};
+  // Elephants depend on the target; the only supported target here is a leader.
+  if(unitType==='ELEPHANT')return 1;
+  if(!Object.hasOwn(counts,unitType))fail();
+  return counts[unitType];
+}
+
 // LAB odd-q board: A's rear edge is row 8, B's is row 0.
-// Enemy-occupied cells require a separate Leader Escape procedure.
+// V6 adds risky routes through enemy hexes to the historical safe options.
 function leaderEvasionOptions(state){
   const d=state.diceLab,p=d.pending;
   if(d.version<2||!p||!['SERVER_GENERATED','ACCEPTED'].includes(p.review)||
@@ -132,20 +145,42 @@ function leaderEvasionOptions(state){
   const options=[],rear=leader.side==='A'?8:0,sign=leader.side==='A'?1:-1;
   // Physical vertical coordinate of the existing flat-top board.
   const depth=c=>2*c.row+(c.col&1);
-  function visit(cell,path){
+  function visit(cell,path,risks=[]){
     const occupiedLeader=state.board.leaders.some(l=>l.id!==leader.id&&hex(l)===hex(cell));
-    if(path.length&&!occupiedLeader)options.push({path,exit:false});
-    if(path.length<3&&cell.row===rear)options.push({path,exit:true});
-    if(path.length===3)return;
+    const enemyUnit=state.board.units.some(u=>u.side!==leader.side&&hex(u)===hex(cell));
+    const extra=d.version>=6?{risks}:{};
+    if(path.length&&!occupiedLeader&&!enemyUnit)options.push({path,exit:false,...extra});
+    if(path.length<3&&cell.row===rear)options.push({path,exit:true,...extra});
+    if(path.length===3||(d.version>=6&&cell.row===rear))return;
     for(const dest of neighbors(cell)){
       if(sign*(depth(dest)-depth(cell))<=0)continue;
-      if([...state.board.units,...state.board.leaders].some(x=>x.side!==leader.side&&hex(x)===hex(dest)))continue;
-      // Current terrain scope contains only three passable types.
-      visit(dest,[...path,{col:dest.col,row:dest.row}]);
+      const enemy=state.board.units.find(u=>u.side!==leader.side&&hex(u)===hex(dest));
+      const enemyLeader=state.board.leaders.find(l=>l.side!==leader.side&&hex(l)===hex(dest));
+      if(d.version<6&&(enemy||enemyLeader))continue;
+      // Enemy leaders alone can be crossed without rolling; no hostile endpoint.
+      const risk=enemy?{step:path.length+1,unitId:enemy.id,
+        diceCount:baseCloseAttackDice(state.footLab.unitTypes[enemy.id],d.blocks[enemy.id])}:null;
+      visit(dest,[...path,{col:dest.col,row:dest.row}],risk?[...risks,risk]:risks);
     }
   }
   visit(origin,[]);
+  // When no survival endpoint exists, the defender confirms unavoidable loss.
+  // Do not roll dice for an escape whose outcome is already certain.
+  if(d.version>=6&&!options.length)options.push({path:[],exit:false,risks:[],trapped:true});
   return options;
+}
+
+function resolveLeaderEscape(state,option){
+  const rollId='section_escape_'+(state.revision+1),draw=sectionRollIndex(state.diceLab.key,rollId);
+  const rolls=[];
+  let eliminated=!!option.trapped;
+  for(const risk of option.risks){
+    const results=Array.from({length:risk.diceCount},()=>ANCIENTS_BATTLE_DIE_FACES[draw(6)]);
+    eliminated=results.includes('LEADER');
+    rolls.push({...risk,results,eliminated});
+    if(eliminated)break;
+  }
+  return {rollId,rolls,eliminated};
 }
 
 // Ordinary retreats: no elephant rampage, no impassable terrain in this
@@ -242,8 +277,8 @@ function banners(d){
 
 export function assertSectionDiceLab(state){
   const d=state.diceLab;
-  if(!state.combatLab||!record(d)||![1,2,3,4,5].includes(d.version)||!keyOK(d.key)||
-     Object.keys(d).length!==(d.version===5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
+  if(!state.combatLab||!record(d)||![1,2,3,4,5,6].includes(d.version)||!keyOK(d.key)||
+     Object.keys(d).length!==(d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
      Object.keys(d.blocks).length!==state.board.units.length||
      state.board.units.some(u=>!Object.hasOwn(d.blocks,u.id)||
        !Number.isSafeInteger(d.blocks[u.id])||d.blocks[u.id]<1||
@@ -294,7 +329,7 @@ export function assertSectionDiceLab(state){
        choice.ignored<0||choice.ignored>m.maxIgnored||m.maxIgnored===0||
        choice.remaining!==m.flags-choice.ignored)fail();
   }
-  if(d.version===5&&d.retreatPending!==null){
+  if(d.version>=5&&d.retreatPending!==null){
     const s=d.retreatPending,preview=retreatPreview(state);
     if(!record(s)||Object.keys(s).length!==4||!preview||
        !Number.isSafeInteger(s.revision)||s.revision<=(d.morale?.revision??d.leaderCheck?.revision??d.pending.revision)||
@@ -367,7 +402,7 @@ export function applySectionDiceCommand(state,next,command){
     if(p.review==='AWAITING_OPPONENT')return deny('PHYSICAL_REVIEW_REQUIRED');
     const blocker=p.review==='DISPUTED'?'PHYSICAL_ROLL_DISPUTED':resolutionBlocker(state,p);
     const evade=command.type==='EVADE_SECTION_LEADER_LAB';
-    let evasion;
+    let evasion,escape;
     if(evade){
       if(side===state.turn||blocker!=='LEADER_EVASION_PENDING')
         return deny('LEADER_EVASION_NOT_AVAILABLE');
@@ -378,6 +413,7 @@ export function applySectionDiceCommand(state,next,command){
       const path=command.path.map(c=>({col:c.col,row:c.row}));
       evasion=leaderEvasionOptions(state).find(o=>o.exit===command.exit&&same(o.path,path));
       if(!evasion)return deny('INVALID_LEADER_EVASION_PATH');
+      if(d.version>=6)escape=resolveLeaderEscape(state,evasion);
     }
     const retreat=command.type==='RETREAT_SECTION_UNIT_LAB';
     let retreatChoice=d.retreatPending?.choice,retreatRequired=d.retreatPending?.required;
@@ -434,7 +470,10 @@ export function applySectionDiceCommand(state,next,command){
       }
       if(evasion){
         const leader=next.board.leaders.find(l=>l.id===effectiveLeaderCheck(d).leaderId);
-        if(evasion.exit)next.board.leaders=next.board.leaders.filter(l=>l.id!==leader.id);
+        if(escape?.eliminated){
+          next.board.leaders=next.board.leaders.filter(l=>l.id!==leader.id);
+          awardCasualty(next,leader,'LEADER',state.turn,state.revision+1);
+        }else if(evasion.exit)next.board.leaders=next.board.leaders.filter(l=>l.id!==leader.id);
         else Object.assign(leader,evasion.path.at(-1));
       }
     }
@@ -446,9 +485,9 @@ export function applySectionDiceCommand(state,next,command){
       blocksRemaining:next.diceLab.blocks[plan.targetId]??0,
       ...(d.version>=2?{leaderCheck:structuredClone(effectiveLeaderCheck(d)),
         unitEliminated:finalize&&(p.loss.unitWouldBeEliminated||!!retreatChoice&&retreatChoice.blocksLost===p.loss.remainingBlocks),
-        leaderEliminated:finalize&&!!effectiveLeaderCheck(d)?.outcome.leaderWouldBeEliminated,
+        leaderEliminated:finalize&&(!!effectiveLeaderCheck(d)?.outcome.leaderWouldBeEliminated||!!escape?.eliminated),
         banners:banners(next.diceLab)}:{}),
-      ...(evasion?{leaderEvasion:{leaderId:effectiveLeaderCheck(d).leaderId,...evasion}}:{}),
+      ...(evasion?{leaderEvasion:{leaderId:effectiveLeaderCheck(d).leaderId,...evasion,...(escape?{escape}:{})}}:{}),
       ...(d.version>=3?{morale:structuredClone(d.morale)}:{}),
       ...(retreatChoice?{retreat:{...retreatChoice,required:retreatRequired}}:{})};
     next.diceLab.last=structuredClone(result);

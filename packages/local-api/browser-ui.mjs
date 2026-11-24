@@ -300,7 +300,8 @@ function renderAncients() {
     const option=document.createElement('option');
     option.value=JSON.stringify(candidate);
     const route=candidate.path.map(p=>`(${p.col+1},${p.row+1})`).join(' → ');
-    option.textContent=candidate.exit?(route?route+' → fuera del tablero':'Salir del tablero'):route;
+    option.textContent=candidate.trapped?'Sin salida: confirmar baja del líder':(candidate.exit?(route?route+' → fuera del tablero':'Salir del tablero'):route)+
+      (candidate.risks?.length?' · riesgo: '+candidate.risks.map(r=>r.unitId+' ('+r.diceCount+' dados)').join(', '):'');
     evadeChoice.appendChild(option);
   }
   if(evasionOptions.some(o=>JSON.stringify(o)===oldEvasion))evadeChoice.value=oldEvasion;
@@ -364,9 +365,12 @@ function renderAncients() {
   el('ancients-casualty-status').textContent=last?.unitEliminated||last?.leaderEliminated
     ?`Bajas aplicadas: ${last.unitEliminated?'unidad '+last.targetId:''}${last.unitEliminated&&last.leaderEliminated?' y ':''}${last.leaderEliminated?'líder '+last.leaderCheck.leaderId:''}.`
     :'';
-  if(last?.leaderEvasion)el('ancients-casualty-status').textContent+=last.leaderEvasion.exit
+  if(last?.leaderEvasion?.escape?.eliminated)el('ancients-casualty-status').textContent+=last.leaderEvasion.trapped
+    ?' Líder eliminado por imposibilidad de escapar.':' Líder eliminado durante el escape.';
+  else if(last?.leaderEvasion)el('ancients-casualty-status').textContent+=last.leaderEvasion.exit
     ?' El líder salió del tablero sin conceder medalla.'
     :' El líder se desplazó a ('+(last.leaderEvasion.path.at(-1).col+1)+','+(last.leaderEvasion.path.at(-1).row+1)+').';
+  if(last?.leaderEvasion?.escape?.rolls.length)el('ancients-casualty-status').textContent+=' Tiradas de escape: '+last.leaderEvasion.escape.rolls.map(r=>r.unitId+': '+r.results.map(x=>faceNames[x]??x).join(', ')).join('; ')+'.';
   const svg=el('ancients-board');
   if(svg?.ownerDocument?.createElementNS){
     renderMovementBoard(svg,cached.board??[],ancientsDraft,selectAncientsHex,cached.you,{

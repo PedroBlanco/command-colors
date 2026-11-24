@@ -529,10 +529,16 @@ test('ranged lab: movement record and forest cap limit dice; out of range and ad
 function diceReady(options={}){
  const setup=rangedLabSetup(options);
  setup.enableDiceLab=true;
+ if(options.escape)options={...options,retreatLeaders:true};
  setup.enableCasualtyLab=options.casualty===true||options.morale===true||options.retreat===true||options.retreatLeaders===true;
  setup.enableMoraleLab=options.morale===true||options.retreat===true||options.retreatLeaders===true;
  setup.enableRetreatLab=options.retreat===true||options.retreatLeaders===true;
  setup.enableRetreatLeaderLab=options.retreatLeaders===true;
+ setup.enableLeaderEscapeLab=options.escape===true;
+ if(options.escape){
+  setup.board.units.push({id:'escape_enemy',side:'A',col:4,row:3});
+  setup.movementUnitTypes.escape_enemy='LIGHT_INFANTRY';
+ }
  if(options.lethal)setup.movementUnitTypes.b1='ELEPHANT';
  if(options.blockRetreat){
   for(const [i,c] of [{col:4,row:3},{col:3,row:3},{col:5,row:3}].entries()){
@@ -761,4 +767,23 @@ test('retreat leader lab: flags alone cause a separate two-dice check only after
  assert.equal(done.diceLab.blocks.b1,2);
  assert.equal(done.diceLab.retreatPending,null);
  assert.deepEqual(replay(initial,[...commands,declare,review,choose,retreat,roll,final]),done);
+});
+
+test('leader escape lab: selected risky route uses server dice, resolves once and replays',()=>{
+ const {initial,prepared,commands}=diceReady({escape:true,lethal:true,leader:true});
+ initial.diceLab.key='00'.repeat(32);prepared.diceLab.key=initial.diceLab.key;
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']});
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const roll=cmd('ROLL_SECTION_LEADER_CASUALTY_LAB',6);
+ const checked=apply(apply(apply(prepared,declare).nextState,review).nextState,roll).nextState;
+ const option=project(checked,'B').diceLab.leaderEvasionOptions.find(o=>o.risks.length);
+ assert.ok(option);
+ assert.equal(option.risks[0].diceCount,2);
+ const evade=cmd('EVADE_SECTION_LEADER_LAB',7,{actor:'B',path:option.path,exit:option.exit});
+ const result=apply(checked,evade);
+ assert.equal(result.accepted,true);
+ const escaped=result.nextState.diceLab.last.leaderEvasion.escape;
+ assert.equal(escaped.rolls[0].results.length,2);
+ assert.equal(result.nextState.diceLab.casualties.length,escaped.eliminated?2:1);
+ assert.deepEqual(replay(initial,[...commands,declare,review,roll,evade]),result.nextState);
 });
