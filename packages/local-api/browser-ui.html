@@ -119,6 +119,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button id="ancients-refresh" type="button" disabled>Actualizar demo</button>
 <p id="ancients-status" role="status" aria-live="polite">No se ha iniciado el laboratorio.</p>
 <div id="ancients-controls" hidden>
+<p id="ancients-banners" role="status" aria-live="polite"></p>
 <label>Carta propia de sección<select id="ancients-card"></select></label>
 <button id="ancients-play" disabled>Jugar carta de sección</button>
 <label>Unidades propias a ordenar (selección múltiple)
@@ -140,7 +141,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button id="ancients-finish-movement" disabled>Cerrar movimiento y preparar combate</button>
 <section id="ancients-combat" hidden>
 <h3>Combate a distancia experimental</h3>
-<p>El servidor calcula los dados y permite tiradas digitales o físicas. Las físicas requieren revisión del adversario. Solo se aplican bajas directas no letales que no requieran retirada ni comprobación de líder.</p>
+<p>El servidor calcula los dados y permite tiradas digitales o físicas. Las físicas requieren revisión del adversario. Se aplican bajas directas y eliminaciones; las comprobaciones de líderes son digitales. La retirada y la evasión de un líder superviviente siguen pendientes.</p>
 <label>Ataque disponible<select id="ancients-ranged-choice"></select></label>
 <button id="ancients-prepare-ranged" disabled>Preparar ataque</button>
 <p id="ancients-combat-status" role="status" aria-live="polite"></p>
@@ -156,7 +157,10 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <p id="ancients-dice-status" role="status" aria-live="polite"></p>
 <button id="ancients-accept-physical" disabled>Confirmar resultados físicos</button>
 <button id="ancients-dispute-physical" disabled>Discrepar de los resultados físicos</button>
-<button id="ancients-finalize-ranged" disabled>Aplicar bajas directas</button>
+<button id="ancients-roll-leader" disabled>Comprobar baja del líder (dados digitales)</button>
+<p id="ancients-leader-check-status" role="status" aria-live="polite"></p>
+<button id="ancients-finalize-ranged" disabled>Aplicar bajas y medallas</button>
+<p id="ancients-casualty-status" role="status" aria-live="polite"></p>
 <button id="ancients-archive-ranged" disabled>Archivar sin aplicar efectos (solo laboratorio)</button>
 </div>
 </section>
