@@ -529,10 +529,16 @@ test('ranged lab: movement record and forest cap limit dice; out of range and ad
 function diceReady(options={}){
  const setup=rangedLabSetup(options);
  setup.enableDiceLab=true;
- setup.enableCasualtyLab=options.casualty===true||options.morale===true||options.retreat===true;
- setup.enableMoraleLab=options.morale===true||options.retreat===true;
- setup.enableRetreatLab=options.retreat===true;
+ setup.enableCasualtyLab=options.casualty===true||options.morale===true||options.retreat===true||options.retreatLeaders===true;
+ setup.enableMoraleLab=options.morale===true||options.retreat===true||options.retreatLeaders===true;
+ setup.enableRetreatLab=options.retreat===true||options.retreatLeaders===true;
+ setup.enableRetreatLeaderLab=options.retreatLeaders===true;
  if(options.lethal)setup.movementUnitTypes.b1='ELEPHANT';
+ if(options.blockRetreat){
+  for(const [i,c] of [{col:4,row:3},{col:3,row:3},{col:5,row:3}].entries()){
+   const id='blocker'+i;setup.board.units.push({id,side:'B',...c});setup.movementUnitTypes[id]='HEAVY_INFANTRY';
+  }
+ }
  if(options.leader){
   setup.enableLeaderLab=true;
   setup.board.leaders=[{id:'b_leader',side:'B',col:4,row:4}];
@@ -731,4 +737,28 @@ test('retreat lab: defender chooses a loss-free path, applies hits and movement 
  assert.equal(result.nextState.diceLab.blocks.b1,3);
  assert.equal(result.nextState.combatLab.plan,null);
  assert.deepEqual(replay(initial,[...commands,declare,review,retreat]),result.nextState);
+});
+
+test('retreat leader lab: flags alone cause a separate two-dice check only after route confirmation',()=>{
+ const {initial,prepared,commands}=diceReady({retreatLeaders:true,leader:true,blockRetreat:true});
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['FLAG','FLAG']});
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const choose=cmd('CHOOSE_SECTION_MORALE_LAB',6,{actor:'B',ignored:0});
+ const decided=apply(apply(apply(prepared,declare).nextState,review).nextState,choose).nextState;
+ const route=project(decided,'B').diceLab.retreat.options[0];
+ assert.equal(route.blocksLost,2);
+ const retreat=cmd('RETREAT_SECTION_UNIT_LAB',7,{actor:'B',path:route.path});
+ const staged=apply(decided,retreat).nextState;
+ assert.equal(staged.diceLab.blocks.b1,4);
+ assert.equal(project(staged,'A').diceLab.canRollLeader,true);
+ assert.equal(apply(staged,cmd('FINALIZE_SECTION_RANGED_LAB',8)).code,'LEADER_CHECK_PENDING');
+ const roll=cmd('ROLL_SECTION_LEADER_CASUALTY_LAB',8);
+ const checked=apply(staged,roll).nextState;
+ assert.equal(checked.diceLab.retreatPending.leaderCheck.roll.diceCount,2);
+ assert.equal(apply(checked,cmd('ROLL_SECTION_LEADER_CASUALTY_LAB',9)).code,'LEADER_CHECK_ALREADY_CAPTURED');
+ const final=cmd('FINALIZE_SECTION_RANGED_LAB',9);
+ const done=apply(checked,final).nextState;
+ assert.equal(done.diceLab.blocks.b1,2);
+ assert.equal(done.diceLab.retreatPending,null);
+ assert.deepEqual(replay(initial,[...commands,declare,review,choose,retreat,roll,final]),done);
 });

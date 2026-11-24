@@ -329,17 +329,18 @@ function renderAncients() {
   for(const candidate of retreat?.options??[]){
     const option=document.createElement('option');option.value=JSON.stringify(candidate.path);
     const route=candidate.path.map(p=>`(${p.col+1},${p.row+1})`).join(' → ')||'Sin desplazamiento';
-    option.textContent=route+` · bajas: ${candidate.blocksLost}`+(candidate.joinedLeaderId?' · unión a '+candidate.joinedLeaderId:'');
+    option.textContent=route+` · bajas: ${candidate.blocksLost}`+(candidate.joinedLeaderId?' · unión a '+candidate.joinedLeaderId:'')+(candidate.needsLeaderResolution?' · comprobar consecuencias del líder':'');
     retreatChoice.appendChild(option);
   }
   if(retreat?.options.some(o=>JSON.stringify(o.path)===oldRetreat))retreatChoice.value=oldRetreat;
-  el('ancients-retreat-controls').hidden=!retreat&&!last?.retreat;
+  el('ancients-retreat-controls').hidden=!retreat&&!last?.retreat&&!dice?.retreatPending;
   el('ancients-confirm-retreat').disabled=!dice?.canRetreat;
   el('ancients-retreat-status').textContent=retreat
     ?`Retirada de ${retreat.required} hexágonos por ${retreat.flags} bandera(s). `+
        (retreat.reason==='ELEPHANT_RAMPAGE_PENDING'?'Estampida pendiente.':
         retreat.reason?'Consecuencias para el líder aún no implementadas.':
         dice.canRetreat?'Elige una ruta validada.':'El defensor debe elegir la ruta.')
+    :dice?.retreatPending?`Ruta confirmada: ${dice.retreatPending.choice.path.length} pasos; ${dice.retreatPending.choice.blocksLost} bajas previstas. Pendiente de resolver el líder.`
     :last?.retreat?`Retirada aplicada: ${last.retreat.path.length} pasos, ${last.retreat.blocksLost} bloques perdidos.`:'';
   const faceNames={LIGHT:'Ligera',MEDIUM:'Media',HEAVY:'Pesada',
     LEADER:'Líder',FLAG:'Bandera',SWORDS:'Espadas'};
