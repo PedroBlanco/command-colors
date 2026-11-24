@@ -513,3 +513,30 @@ test('CCWB: ranged preparation is replayable, server-derived and idempotent',()=
  assert.equal(JSON.parse(event.payload).kind,'SECTION_RANGED_PREPARED_LAB');
  assert.equal(root.getRow(MATCH).game_revision,4);
 }));
+
+test('CCWB dice: physical declaration, opponent review and nonlethal hits survive reopen and idempotent retry',()=>fixture(({root,connect})=>{
+ const c=footSetup();c.enableCombatLab=true;c.enableDiceLab=true;c.board.units[1].col=4;
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const dispatch=(type,revision,fields={},key='dice_'+type+'_'+revision)=>
+   root.bridge.dispatch(req(type,revision,fields,key));
+ assert.equal(dispatch('FINISH_SECTION_MOVEMENT_LAB',2).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('PREPARE_SECTION_RANGED_LAB',3,{attackerId:'unitA',targetId:'unitB'}).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('ROLL_SECTION_RANGED_DIGITAL_LAB',4,{faces:['HEAVY','HEAVY']}).status,400);
+ const declare=req('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']},'dice_physical_001');
+ assert.equal(root.bridge.dispatch(declare).code,'SECTION_LAB_APPLIED');
+ const next=connect();
+ assert.equal(next.bridge.view('B').diceLab.canReview,true);
+ assert.equal(next.bridge.dispatch(declare).code,'ALREADY_APPLIED');
+ assert.equal(next.bridge.dispatch(req('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true},'dice_review_001')).code,'SECTION_LAB_APPLIED');
+ const finish=req('FINALIZE_SECTION_RANGED_LAB',6,{},'dice_finish_001');
+ const applied=next.bridge.dispatch(finish);
+ assert.equal(applied.code,'SECTION_LAB_APPLIED');
+ assert.equal(applied.view.board.find(u=>u.id==='unitB').blocksRemaining,2);
+ assert.equal(root.bridge.dispatch(finish).code,'ALREADY_APPLIED');
+ assert.equal(root.bridge.view('B').diceLab.blocks.unitB,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,7);
+ const stored=JSON.parse(root.getRow(MATCH).private_state).ancientsSectionHistoryLab.initial.diceLab.key;
+ for(const side of ['A','B'])assert.equal(JSON.stringify(root.bridge.view(side)).includes(stored),false);
+ assert.equal(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=7').get(MATCH).payload.includes(stored),false);
+}));
