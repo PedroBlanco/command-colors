@@ -160,6 +160,8 @@ function renderAncients() {
     return;
   }
   const isTurn=cached.turn===cached.you;
+  const combat=cached.combatLab;
+  const movementClosed=combat?.movementClosed===true;
   const scope=[cached.matchId,cached.you,cached.revision,cached.phase].join(':');
   if(ancientsDraftScope!==scope){ancientsDraft=null;ancientsRetry=null;ancientsDraftScope=scope;}
   el('ancients-status').textContent=
@@ -223,22 +225,42 @@ function renderAncients() {
   leaderChoice.value=availableLeaders.some(l=>l.id===previousLeader)
     ?previousLeader:(availableLeaders[0]?.id??'');
   el('ancients-select-leader').disabled=!isTurn||
-    cached.phase!=='LAB_RESOLUTION_PENDING'||availableLeaders.length===0;
+    cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed||availableLeaders.length===0;
   const ordered=new Set(Array.isArray(cached.orderedUnitIds)?cached.orderedUnitIds:[]);
   const moved=new Set(Array.isArray(cached.movedUnitIds)?cached.movedUnitIds:[]);
   const locked=new Set(Array.isArray(cached.unitsLockedByLeader)?cached.unitsLockedByLeader:[]);
-  const selectable=(cached.board??[]).filter(u=>u.side===cached.you&&
+  const selectable=movementClosed||!isTurn?[]:(cached.board??[]).filter(u=>u.side===cached.you&&
     ordered.has(u.id)&&!moved.has(u.id)&&!locked.has(u.id)).map(u=>u.id);
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
-  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING';
+  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan);
+  el('ancients-finish-movement').hidden=!combat;
+  el('ancients-finish-movement').disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed;
   el('ancients-clear-path').disabled=!ancientsDraft;
-  el('ancients-move').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||
+  el('ancients-move').disabled=!isTurn||movementClosed||cached.phase!=='LAB_RESOLUTION_PENDING'||
     !ancientsDraft?.path.length;
   el('ancients-route-status').textContent=ancientsDraft
     ? `${ancientsDraft.kind==='LEADER'?'Líder':'Unidad'} ${ancientsDraft.unitId}: ${ancientsDraft.path.length} hexágonos. Confirma para validar en el servidor.`
-    : `${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
+    : movementClosed?'Movimiento cerrado. Prepara un ataque a distancia si está disponible.':`${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
+  el('ancients-combat').hidden=!combat||!movementClosed;
+  const choice=el('ancients-ranged-choice'),oldChoice=choice.value;
+  choice.replaceChildren();
+  const candidates=isTurn&&movementClosed&&!combat?.plan?(combat.candidates??[]):[];
+  for(const [index,candidate] of candidates.entries()){
+    const option=document.createElement('option');
+    option.value=String(index);
+    option.textContent=`${candidate.attackerId} → ${candidate.targetId} (${candidate.diceCount} dados)`;
+    choice.appendChild(option);
+  }
+  if(candidates.length)choice.value=candidates[Number(oldChoice)]?oldChoice||'0':'0';
+  el('ancients-prepare-ranged').disabled=!isTurn||!candidates.length||Boolean(combat?.plan);
+  el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan;
+  const plan=combat?.plan;
+  el('ancients-combat-status').textContent=plan
+    ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}). Sin tirada ni impactos.`
+    :!isTurn?'El adversario prepara su combate.':candidates.length
+      ?`${candidates.length} ataques a distancia candidatos.`:'No hay ataques a distancia candidatos en esta posición.';
   const svg=el('ancients-board');
   if(svg?.ownerDocument?.createElementNS){
     renderMovementBoard(svg,cached.board??[],ancientsDraft,selectAncientsHex,cached.you,{
@@ -250,7 +272,7 @@ function renderAncients() {
 }
 function selectAncientsHex(cell){
   if(cached?.status!=='LAB_ONLY'||cached.turn!==cached.you||
-     cached.phase!=='LAB_RESOLUTION_PENDING')return;
+     cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed)return;
   const units=cached.board??[];
   const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
   const ordered=new Set(cached.orderedUnitIds??[]);
@@ -712,7 +734,7 @@ action('ancients-order',()=>sendAncients('ASSIGN_SECTION_ORDERS',{
 }));
 action('ancients-select-leader',async()=>{
   if(cached?.status!=='LAB_ONLY'||cached.turn!==cached.you||
-     cached.phase!=='LAB_RESOLUTION_PENDING')throw Error('ACCION_NO_DISPONIBLE');
+     cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed)throw Error('ACCION_NO_DISPONIBLE');
   const leader=(cached.leaders??[]).find(l=>l.id===
     el('ancients-leader-choice').value&&l.side===cached.you);
   if(!leader||!(cached.orderedLeaderIds??[]).includes(leader.id)||
@@ -741,6 +763,15 @@ action('ancients-move',()=>{
     ?'MOVE_SECTION_MOUNTED_PATH_V1':'MOVE_SECTION_FOOT_PATH_V2';
   return sendAncients(type,{unitId:ancientsDraft.unitId,path});
 });
+action('ancients-finish-movement',()=>sendAncients('FINISH_SECTION_MOVEMENT_LAB'));
+action('ancients-prepare-ranged',()=>{
+  const candidate=cached?.combatLab?.candidates?.[Number(el('ancients-ranged-choice').value)];
+  if(!candidate)throw Error('ACCION_NO_DISPONIBLE');
+  return sendAncients('PREPARE_SECTION_RANGED_LAB',{
+    attackerId:candidate.attackerId,targetId:candidate.targetId
+  });
+});
+action('ancients-cancel-ranged',()=>sendAncients('CANCEL_SECTION_RANGED_LAB'));
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));
 action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));
 el('deck-units').addEventListener('change',()=>{
