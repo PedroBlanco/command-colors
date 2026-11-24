@@ -21,7 +21,13 @@ const deckFeedbackSlots=Object.freeze({
   'deck-draw':'deck-combat-feedback',
   'ancients-finish-movement':'ancients-combat-feedback',
   'ancients-prepare-ranged':'ancients-combat-feedback',
-  'ancients-cancel-ranged':'ancients-combat-feedback'
+  'ancients-cancel-ranged':'ancients-combat-feedback',
+  'ancients-roll-digital':'ancients-combat-feedback',
+  'ancients-declare-physical':'ancients-combat-feedback',
+  'ancients-accept-physical':'ancients-combat-feedback',
+  'ancients-dispute-physical':'ancients-combat-feedback',
+  'ancients-finalize-ranged':'ancients-combat-feedback',
+  'ancients-archive-ranged':'ancients-combat-feedback'
 });
 function clearDeckFeedback() {
   for(const id of new Set(Object.values(deckFeedbackSlots))) el(id).textContent='';
@@ -166,7 +172,11 @@ function renderAncients() {
   const combat=cached.combatLab;
   const movementClosed=combat?.movementClosed===true;
   const scope=[cached.matchId,cached.you,cached.revision,cached.phase].join(':');
-  if(ancientsDraftScope!==scope){ancientsDraft=null;ancientsRetry=null;ancientsDraftScope=scope;}
+  if(ancientsDraftScope!==scope){
+    ancientsDraft=null;ancientsRetry=null;ancientsDraftScope=scope;
+    el('ancients-physical-die-1').value='';
+    el('ancients-physical-die-2').value='';
+  }
   el('ancients-status').textContent=
     `Ancients experimental · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
   const terrainNames={FOREST:'bosque',HILL:'colina',
@@ -258,12 +268,38 @@ function renderAncients() {
   }
   if(candidates.length)choice.value=candidates[Number(oldChoice)]?oldChoice||'0':'0';
   el('ancients-prepare-ranged').disabled=!isTurn||!candidates.length||Boolean(combat?.plan);
-  el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan;
+  const dice=cached.diceLab,pending=dice?.pending,last=dice?.last;
+  el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan||!!pending;
   const plan=combat?.plan;
   el('ancients-combat-status').textContent=plan
-    ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}). Sin tirada ni impactos.`
+    ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}).`
     :!isTurn?'El adversario prepara su combate.':candidates.length
       ?`${candidates.length} ataques a distancia candidatos.`:'No hay ataques a distancia candidatos en esta posición.';
+  el('ancients-dice-controls').hidden=!dice||!movementClosed;
+  const mayRoll=!!dice&&isTurn&&!!plan&&!pending;
+  el('ancients-roll-digital').disabled=!mayRoll;
+  el('ancients-declare-physical').disabled=!mayRoll;
+  el('ancients-physical-die-1').disabled=!mayRoll;
+  el('ancients-physical-die-2').disabled=!mayRoll||plan?.diceCount!==2;
+  el('ancients-physical-die-2-label').hidden=plan?.diceCount!==2;
+  el('ancients-accept-physical').disabled=!dice?.canReview;
+  el('ancients-dispute-physical').disabled=!dice?.canReview;
+  el('ancients-finalize-ranged').disabled=!dice?.canFinalize;
+  el('ancients-archive-ranged').disabled=!dice?.canArchive;
+  const faceNames={LIGHT:'Ligera',MEDIUM:'Media',HEAVY:'Pesada',
+    LEADER:'Líder',FLAG:'Bandera',SWORDS:'Espadas'};
+  const reviewNames={SERVER_GENERATED:'Digital, generada por el servidor',
+    AWAITING_OPPONENT:'Física, pendiente de revisión del adversario',
+    ACCEPTED:'Física, aceptada por el adversario',DISPUTED:'Física, en desacuerdo'};
+  const shown=pending??last;
+  const blockerNames={ELIMINATION_PENDING:'eliminación de unidad',
+    LEADER_CHECK_PENDING:'comprobación de líder',RETREAT_PENDING:'retirada',
+    PHYSICAL_ROLL_DISPUTED:'desacuerdo sobre la tirada física'};
+  el('ancients-dice-status').textContent=shown
+    ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}. Coincidencias: ${shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
+      (pending?(dice.blocker?` Pendiente: ${blockerNames[dice.blocker]??'efecto no disponible'}; no se aplicarán bajas en este caso.`:' Aún no se han aplicado bajas.')
+        :last.outcome==='DIRECT_HITS_APPLIED'?` Bloques retirados: ${last.blocksApplied}; quedan ${last.blocksRemaining}.`:' Archivado sin aplicar efectos (solo laboratorio).')
+    :plan?'Elige tirada digital o registra los dados físicos.':'Sin tirada registrada en este turno.';
   const svg=el('ancients-board');
   if(svg?.ownerDocument?.createElementNS){
     renderMovementBoard(svg,cached.board??[],ancientsDraft,selectAncientsHex,cached.you,{
@@ -775,6 +811,18 @@ action('ancients-prepare-ranged',()=>{
   });
 });
 action('ancients-cancel-ranged',()=>sendAncients('CANCEL_SECTION_RANGED_LAB'));
+action('ancients-roll-digital',()=>sendAncients('ROLL_SECTION_RANGED_DIGITAL_LAB'));
+action('ancients-declare-physical',()=>{
+  const n=cached?.combatLab?.plan?.diceCount;
+  const faces=[el('ancients-physical-die-1').value,el('ancients-physical-die-2').value].slice(0,n);
+  if(![1,2].includes(n)||faces.some(x=>!['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS'].includes(x)))
+    throw Error('INVALID_PHYSICAL_DECLARATION');
+  return sendAncients('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
+});
+action('ancients-accept-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true}));
+action('ancients-dispute-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:false}));
+action('ancients-finalize-ranged',()=>sendAncients('FINALIZE_SECTION_RANGED_LAB'));
+action('ancients-archive-ranged',()=>sendAncients('ARCHIVE_SECTION_RANGED_LAB'));
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));
 action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));
 el('deck-units').addEventListener('change',()=>{
