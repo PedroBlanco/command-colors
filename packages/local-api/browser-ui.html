@@ -136,7 +136,16 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <p id="ancients-route-status" role="status" aria-live="polite">Selecciona una unidad ordenada.</p>
 <button id="ancients-clear-path" disabled>Borrar ruta</button>
 <button id="ancients-move" disabled>Confirmar ruta</button>
-<button id="ancients-end" disabled>Terminar turno del laboratorio</button>
+<button id="ancients-finish-movement" disabled>Cerrar movimiento y preparar combate</button>
+<section id="ancients-combat" hidden>
+<h3>Combate a distancia experimental</h3>
+<p>El servidor determina qué ataques pueden prepararse. Esta versión solo calcula los dados: no aplica impactos ni retiradas.</p>
+<label>Ataque disponible<select id="ancients-ranged-choice"></select></label>
+<button id="ancients-prepare-ranged" disabled>Preparar ataque</button>
+<p id="ancients-combat-status" role="status" aria-live="polite"></p>
+<button id="ancients-cancel-ranged" disabled>Descartar preparación</button>
+</section>
+<button id="ancients-end" disabled>Terminar turno sin combate resuelto</button>
 </div>
 </details></section>
 </div>
