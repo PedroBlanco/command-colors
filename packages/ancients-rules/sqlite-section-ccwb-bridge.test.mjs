@@ -485,3 +485,31 @@ test('CCWB: ordered leader move persists atomically and binds idempotent retry',
  },'section_leader_move_0002')).code,'LEADER_ALREADY_MOVED');
  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,3);
 }));
+
+test('CCWB: ranged preparation is replayable, server-derived and idempotent',()=>fixture(({root,connect})=>{
+ const c=footSetup();
+ c.enableCombatLab=true;c.board.units[1].col=4;
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const close=req('FINISH_SECTION_MOVEMENT_LAB',2,{},'section_close_move_001');
+ assert.equal(root.bridge.dispatch(close).code,'SECTION_LAB_APPLIED');
+ assert.deepEqual(root.bridge.view('B').combatLab.candidates,[]);
+ const attack=req('PREPARE_SECTION_RANGED_LAB',3,{
+  attackerId:'unitA',targetId:'unitB'
+ },'section_prepare_shot_001');
+ assert.equal(root.bridge.dispatch({...attack,diceCount:99}).status,400);
+ const before=root.getRow(MATCH);
+ assert.equal(before.game_revision,3);
+ const applied=root.bridge.dispatch(attack);
+ assert.equal(applied.code,'SECTION_LAB_APPLIED');
+ assert.equal(applied.combatResolved,false);
+ assert.equal(applied.view.combatLab.plan.diceCount,2);
+ const second=connect();
+ assert.equal(second.bridge.view('B').combatLab.plan.diceCount,2);
+ assert.equal(second.bridge.dispatch(attack).code,'ALREADY_APPLIED');
+ assert.equal(second.bridge.dispatch({...attack,targetId:'unitA'}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(second.bridge.dispatch(req('END_EXPERIMENTAL_TURN',4)).code,'COMBAT_PLAN_PENDING');
+ const event=root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=4').get(MATCH);
+ assert.equal(JSON.parse(event.payload).kind,'SECTION_RANGED_PREPARED_LAB');
+ assert.equal(root.getRow(MATCH).game_revision,4);
+}));
