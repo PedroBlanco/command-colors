@@ -6,6 +6,7 @@
  */
 import {randomBytes,createHmac} from 'node:crypto';
 import {neighbors} from '../hex-grid/hex.mjs';
+import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 import {captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS,previewBaseAncientsRangedBlockLoss} from './block-loss-preview.mjs';
 import {planBaseAncientsRangedResolution,captureBaseAncientsLeaderCasualtyDice,
@@ -35,9 +36,9 @@ export function sectionRollIndex(key,rollId){
   };
 }
 
-export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false}={}){
-  if(morale&&!casualties)fail();
-  return {version:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
+export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false}={}){
+  if((morale&&!casualties)||(retreat&&!morale))fail();
+  return {version:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
     blocks:Object.fromEntries(Object.entries(unitTypes).map(([id,type])=>[
       id,BASE_UNIT_STARTING_BLOCKS[type]
     ])),
@@ -69,7 +70,7 @@ function derivePending(state,{revision,mode,faces,review}){
 // The current terrain whitelist has no morale-granting defensive terrain.
 function moralePreview(state){
   const d=state.diceLab,p=d.pending;
-  if(d.version!==3||!p?.loss.effectiveFlagsPending||
+  if(d.version<3||!p?.loss.effectiveFlagsPending||
      !['SERVER_GENERATED','ACCEPTED'].includes(p.review)||
      (p.loss.leaderCasualtyCheck&&!d.leaderCheck))return null;
   const target=state.board.units.find(u=>u.id===state.combatLab.plan.targetId);
@@ -98,7 +99,7 @@ function unsupported(state,pending){
     if(!d.leaderCheck)return 'LEADER_CHECK_PENDING';
     if(d.leaderCheck.outcome.leaderMustEvadeIfApplied)return 'LEADER_EVASION_PENDING';
   }
-  if(d.version===3&&l.effectiveFlagsPending>0){
+  if(d.version>=3&&l.effectiveFlagsPending>0){
     const m=moralePreview(state);
     if(m?.maxIgnored&&!d.morale)return 'MORALE_CHOICE_PENDING';
     if(l.effectiveFlagsPending>(d.morale?.ignored??0))return 'RETREAT_PENDING';
@@ -131,6 +132,53 @@ function leaderEvasionOptions(state){
   }
   visit(leader,[]);
   return options;
+}
+
+// Ordinary retreats: no elephant rampage, no impassable terrain in this
+// server-owned terrain whitelist. The existing board's rearward axis is used.
+// A deterministic representative per cell and step count bounds projection size.
+function retreatPreview(state){
+  const d=state.diceLab,p=d.pending;
+  if(d.version<4||!p||!['SERVER_GENERATED','ACCEPTED'].includes(p.review)||
+     unsupported(state,p)!=='RETREAT_PENDING')return null;
+  const target=state.board.units.find(u=>u.id===state.combatLab.plan.targetId);
+  const type=state.footLab.unitTypes[target.id];
+  const attackerType=state.footLab.unitTypes[state.combatLab.plan.attackerId];
+  const flags=p.loss.effectiveFlagsPending-(d.morale?.ignored??0);
+  const perFlag=['AUXILIA_INFANTRY','ELEPHANT'].includes(type)?1:BASE_MOVEMENT_PROFILES[type].maxSteps;
+  const required=flags*(perFlag+Number(attackerType==='ELEPHANT'&&
+    ['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','HEAVY_CHARIOT'].includes(type)));
+  if(type==='ELEPHANT')return {flags,required,options:[],reason:'ELEPHANT_RAMPAGE_PENDING'};
+  const attached=state.board.leaders.find(l=>l.side===target.side&&hex(l)===hex(target)&&
+    !d.leaderCheck?.outcome.leaderWouldBeEliminated);
+  const occupied=new Set(state.board.units.map(hex));
+  const leaders=new Map(state.board.leaders.filter(l=>l.id!==d.leaderCheck?.leaderId||
+    !d.leaderCheck.outcome.leaderWouldBeEliminated).map(l=>[hex(l),l]));
+  const depth=c=>2*c.row+(c.col&1),sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
+  const terminals=[];
+  let frontier=new Map([[hex(target),{cell:target,path:[]}]]);
+  for(let steps=0;steps<=required&&frontier.size;steps++){
+    const next=new Map();
+    for(const {cell,path} of frontier.values()){
+      const joined=path.length&&!attached?leaders.get(hex(cell)):null;
+      const legal=steps===required||joined||cell.row===rear?[]:neighbors(cell).filter(c=>
+        sign*(depth(c)-depth(cell))>0&&!occupied.has(hex(c))&&
+        (!leaders.has(hex(c))||(!attached&&leaders.get(hex(c)).side===target.side)));
+      if(!legal.length){
+        const missing=joined?0:required-steps;
+        const blocksLost=Math.min(p.loss.remainingBlocks,missing);
+        terminals.push({path,missing,blocksLost,joinedLeaderId:joined?.id??null,
+          needsLeaderResolution:!!attached&&blocksLost>0&&(!d.leaderCheck||blocksLost===p.loss.remainingBlocks)});
+      }
+      for(const dest of legal)if(!next.has(hex(dest)))next.set(hex(dest),{cell:dest,path:[...path,dest]});
+    }
+    frontier=next;
+  }
+  // A loss-free retreat is mandatory when one exists. Never allow a player
+  // to stop early, skip a reachable cell, or choose an incomplete alternative.
+  const legal=terminals.some(o=>o.missing===0)?terminals.filter(o=>o.missing===0):terminals;
+  const options=legal.filter(o=>!o.needsLeaderResolution);
+  return {flags,required,options,reason:options.length?null:'RETREAT_LEADER_RESOLUTION_PENDING'};
 }
 
 function deriveLeaderCheck(state,revision){
@@ -175,8 +223,8 @@ function banners(d){
 
 export function assertSectionDiceLab(state){
   const d=state.diceLab;
-  if(!state.combatLab||!record(d)||![1,2,3].includes(d.version)||!keyOK(d.key)||
-     Object.keys(d).length!==(d.version===3?9:d.version===2?8:6)||!record(d.blocks)||
+  if(!state.combatLab||!record(d)||![1,2,3,4].includes(d.version)||!keyOK(d.key)||
+     Object.keys(d).length!==(d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
      Object.keys(d.blocks).length!==state.board.units.length||
      state.board.units.some(u=>!Object.hasOwn(d.blocks,u.id)||
        !Number.isSafeInteger(d.blocks[u.id])||d.blocks[u.id]<1||
@@ -219,7 +267,7 @@ export function assertSectionDiceLab(state){
       faces:p.roll.results,review:p.review});
     if(!same(expected,p))fail();
   }
-  if(d.version===3&&d.morale!==null){
+  if(d.version>=3&&d.morale!==null){
     const m=moralePreview(state),choice=d.morale;
     if(!m||!record(choice)||Object.keys(choice).length!==3||
        !Number.isSafeInteger(choice.revision)||choice.revision<=(d.leaderCheck?.revision??d.pending.revision)||
@@ -234,7 +282,7 @@ export const SECTION_DICE_COMMANDS=Object.freeze([
   'ROLL_SECTION_RANGED_DIGITAL_LAB','DECLARE_SECTION_RANGED_PHYSICAL_LAB',
   'REVIEW_SECTION_RANGED_PHYSICAL_LAB','FINALIZE_SECTION_RANGED_LAB',
   'ARCHIVE_SECTION_RANGED_LAB','ROLL_SECTION_LEADER_CASUALTY_LAB',
-  'EVADE_SECTION_LEADER_LAB','CHOOSE_SECTION_MORALE_LAB'
+  'EVADE_SECTION_LEADER_LAB','CHOOSE_SECTION_MORALE_LAB','RETREAT_SECTION_UNIT_LAB'
 ]);
 
 export function applySectionDiceCommand(state,next,command){
@@ -295,14 +343,30 @@ export function applySectionDiceCommand(state,next,command){
       evasion=leaderEvasionOptions(state).find(o=>o.exit===command.exit&&same(o.path,path));
       if(!evasion)return deny('INVALID_LEADER_EVASION_PATH');
     }
-    const finalize=command.type==='FINALIZE_SECTION_RANGED_LAB'||evade;
-    if(finalize&&blocker&&!evade)return deny(blocker);
+    const retreat=command.type==='RETREAT_SECTION_UNIT_LAB';
+    let retreatChoice;
+    if(retreat){
+      if(side===state.turn||blocker!=='RETREAT_PENDING'||d.version<4)
+        return deny('RETREAT_NOT_AVAILABLE');
+      const preview=retreatPreview(state);
+      if(!preview?.options.length)return deny(preview?.reason??'RETREAT_NOT_AVAILABLE');
+      if(!Array.isArray(command.path)||command.path.length>10||!command.path.every(c=>
+         record(c)&&Object.keys(c).length===2&&Number.isSafeInteger(c.col)&&Number.isSafeInteger(c.row)))
+        return deny('INVALID_RETREAT_PATH');
+      const path=command.path.map(c=>({col:c.col,row:c.row}));
+      retreatChoice=preview.options.find(o=>same(o.path,path));
+      if(!retreatChoice)return deny('INVALID_RETREAT_PATH');
+    }
+    const finalize=command.type==='FINALIZE_SECTION_RANGED_LAB'||evade||retreat;
+    if(finalize&&blocker&&!evade&&!retreat)return deny(blocker);
     if(!finalize&&!blocker)return deny('DIRECT_HIT_FINALIZATION_REQUIRED');
     if(d.version>=2&&!finalize&&blocker==='LEADER_CHECK_PENDING')
       return deny('LEADER_CHECK_REQUIRED');
-    if(d.version===3&&!finalize&&blocker==='MORALE_CHOICE_PENDING')return deny('MORALE_CHOICE_REQUIRED');
-    if(d.version===3&&!finalize&&blocker==='LEADER_EVASION_PENDING'&&leaderEvasionOptions(state).length)
+    if(d.version>=3&&!finalize&&blocker==='MORALE_CHOICE_PENDING')return deny('MORALE_CHOICE_REQUIRED');
+    if(d.version>=3&&!finalize&&blocker==='LEADER_EVASION_PENDING'&&leaderEvasionOptions(state).length)
       return deny('LEADER_EVASION_PENDING');
+    if(d.version>=4&&!finalize&&blocker==='RETREAT_PENDING'&&retreatPreview(state)?.options.length)
+      return deny('RETREAT_PENDING');
     if(finalize){
       if(d.version>=2)applyDirectLoss(state,next,plan,p);
       else next.diceLab.blocks[plan.targetId]=p.loss.remainingBlocks;
@@ -311,25 +375,40 @@ export function applySectionDiceCommand(state,next,command){
         if(evasion.exit)next.board.leaders=next.board.leaders.filter(l=>l.id!==leader.id);
         else Object.assign(leader,evasion.path.at(-1));
       }
+      if(retreatChoice){
+        const target=next.board.units.find(u=>u.id===plan.targetId);
+        const leader=next.board.leaders.find(l=>l.side===target.side&&hex(l)===hex(target));
+        const destination=retreatChoice.path.at(-1);
+        const remaining=next.diceLab.blocks[target.id]-retreatChoice.blocksLost;
+        if(remaining===0){
+          next.board.units=next.board.units.filter(u=>u.id!==target.id);
+          delete next.footLab.unitTypes[target.id];delete next.diceLab.blocks[target.id];
+          awardCasualty(next,target,'UNIT',state.turn,state.revision+1);
+        }else{
+          next.diceLab.blocks[target.id]=remaining;
+          if(destination){Object.assign(target,destination);if(leader)Object.assign(leader,destination);}
+        }
+      }
     }
     next.diceLab.resolvedUnitIds.push(plan.attackerId);
     const result={attackerId:plan.attackerId,targetId:plan.targetId,roll:p.roll,
       review:p.review,interpretation:p.interpretation,loss:p.loss,
       outcome:finalize?'DIRECT_HITS_APPLIED':'ARCHIVED_WITHOUT_EFFECTS',
-      reason:evade?null:blocker,blocksApplied:finalize?p.loss.blocksToRemove:0,
+      reason:evade||retreat?null:blocker,blocksApplied:finalize?p.loss.blocksToRemove+(retreatChoice?.blocksLost??0):0,
       blocksRemaining:next.diceLab.blocks[plan.targetId]??0,
       ...(d.version>=2?{leaderCheck:structuredClone(d.leaderCheck),
-        unitEliminated:finalize&&p.loss.unitWouldBeEliminated,
+        unitEliminated:finalize&&(p.loss.unitWouldBeEliminated||!!retreatChoice&&retreatChoice.blocksLost===p.loss.remainingBlocks),
         leaderEliminated:finalize&&!!d.leaderCheck?.outcome.leaderWouldBeEliminated,
         banners:banners(next.diceLab)}:{}),
       ...(evasion?{leaderEvasion:{leaderId:d.leaderCheck.leaderId,...evasion}}:{}),
-      ...(d.version===3?{morale:structuredClone(d.morale)}:{})};
+      ...(d.version>=3?{morale:structuredClone(d.morale)}:{}),
+      ...(retreatChoice?{retreat:{...retreatChoice,required:retreatPreview(state).required}}:{})};
     next.diceLab.last=structuredClone(result);
     next.diceLab.pending=null;
     if(d.version>=2)next.diceLab.leaderCheck=null;
-    if(d.version===3)next.diceLab.morale=null;
+    if(d.version>=3)next.diceLab.morale=null;
     next.combatLab.plan=null;
-    event={kind:finalize?'SECTION_RANGED_DIRECT_HITS_APPLIED_LAB':'SECTION_RANGED_ARCHIVED_LAB',
+    event={kind:retreat?'SECTION_RETREAT_APPLIED_LAB':finalize?'SECTION_RANGED_DIRECT_HITS_APPLIED_LAB':'SECTION_RANGED_ARCHIVED_LAB',
       side,...result,combatResolved:false};
   }
   return {accepted:true,event};
@@ -339,13 +418,15 @@ export function projectSectionDiceLab(state,side){
   const d=state.diceLab,p=d.pending;
   const blocker=p?(p.review==='DISPUTED'?'PHYSICAL_ROLL_DISPUTED':unsupported(state,p)):null;
   const evasionOptions=blocker==='LEADER_EVASION_PENDING'?leaderEvasionOptions(state):[];
+  const retreat=blocker==='RETREAT_PENDING'?retreatPreview(state):null;
   return {blocks:{...d.blocks},resolvedUnitIds:[...d.resolvedUnitIds],
     pending:p?structuredClone(p):null,last:d.last?structuredClone(d.last):null,
     canReview:side!==state.turn&&p?.review==='AWAITING_OPPONENT',
     canFinalize:side===state.turn&&!!p&&!blocker&&p.review!=='AWAITING_OPPONENT',
     canArchive:side===state.turn&&!!p&&!!blocker&&p.review!=='AWAITING_OPPONENT'&&
       !(d.version>=2&&blocker==='LEADER_CHECK_PENDING')&&
-      !(d.version===3&&(blocker==='MORALE_CHOICE_PENDING'||evasionOptions.length>0)),
+      !(d.version>=3&&(blocker==='MORALE_CHOICE_PENDING'||evasionOptions.length>0))&&
+      !retreat?.options.length,
     ...(d.version>=2?{banners:banners(d),casualties:structuredClone(d.casualties),
       leaderCheck:structuredClone(d.leaderCheck),
       leaderEvasionOptions:side!==state.turn?evasionOptions:[],
@@ -353,8 +434,10 @@ export function projectSectionDiceLab(state,side){
       leaderEvasionAvailable:evasionOptions.length>0,
       canRollLeader:side===state.turn&&blocker==='LEADER_CHECK_PENDING'&&
         ['SERVER_GENERATED','ACCEPTED'].includes(p?.review)}:{}),
-    ...(d.version===3?{moralePreview:moralePreview(state),morale:structuredClone(d.morale),
+    ...(d.version>=3?{moralePreview:moralePreview(state),morale:structuredClone(d.morale),
       canChooseMorale:side!==state.turn&&blocker==='MORALE_CHOICE_PENDING'}:{}),
+    ...(d.version>=4?{retreat:retreat?{...retreat,options:side!==state.turn?retreat.options:[]}:null,
+      canRetreat:side!==state.turn&&!!retreat?.options.length}:{}),
     blocker};
 }
 
@@ -363,5 +446,5 @@ export function resetSectionDiceTurn(next){
   next.diceLab.pending=null;
   next.diceLab.last=null;
   if(next.diceLab.version>=2)next.diceLab.leaderCheck=null;
-  if(next.diceLab.version===3)next.diceLab.morale=null;
+  if(next.diceLab.version>=3)next.diceLab.morale=null;
 }

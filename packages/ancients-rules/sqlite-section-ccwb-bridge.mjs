@@ -35,6 +35,7 @@ const TYPES=Object.freeze({
   ROLL_SECTION_LEADER_CASUALTY_LAB:[],
   EVADE_SECTION_LEADER_LAB:['path','exit'],
   CHOOSE_SECTION_MORALE_LAB:['ignored'],
+  RETREAT_SECTION_UNIT_LAB:['path'],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied=(status,code)=>Object.freeze({status,code});

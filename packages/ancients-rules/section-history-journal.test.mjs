@@ -529,8 +529,9 @@ test('ranged lab: movement record and forest cap limit dice; out of range and ad
 function diceReady(options={}){
  const setup=rangedLabSetup(options);
  setup.enableDiceLab=true;
- setup.enableCasualtyLab=options.casualty===true||options.morale===true;
- setup.enableMoraleLab=options.morale===true;
+ setup.enableCasualtyLab=options.casualty===true||options.morale===true||options.retreat===true;
+ setup.enableMoraleLab=options.morale===true||options.retreat===true;
+ setup.enableRetreatLab=options.retreat===true;
  if(options.lethal)setup.movementUnitTypes.b1='ELEPHANT';
  if(options.leader){
   setup.enableLeaderLab=true;
@@ -707,4 +708,27 @@ test('morale lab: attached surviving leader can ignore a flag after an accepted 
  assert.equal(done.diceLab.blocks.b1,3);
  assert.equal(done.diceLab.last.morale.ignored,1);
  assert.deepEqual(replay(initial,[...commands,declare,review,roll,choose,final]),done);
+});
+
+test('retreat lab: defender chooses a loss-free path, applies hits and movement together, and replays',()=>{
+ const {initial,prepared,commands}=diceReady({retreat:true});
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','FLAG']});
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const pending=apply(apply(prepared,declare).nextState,review).nextState;
+ const own=project(pending,'B').diceLab;
+ assert.equal(own.retreat.required,1);
+ assert.equal(own.canRetreat,true);
+ assert.equal(project(pending,'A').diceLab.canRetreat,false);
+ const option=own.retreat.options[0];
+ assert.equal(option.blocksLost,0);
+ assert.equal(apply(pending,cmd('RETREAT_SECTION_UNIT_LAB',6,{path:option.path})).code,'RETREAT_NOT_AVAILABLE');
+ assert.equal(apply(pending,cmd('RETREAT_SECTION_UNIT_LAB',6,{actor:'B',path:[]})).code,'INVALID_RETREAT_PATH');
+ assert.equal(apply(pending,cmd('ARCHIVE_SECTION_RANGED_LAB',6)).code,'RETREAT_PENDING');
+ const retreat=cmd('RETREAT_SECTION_UNIT_LAB',6,{actor:'B',path:option.path});
+ const result=apply(pending,retreat);
+ assert.equal(result.accepted,true);
+ assert.deepEqual(result.nextState.board.units.find(u=>u.id==='b1'),{id:'b1',side:'B',...option.path.at(-1)});
+ assert.equal(result.nextState.diceLab.blocks.b1,3);
+ assert.equal(result.nextState.combatLab.plan,null);
+ assert.deepEqual(replay(initial,[...commands,declare,review,retreat]),result.nextState);
 });

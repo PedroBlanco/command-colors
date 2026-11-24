@@ -30,7 +30,8 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-archive-ranged':'ancients-combat-feedback',
   'ancients-roll-leader':'ancients-combat-feedback',
   'ancients-evade-leader':'ancients-combat-feedback',
-  'ancients-confirm-morale':'ancients-combat-feedback'
+  'ancients-confirm-morale':'ancients-combat-feedback',
+  'ancients-confirm-retreat':'ancients-combat-feedback'
 });
 function clearDeckFeedback() {
   for(const id of new Set(Object.values(deckFeedbackSlots))) el(id).textContent='';
@@ -323,6 +324,23 @@ function renderAncients() {
   el('ancients-morale-status').textContent=morale
     ?`Banderas: ${morale.flags}; máximo ignorable: ${morale.maxIgnored}. Líder: ${morale.attachedLeader?'sí':'no'}; apoyo: ${morale.supported?'sí':'no'}; guerreros al completo: ${morale.fullWarrior?'sí':'no'}.`+(decision?` Ignoradas: ${decision.ignored}; pendientes de retirada: ${decision.remaining}.`:'')
     :decision?`Banderas ignoradas: ${decision.ignored}; aceptadas: ${decision.remaining}.`:'';
+  const retreat=dice?.retreat,retreatChoice=el('ancients-retreat-choice'),oldRetreat=retreatChoice.value;
+  retreatChoice.replaceChildren();
+  for(const candidate of retreat?.options??[]){
+    const option=document.createElement('option');option.value=JSON.stringify(candidate.path);
+    const route=candidate.path.map(p=>`(${p.col+1},${p.row+1})`).join(' → ')||'Sin desplazamiento';
+    option.textContent=route+` · bajas: ${candidate.blocksLost}`+(candidate.joinedLeaderId?' · unión a '+candidate.joinedLeaderId:'');
+    retreatChoice.appendChild(option);
+  }
+  if(retreat?.options.some(o=>JSON.stringify(o.path)===oldRetreat))retreatChoice.value=oldRetreat;
+  el('ancients-retreat-controls').hidden=!retreat&&!last?.retreat;
+  el('ancients-confirm-retreat').disabled=!dice?.canRetreat;
+  el('ancients-retreat-status').textContent=retreat
+    ?`Retirada de ${retreat.required} hexágonos por ${retreat.flags} bandera(s). `+
+       (retreat.reason==='ELEPHANT_RAMPAGE_PENDING'?'Estampida pendiente.':
+        retreat.reason?'Consecuencias para el líder aún no implementadas.':
+        dice.canRetreat?'Elige una ruta validada.':'El defensor debe elegir la ruta.')
+    :last?.retreat?`Retirada aplicada: ${last.retreat.path.length} pasos, ${last.retreat.blocksLost} bloques perdidos.`:'';
   const faceNames={LIGHT:'Ligera',MEDIUM:'Media',HEAVY:'Pesada',
     LEADER:'Líder',FLAG:'Bandera',SWORDS:'Espadas'};
   const reviewNames={SERVER_GENERATED:'Digital, generada por el servidor',
@@ -870,6 +888,11 @@ action('ancients-declare-physical',()=>{
 action('ancients-accept-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true}));
 action('ancients-dispute-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:false}));
 action('ancients-roll-leader',()=>sendAncients('ROLL_SECTION_LEADER_CASUALTY_LAB'));
+action('ancients-confirm-retreat',()=>{
+  const candidate=cached?.diceLab?.retreat?.options.find(o=>JSON.stringify(o.path)===el('ancients-retreat-choice').value);
+  if(!cached?.diceLab?.canRetreat||!candidate)throw Error('RETREAT_NOT_AVAILABLE');
+  return sendAncients('RETREAT_SECTION_UNIT_LAB',{path:candidate.path});
+});
 action('ancients-confirm-morale',()=>{
   const value=el('ancients-morale-choice').value;
   if(!cached?.diceLab?.canChooseMorale||value==='')throw Error('MORALE_CHOICE_NOT_AVAILABLE');
