@@ -540,3 +540,25 @@ test('CCWB dice: physical declaration, opponent review and nonlethal hits surviv
  for(const side of ['A','B'])assert.equal(JSON.stringify(root.bridge.view(side)).includes(stored),false);
  assert.equal(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=7').get(MATCH).payload.includes(stored),false);
 }));
+
+test('CCWB casualties: elimination and banner survive reopen and do not double award on retry',()=>fixture(({root,connect})=>{
+ const c=footSetup();c.enableCombatLab=true;c.enableDiceLab=true;c.enableCasualtyLab=true;
+ c.board.units[1].col=4;c.movementUnitTypes.unitB='ELEPHANT';
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const dispatch=(type,revision,fields={})=>root.bridge.dispatch(req(type,revision,fields,'casualty_'+type+'_'+revision));
+ assert.equal(dispatch('FINISH_SECTION_MOVEMENT_LAB',2).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('PREPARE_SECTION_RANGED_LAB',3,{attackerId:'unitA',targetId:'unitB'}).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']}).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true}).code,'SECTION_LAB_APPLIED');
+ const command=req('FINALIZE_SECTION_RANGED_LAB',6,{},'casualty_finish_001');
+ assert.equal(root.bridge.dispatch(command).code,'SECTION_LAB_APPLIED');
+ const other=connect();
+ assert.deepEqual(other.bridge.view('B').diceLab.banners,{A:1,B:0});
+ assert.equal(other.bridge.view('B').board.some(u=>u.id==='unitB'),false);
+ assert.equal(other.bridge.dispatch(command).code,'ALREADY_APPLIED');
+ assert.deepEqual(root.bridge.view('A').diceLab.banners,{A:1,B:0});
+ assert.equal(dispatch('END_EXPERIMENTAL_TURN',7).code,'SECTION_LAB_APPLIED');
+ assert.deepEqual(other.bridge.view('B').diceLab.banners,{A:1,B:0});
+ assert.equal(JSON.parse(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=7').get(MATCH).payload).unitEliminated,true);
+}));
