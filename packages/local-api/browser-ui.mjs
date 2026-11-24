@@ -337,7 +337,7 @@ function renderAncients() {
     retreatChoice.appendChild(option);
   }
   if(retreat?.options.some(o=>JSON.stringify(o.path)===oldRetreat))retreatChoice.value=oldRetreat;
-  el('ancients-retreat-controls').hidden=!retreat&&!last?.retreat&&!dice?.retreatPending;
+  el('ancients-retreat-controls').hidden=!retreat&&!last?.retreat&&!dice?.retreatPending&&!dice?.elephantRetreatPending;
   el('ancients-confirm-retreat').disabled=!dice?.canRetreat;
   el('ancients-retreat-status').textContent=retreat
     ?`Retirada de ${retreat.required} hexágonos por ${retreat.flags} bandera(s). `+
@@ -371,7 +371,9 @@ function renderAncients() {
   el('ancients-evade-rampage').disabled=!rampageEvasion?.options.length;
   el('ancients-rampage-evasion-status').textContent=rampageEvasion?'Evasión de '+rampageEvasion.leaderId+' (bando '+rampageEvasion.side+').':'';
   const elephantStage=dice?.elephantRetreatPending;
-  if(elephantStage)el('ancients-retreat-status').textContent='Retirada confirmada: resolver los líderes antes de aplicar las bajas.';
+  if(elephantStage)el('ancients-retreat-status').textContent=dice.blocker
+    ?'Retirada confirmada: resolver las evasiones de líderes antes de aplicar las bajas.'
+    :'Evasiones resueltas: el atacante puede aplicar las bajas y medallas.';
   const faceNames={LIGHT:'Ligera',MEDIUM:'Media',HEAVY:'Pesada',
     LEADER:'Líder',FLAG:'Bandera',SWORDS:'Espadas'};
   el('ancients-rampage-status').textContent=(rampage?.rolls??last?.rampage??[]).map(r=>r.unitId+': '+r.results.map(f=>faceNames[f]??f).join(', ')+'; bajas: '+r.blocksLost+(r.leaderId?' · líder '+r.leaderId+(r.leaderEliminated||r.evasion?.escape.eliminated?' eliminado':r.needsEvasion&&!r.evasion?' debe evadirse':' superviviente'):'')).join(' | ');
