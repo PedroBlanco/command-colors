@@ -113,7 +113,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 </details></section>
 <section id="ancients-section"><details id="ancients-details">
 <summary>Ancients — laboratorio reglado de movimientos (opcional)</summary>
-<p class="notice">Demo experimental en este ordenador. No es un escenario oficial, no resuelve combates y no utiliza cartas licenciadas. Debe habilitarse expresamente al iniciar el servidor.</p>
+<p class="notice">Demo experimental en este ordenador. No es un escenario oficial ni implementa el combate completo; no utiliza cartas licenciadas. Debe habilitarse expresamente al iniciar el servidor.</p>
 <button id="ancients-start" type="button" disabled>Inicializar demo de Ancients</button>
 <button id="ancients-refresh" type="button" disabled>Actualizar demo</button>
 <p id="ancients-status" role="status" aria-live="polite">No se ha iniciado el laboratorio.</p>
@@ -139,14 +139,27 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button id="ancients-finish-movement" disabled>Cerrar movimiento y preparar combate</button>
 <section id="ancients-combat" hidden>
 <h3>Combate a distancia experimental</h3>
-<p>El servidor determina qué ataques pueden prepararse. Esta versión solo calcula los dados: no aplica impactos ni retiradas.</p>
+<p>El servidor calcula los dados y permite tiradas digitales o físicas. Las físicas requieren revisión del adversario. Solo se aplican bajas directas no letales que no requieran retirada ni comprobación de líder.</p>
 <label>Ataque disponible<select id="ancients-ranged-choice"></select></label>
 <button id="ancients-prepare-ranged" disabled>Preparar ataque</button>
 <p id="ancients-combat-status" role="status" aria-live="polite"></p>
 <p id="ancients-combat-feedback" role="status" aria-live="polite"></p>
 <button id="ancients-cancel-ranged" disabled>Descartar preparación</button>
+<div id="ancients-dice-controls" hidden>
+<button id="ancients-roll-digital" disabled>Tirar dados digitales</button>
+<label>Resultados físicos (un símbolo por dado)
+<select id="ancients-physical-die-1"><option value="">Seleccionar</option><option value="LIGHT">Ligera</option><option value="MEDIUM">Media</option><option value="HEAVY">Pesada</option><option value="LEADER">Líder</option><option value="FLAG">Bandera</option><option value="SWORDS">Espadas</option></select></label>
+<label id="ancients-physical-die-2-label">Segundo dado
+<select id="ancients-physical-die-2"><option value="">Seleccionar</option><option value="LIGHT">Ligera</option><option value="MEDIUM">Media</option><option value="HEAVY">Pesada</option><option value="LEADER">Líder</option><option value="FLAG">Bandera</option><option value="SWORDS">Espadas</option></select></label>
+<button id="ancients-declare-physical" disabled>Registrar tirada física</button>
+<p id="ancients-dice-status" role="status" aria-live="polite"></p>
+<button id="ancients-accept-physical" disabled>Confirmar resultados físicos</button>
+<button id="ancients-dispute-physical" disabled>Discrepar de los resultados físicos</button>
+<button id="ancients-finalize-ranged" disabled>Aplicar bajas directas</button>
+<button id="ancients-archive-ranged" disabled>Archivar sin aplicar efectos (solo laboratorio)</button>
+</div>
 </section>
-<button id="ancients-end" disabled>Terminar turno sin combate resuelto</button>
+<button id="ancients-end" disabled>Terminar turno del laboratorio</button>
 </div>
 </details></section>
 </div>
