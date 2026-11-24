@@ -27,7 +27,8 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-accept-physical':'ancients-combat-feedback',
   'ancients-dispute-physical':'ancients-combat-feedback',
   'ancients-finalize-ranged':'ancients-combat-feedback',
-  'ancients-archive-ranged':'ancients-combat-feedback'
+  'ancients-archive-ranged':'ancients-combat-feedback',
+  'ancients-roll-leader':'ancients-combat-feedback'
 });
 function clearDeckFeedback() {
   for(const id of new Set(Object.values(deckFeedbackSlots))) el(id).textContent='';
@@ -275,6 +276,7 @@ function renderAncients() {
     ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}).`
     :!isTurn?'El adversario prepara su combate.':candidates.length
       ?`${candidates.length} ataques a distancia candidatos.`:'No hay ataques a distancia candidatos en esta posición.';
+  el('ancients-banners').textContent=dice?.banners?`Medallas: A ${dice.banners.A} · B ${dice.banners.B}`:'';
   el('ancients-dice-controls').hidden=!dice||!movementClosed;
   const mayRoll=!!dice&&isTurn&&!!plan&&!pending;
   el('ancients-roll-digital').disabled=!mayRoll;
@@ -285,6 +287,8 @@ function renderAncients() {
   el('ancients-accept-physical').disabled=!dice?.canReview;
   el('ancients-dispute-physical').disabled=!dice?.canReview;
   el('ancients-finalize-ranged').disabled=!dice?.canFinalize;
+  el('ancients-roll-leader').disabled=!dice?.canRollLeader;
+  el('ancients-roll-leader').hidden=!dice?.banners;
   el('ancients-archive-ranged').disabled=!dice?.canArchive;
   const faceNames={LIGHT:'Ligera',MEDIUM:'Media',HEAVY:'Pesada',
     LEADER:'Líder',FLAG:'Bandera',SWORDS:'Espadas'};
@@ -294,12 +298,20 @@ function renderAncients() {
   const shown=pending??last;
   const blockerNames={ELIMINATION_PENDING:'eliminación de unidad',
     LEADER_CHECK_PENDING:'comprobación de líder',RETREAT_PENDING:'retirada',
+    LEADER_EVASION_PENDING:'evasión del líder superviviente',
     PHYSICAL_ROLL_DISPUTED:'desacuerdo sobre la tirada física'};
   el('ancients-dice-status').textContent=shown
     ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}. Coincidencias: ${shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
-      (pending?(dice.blocker?` Pendiente: ${blockerNames[dice.blocker]??'efecto no disponible'}; no se aplicarán bajas en este caso.`:' Aún no se han aplicado bajas.')
+      (pending?(dice.blocker?` Pendiente: ${blockerNames[dice.blocker]??'efecto no disponible'}.`:' Aún no se han aplicado bajas.')
         :last.outcome==='DIRECT_HITS_APPLIED'?` Bloques retirados: ${last.blocksApplied}; quedan ${last.blocksRemaining}.`:' Archivado sin aplicar efectos (solo laboratorio).')
     :plan?'Elige tirada digital o registra los dados físicos.':'Sin tirada registrada en este turno.';
+  const leaderCheck=dice?.leaderCheck??last?.leaderCheck;
+  el('ancients-leader-check-status').textContent=leaderCheck
+    ?`Líder ${leaderCheck.leaderId}: ${leaderCheck.roll.results.map(x=>faceNames[x]??x).join(', ')}. ${leaderCheck.outcome.leaderWouldBeEliminated?'Resultado: baja de líder.':'Resultado: líder superviviente.'}`
+    :'';
+  el('ancients-casualty-status').textContent=last?.unitEliminated||last?.leaderEliminated
+    ?`Bajas aplicadas: ${last.unitEliminated?'unidad '+last.targetId:''}${last.unitEliminated&&last.leaderEliminated?' y ':''}${last.leaderEliminated?'líder '+last.leaderCheck.leaderId:''}.`
+    :'';
   const svg=el('ancients-board');
   if(svg?.ownerDocument?.createElementNS){
     renderMovementBoard(svg,cached.board??[],ancientsDraft,selectAncientsHex,cached.you,{
@@ -821,6 +833,7 @@ action('ancients-declare-physical',()=>{
 });
 action('ancients-accept-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true}));
 action('ancients-dispute-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:false}));
+action('ancients-roll-leader',()=>sendAncients('ROLL_SECTION_LEADER_CASUALTY_LAB'));
 action('ancients-finalize-ranged',()=>sendAncients('FINALIZE_SECTION_RANGED_LAB'));
 action('ancients-archive-ranged',()=>sendAncients('ARCHIVE_SECTION_RANGED_LAB'));
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));
