@@ -53,7 +53,11 @@ const explanations=Object.freeze({
   RANGED_ROLL_REQUIRED:'Registra una tirada antes de intentar aplicar los resultados.',
   UNIT_ALREADY_BATTLED:'Esta unidad ya ha efectuado su ataque durante el turno.',
   RETREAT_PENDING:'El resultado requiere resolver una retirada; todavía no está implementada.',
-  LEADER_CHECK_PENDING:'El resultado requiere comprobar el líder; todavía no está implementado.',
+  LEADER_CHECK_PENDING:'Comprueba la baja del líder antes de aplicar el resultado.',
+  LEADER_CHECK_REQUIRED:'La comprobación del líder debe realizarse antes de continuar.',
+  LEADER_CHECK_NOT_AVAILABLE:'No hay una comprobación de líder disponible.',
+  LEADER_CHECK_ALREADY_CAPTURED:'La tirada de comprobación del líder ya se ha registrado.',
+  LEADER_EVASION_PENDING:'El líder ha sobrevivido a la eliminación de su unidad; falta resolver su evasión.',
   ELIMINATION_PENDING:'La eliminación y sus consecuencias todavía no se resuelven en este laboratorio.',
   DIRECT_HIT_FINALIZATION_REQUIRED:'El resultado se puede aplicar directamente; no procede archivarlo sin efectos.'
 });
