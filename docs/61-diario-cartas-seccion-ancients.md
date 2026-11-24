@@ -1,5 +1,7 @@
 # CCW-015 — Diario persistente experimental de cartas de sección (*Ancients*)
 
+> **Nota histórica (23/11/2026):** el adaptador aislado CCHL de tres tablas y su suite específica se han retirado por desuso. Las secciones siguientes describen el experimento original, no una API disponible. La persistencia vigente de cartas y órdenes utiliza el puente `sqlite-section-ccwb-bridge.mjs` del almacén CCWB de seis tablas.
+
 **Fecha:** 11/11/2026. **Base:** PR #83. **Alcance:** nueve definiciones de cartas ordinarias de sección (2, 3 o 4 órdenes; izquierda, centro o derecha), **solo laboratorio**. No hay autorizaciones de combate ni integración con la base principal de partidas.
 
 ## Problema y decisión
