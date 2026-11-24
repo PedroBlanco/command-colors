@@ -13,6 +13,9 @@ import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {screenAncientsCombatTurn} from './combat-turn-guard.mjs';
 import {precheckAncientsRangedAttack} from './ranged-precheck.mjs';
 import {createRangedDicePlan} from './dice-plan.mjs';
+import {initializeSectionDiceLab,assertSectionDiceLab,SECTION_DICE_COMMANDS,
+  applySectionDiceCommand,projectSectionDiceLab,resetSectionDiceTurn
+} from './section-ranged-roll-lab.mjs';
 import {
   OPEN_FOOT_PATH_CORE_KIND, OPEN_FOOT_PATH_CORE_POLICY, reduceCoreOpenFootPath
 } from './core-open-foot-path-v2.mjs';
@@ -94,7 +97,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false}={}) {
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -102,7 +105,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     !Array.isArray(board.leaders)||board.units.length+board.leaders.length>117||
     !isRecord(sectorCells)||typeof randomIndex!=='function'||
     !['FIXED','PLAYER_RELATIVE'].includes(sectorPerspective)||
-    (typeof enableLeaderLab!=='boolean'||typeof enableCombatLab!=='boolean'))fail('INVALID_SECTION_HISTORY_SETUP');
+    (typeof enableLeaderLab!=='boolean'||typeof enableCombatLab!=='boolean'||
+      typeof enableDiceLab!=='boolean'||(enableDiceLab&&!enableCombatLab)))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -131,6 +135,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
     if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
+    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes);
   }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
@@ -155,7 +160,7 @@ function screenRangedPlan(state,attackerId,targetId){
   const gate=screenAncientsCombatTurn({
     turnState:{schemaVersion:1,ruleset:ANCIENTS_RULESET,status:'ACTIVE',
       phase:'COMBAT',turn:state.turn,revision:state.revision,
-      orderedUnitIds:ordered,resolvedBattleUnitIds:[],movedStepsByUnit,
+      orderedUnitIds:ordered,resolvedBattleUnitIds:state.diceLab?.resolvedUnitIds??[],movedStepsByUnit,
       pendingCombat:null,pendingDecision:null},
     sessionSide:state.turn,attackerId,targetId,expectedRevision:state.revision
   });
@@ -241,6 +246,7 @@ export function assertSectionHistoryLab(s){
         fail('INVALID_COMBAT_LAB_PLAN');
     }
   }
+  if(Object.hasOwn(s,'diceLab'))assertSectionDiceLab(s);
   if((s.phase==='AWAIT_CARD')!== (s.activeCard===null)||
      (s.phase==='AWAIT_CARD'&&(s.cardPlay!==null||s.handAtPlay!==null||s.orderSnapshot!==null))||
      (s.phase!=='AWAIT_CARD'&&(!isRecord(s.cardPlay)||!isRecord(s.handAtPlay)))||
@@ -256,7 +262,10 @@ export function applySectionHistoryLabCommand(state,command={}){
      !Number.isSafeInteger(command.expectedRevision)||command.expectedRevision<0)
     return reject('INVALID_LAB_COMMAND');
   if(command.expectedRevision!==state.revision)return reject('STALE_REVISION');
-  if(command.actor!==state.turn)return reject('NOT_YOUR_TURN');
+  // Only the opposing participant may review a pending declared physical roll.
+  // All other commands still require the acting side, even after movement closes.
+  if(command.actor!==state.turn&&command.type!=='REVIEW_SECTION_RANGED_PHYSICAL_LAB')
+    return reject('NOT_YOUR_TURN');
   if(state.combatLab?.movementClosed&&['MOVE_SECTION_FOOT_PATH_V2',
     'MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1'].includes(command.type))
     return reject('MOVEMENT_PHASE_CLOSED');
@@ -490,7 +499,12 @@ export function applySectionHistoryLabCommand(state,command={}){
     if(!checked.accepted)return checked;
     next.combatLab.plan=checked.plan;
     publicEvent={kind:'SECTION_RANGED_PREPARED_LAB',side,...checked.plan,combatResolved:false};
+  }else if(SECTION_DICE_COMMANDS.includes(command.type)){
+    const result=applySectionDiceCommand(state,next,command);
+    if(!result.accepted)return result;
+    publicEvent=result.event;
   }else if(command.type==='CANCEL_SECTION_RANGED_LAB'){
+    if(state.diceLab?.pending)return reject('RANGED_ROLL_ALREADY_CAPTURED');
     if(!state.combatLab?.plan)return reject('NO_COMBAT_PLAN_PENDING');
     next.combatLab.plan=null;
     publicEvent={kind:'SECTION_RANGED_CANCELLED_LAB',side};
@@ -505,8 +519,10 @@ export function applySectionHistoryLabCommand(state,command={}){
     next.phase='AWAIT_CARD';next.handAtPlay=null;next.cardPlay=null;next.orderSnapshot=null;
     if(next.footLab)next.footLab.movedUnitIds=[];
     if(next.combatLab)next.combatLab={movementClosed:false,movement:{},plan:null};
+    if(next.diceLab)resetSectionDiceTurn(next);
     if(next.leaderLab){next.leaderLab.movedLeaderIds=[];next.leaderLab.joinedUnitIds=[];}
-    publicEvent={kind:'LAB_TURN_ENDED_WITHOUT_COMBAT',side,drewCard:drew};
+    publicEvent={kind:state.diceLab?.resolvedUnitIds.length
+      ?'LAB_TURN_ENDED_AFTER_RANGED_REVIEW':'LAB_TURN_ENDED_WITHOUT_COMBAT',side,drewCard:drew};
   }else return reject('UNSUPPORTED_LAB_COMMAND');
   next.revision=state.revision+1;
   assertSectionHistoryLab(next);
@@ -547,9 +563,11 @@ export function projectSectionHistoryLab(state,side){
     ...(state.footLab?{
       board:state.board.units.map(u=>({
         id:u.id,side:u.side,col:u.col,row:u.row,
-        unitType:state.footLab.unitTypes[u.id]
+        unitType:state.footLab.unitTypes[u.id],
+        ...(state.diceLab?{blocksRemaining:state.diceLab.blocks[u.id]}:{})
       })),
       movedUnitIds:[...state.footLab.movedUnitIds],
+      ...(state.diceLab?{diceLab:projectSectionDiceLab(state,side)}:{}),
       ...(state.combatLab?{
         combatLab:{movementClosed:state.combatLab.movementClosed,
           plan:copy(state.combatLab.plan),
