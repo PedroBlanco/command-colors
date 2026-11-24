@@ -57,7 +57,10 @@ const explanations=Object.freeze({
   LEADER_CHECK_REQUIRED:'La comprobación del líder debe realizarse antes de continuar.',
   LEADER_CHECK_NOT_AVAILABLE:'No hay una comprobación de líder disponible.',
   LEADER_CHECK_ALREADY_CAPTURED:'La tirada de comprobación del líder ya se ha registrado.',
-  LEADER_EVASION_PENDING:'El líder ha sobrevivido a la eliminación de su unidad; falta resolver su evasión.',
+  LEADER_EVASION_PENDING:'El líder ha sobrevivido a la eliminación de su unidad; debe resolver su evasión el defensor.',
+  LEADER_EVASION_REQUIRED:'No se puede archivar el ataque mientras exista una evasión ordinaria disponible.',
+  LEADER_EVASION_NOT_AVAILABLE:'Solo el defensor puede elegir una ruta cuando hay una evasión pendiente.',
+  INVALID_LEADER_EVASION_PATH:'La ruta no es una evasión disponible; actualiza la partida y elige otra.'
   ELIMINATION_PENDING:'La eliminación y sus consecuencias todavía no se resuelven en este laboratorio.',
   DIRECT_HIT_FINALIZATION_REQUIRED:'El resultado se puede aplicar directamente; no procede archivarlo sin efectos.'
 });
