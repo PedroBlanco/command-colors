@@ -562,3 +562,36 @@ test('CCWB casualties: elimination and banner survive reopen and do not double a
  assert.deepEqual(other.bridge.view('B').diceLab.banners,{A:1,B:0});
  assert.equal(JSON.parse(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=7').get(MATCH).payload).unitEliminated,true);
 }));
+
+test('CCWB leader evasion: defender commits exit with unit casualty, one banner and idempotent retry',()=>fixture(({root,connect})=>{
+ const c=footSetup();
+ Object.assign(c,{enableCombatLab:true,enableDiceLab:true,enableCasualtyLab:true,enableEvadeLab:true,enableLeaderLab:true});
+ c.board.units[0].row=0;c.board.units[1].row=0;c.board.units[1].col=4;
+ c.board.leaders=[{id:'leaderB',side:'B',col:4,row:0}];
+ c.movementUnitTypes.unitB='ELEPHANT';
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ // Seed only this fresh SQLite test fixture, before any command is signed.
+ const privateState=JSON.parse(root.getRow(MATCH).private_state);
+ const journal=privateState.ancientsSectionHistoryLab;
+ journal.initial.diceLab.key='00'.repeat(32);journal.state.diceLab.key=journal.initial.diceLab.key;
+ root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(privateState),MATCH);
+ play(root);order(root);
+ const dispatch=(type,revision,fields={})=>root.bridge.dispatch(req(type,revision,fields,'evade_'+type+'_'+revision));
+ assert.equal(dispatch('FINISH_SECTION_MOVEMENT_LAB',2).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('PREPARE_SECTION_RANGED_LAB',3,{attackerId:'unitA',targetId:'unitB'}).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']}).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true}).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('ROLL_SECTION_LEADER_CASUALTY_LAB',6).code,'SECTION_LAB_APPLIED');
+ const other=connect();
+ assert.equal(other.bridge.view('B').diceLab.canEvade,true);
+ assert.deepEqual(other.bridge.view('A').diceLab.evadeRoutes,[]);
+ const command=req('EVADE_SECTION_LEADER_LAB',7,{actor:'B',path:[],exit:true},'evade_exit_001');
+ assert.equal(other.bridge.dispatch(command).code,'SECTION_LAB_APPLIED');
+ assert.equal(root.bridge.dispatch(command).code,'ALREADY_APPLIED');
+ const view=root.bridge.view('A');
+ assert.deepEqual(view.diceLab.banners,{A:1,B:0});
+ assert.equal(view.board.some(u=>u.id==='unitB'),false);
+ assert.equal(view.leaders.length,0);
+ assert.deepEqual(view.diceLab.escapedLeaders,[{id:'leaderB',side:'B',revision:8}]);
+ assert.equal(JSON.parse(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=8').get(MATCH).payload).kind,'SECTION_LEADER_EVADED_LAB');
+}));
