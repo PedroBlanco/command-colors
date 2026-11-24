@@ -283,14 +283,17 @@ function elephantRetreat(state,ctx){
   const d=state.diceLab,flags=ctx.required;
   const base={flags,required:flags,options:[]};
   if(ctx.leaderPending)return {...base,reason:'ELEPHANT_LEADER_EFFECTS_PENDING'};
-  if(d.rampage.length<ctx.units.length)return {...base,reason:'ELEPHANT_RAMPAGE_PENDING'};
   const replayed=d.version>=8?rampageShadow(state,ctx):null;
   if(replayed?.pending)return {...base,reason:'RAMPAGE_LEADER_EVASION_PENDING'};
+  if(d.rampage.length<ctx.units.length)return {...base,reason:'ELEPHANT_RAMPAGE_PENDING'};
   const remaining={...(replayed?.shadow.diceLab.blocks??d.blocks)};
   if(!replayed)for(const roll of d.rampage)remaining[roll.unitId]-=roll.blocksLost;
   const board=replayed?.shadow.board??state.board;
   const occupied=new Map(board.units.filter(u=>remaining[u.id]>0).map(u=>[hex(u),u]));
   const leaders=new Map(replayed?board.leaders.map(l=>[hex(l),l]):[]);
+  // A friendly leader may have evaded onto the elephant during the rampage.
+  // Do not admit a second leader or lose the attached leader without a check.
+  const attached=leaders.get(hex(ctx.target));
   const terminals=[];
   let frontier=new Map([[hex(ctx.target),{cell:ctx.target,path:[]}]]);
   for(let i=0;i<=flags&&frontier.size;i++){
@@ -298,7 +301,7 @@ function elephantRetreat(state,ctx){
     for(const {cell,path} of frontier.values()){
       const joined=path.length&&leaders.get(hex(cell))?.side===ctx.target.side?leaders.get(hex(cell)):null;
       const rear=i===flags||joined?[]:ctx.rearward(cell);
-      const open=rear.filter(c=>!occupied.has(hex(c))&&(!leaders.has(hex(c))||leaders.get(hex(c)).side===ctx.target.side));
+      const open=rear.filter(c=>!occupied.has(hex(c))&&(!leaders.has(hex(c))||(!attached&&leaders.get(hex(c)).side===ctx.target.side)));
       if(!open.length){
         const missing=joined?0:flags-i;
         // When units block every rearward hex, each takes all missing steps.
@@ -306,7 +309,7 @@ function elephantRetreat(state,ctx){
         const blockingLosses=rear.map(c=>occupied.get(hex(c))).filter(Boolean)
           .map(u=>({unitId:u.id,blocksLost:Math.min(remaining[u.id],missing)}));
         if(replayed)for(const c of rear){const l=leaders.get(hex(c));if(l&&!occupied.has(hex(c))&&l.side!==ctx.target.side)blockingLosses.push({leaderId:l.id,blocksLost:1});}
-        const needsBlockerLeader=!!replayed&&blockingLosses.some(loss=>loss.unitId&&board.leaders.some(l=>hex(l)===hex(board.units.find(u=>u.id===loss.unitId))));
+        const needsBlockerLeader=!!replayed&&(blockingLosses.some(loss=>loss.unitId&&board.leaders.some(l=>hex(l)===hex(board.units.find(u=>u.id===loss.unitId))))||!!attached&&missing>0&&!blockingLosses.length||!!attached&&rear.some(c=>!occupied.has(hex(c))&&leaders.get(hex(c))?.side===ctx.target.side));
         terminals.push({path,missing,blocksLost:blockingLosses.length?0:Math.min(state.diceLab.pending.loss.remainingBlocks,missing),
           joinedLeaderId:joined?.id??null,needsLeaderResolution:false,blockingLosses,...(replayed?{needsBlockerLeader}:{})});
       }
