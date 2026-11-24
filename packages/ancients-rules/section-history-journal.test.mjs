@@ -529,7 +529,8 @@ test('ranged lab: movement record and forest cap limit dice; out of range and ad
 function diceReady(options={}){
  const setup=rangedLabSetup(options);
  setup.enableDiceLab=true;
- setup.enableCasualtyLab=options.casualty===true;
+ setup.enableCasualtyLab=options.casualty===true||options.morale===true;
+ setup.enableMoraleLab=options.morale===true;
  if(options.lethal)setup.movementUnitTypes.b1='ELEPHANT';
  if(options.leader){
   setup.enableLeaderLab=true;
@@ -679,4 +680,31 @@ test('casualty lab: separate digital leader check cannot be skipped or repeated;
    assert.deepEqual(replay(initial,[...commands,declare,review,roll,final]),result.nextState);
   }
  }
+});
+
+test('morale lab: attached surviving leader can ignore a flag after an accepted hit; choice replays',()=>{
+ const {initial,prepared,commands}=diceReady({morale:true,leader:true});
+ initial.diceLab.key='00'.repeat(32);prepared.diceLab.key=initial.diceLab.key;
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','FLAG']});
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const roll=cmd('ROLL_SECTION_LEADER_CASUALTY_LAB',6);
+ const reviewed=apply(apply(prepared,declare).nextState,review).nextState;
+ assert.equal(project(reviewed,'B').diceLab.blocker,'LEADER_CHECK_PENDING');
+ const checked=apply(reviewed,roll).nextState;
+ assert.equal(checked.diceLab.leaderCheck.outcome.leaderWouldBeEliminated,false);
+ assert.equal(project(checked,'B').diceLab.moralePreview.maxIgnored,1);
+ assert.equal(project(checked,'A').diceLab.canChooseMorale,false);
+ assert.equal(apply(checked,cmd('ARCHIVE_SECTION_RANGED_LAB',7)).code,'MORALE_CHOICE_REQUIRED');
+ assert.equal(apply(checked,cmd('CHOOSE_SECTION_MORALE_LAB',7,{actor:'B',ignored:2})).code,'INVALID_MORALE_CHOICE');
+ const accept=apply(checked,cmd('CHOOSE_SECTION_MORALE_LAB',7,{actor:'B',ignored:0})).nextState;
+ assert.equal(project(accept,'B').diceLab.blocker,'RETREAT_PENDING');
+ const choose=cmd('CHOOSE_SECTION_MORALE_LAB',7,{actor:'B',ignored:1});
+ const chosen=apply(checked,choose).nextState;
+ assert.equal(project(chosen,'A').diceLab.canFinalize,true);
+ assert.equal(apply(chosen,cmd('CHOOSE_SECTION_MORALE_LAB',8,{actor:'B',ignored:0})).code,'MORALE_CHOICE_NOT_AVAILABLE');
+ const final=cmd('FINALIZE_SECTION_RANGED_LAB',8);
+ const done=apply(chosen,final).nextState;
+ assert.equal(done.diceLab.blocks.b1,3);
+ assert.equal(done.diceLab.last.morale.ignored,1);
+ assert.deepEqual(replay(initial,[...commands,declare,review,roll,choose,final]),done);
 });

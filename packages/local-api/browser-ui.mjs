@@ -29,7 +29,8 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-finalize-ranged':'ancients-combat-feedback',
   'ancients-archive-ranged':'ancients-combat-feedback',
   'ancients-roll-leader':'ancients-combat-feedback',
-  'ancients-evade-leader':'ancients-combat-feedback'
+  'ancients-evade-leader':'ancients-combat-feedback',
+  'ancients-confirm-morale':'ancients-combat-feedback'
 });
 function clearDeckFeedback() {
   for(const id of new Set(Object.values(deckFeedbackSlots))) el(id).textContent='';
@@ -307,6 +308,21 @@ function renderAncients() {
   el('ancients-evasion-status').textContent=dice?.leaderEvasionAvailable
     ?dice.canEvadeLeader?'Elige la ruta de evasión de tu líder.':'El adversario debe elegir la evasión de su líder.'
     :'No hay una ruta sin enemigos disponible en este laboratorio.';
+  const morale=dice?.moralePreview,decision=dice?.morale??last?.morale;
+  const moraleChoice=el('ancients-morale-choice'),previousMorale=moraleChoice.value;
+  moraleChoice.replaceChildren();
+  if(dice?.canChooseMorale){
+    for(let n=0;n<=morale.maxIgnored;n++){
+      const option=document.createElement('option');option.value=String(n);
+      option.textContent=`Ignorar ${n}; aceptar ${morale.flags-n}`;moraleChoice.appendChild(option);
+    }
+    moraleChoice.value=previousMorale!==''&&Number(previousMorale)<=morale.maxIgnored?previousMorale:String(morale.maxIgnored);
+  }
+  el('ancients-morale-controls').hidden=!morale&&!decision;
+  el('ancients-confirm-morale').disabled=!dice?.canChooseMorale;
+  el('ancients-morale-status').textContent=morale
+    ?`Banderas: ${morale.flags}; máximo ignorable: ${morale.maxIgnored}. Líder: ${morale.attachedLeader?'sí':'no'}; apoyo: ${morale.supported?'sí':'no'}; guerreros al completo: ${morale.fullWarrior?'sí':'no'}.`+(decision?` Ignoradas: ${decision.ignored}; pendientes de retirada: ${decision.remaining}.`:'')
+    :decision?`Banderas ignoradas: ${decision.ignored}; aceptadas: ${decision.remaining}.`:'';
   const faceNames={LIGHT:'Ligera',MEDIUM:'Media',HEAVY:'Pesada',
     LEADER:'Líder',FLAG:'Bandera',SWORDS:'Espadas'};
   const reviewNames={SERVER_GENERATED:'Digital, generada por el servidor',
@@ -315,7 +331,7 @@ function renderAncients() {
   const shown=pending??last;
   const blockerNames={ELIMINATION_PENDING:'eliminación de unidad',
     LEADER_CHECK_PENDING:'comprobación de líder',RETREAT_PENDING:'retirada',
-    LEADER_EVASION_PENDING:'evasión del líder superviviente',
+    LEADER_EVASION_PENDING:'evasión del líder superviviente',MORALE_CHOICE_PENDING:'decisión de moral del defensor',
     PHYSICAL_ROLL_DISPUTED:'desacuerdo sobre la tirada física'};
   el('ancients-dice-status').textContent=shown
     ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}. Coincidencias: ${shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
@@ -854,6 +870,11 @@ action('ancients-declare-physical',()=>{
 action('ancients-accept-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true}));
 action('ancients-dispute-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:false}));
 action('ancients-roll-leader',()=>sendAncients('ROLL_SECTION_LEADER_CASUALTY_LAB'));
+action('ancients-confirm-morale',()=>{
+  const value=el('ancients-morale-choice').value;
+  if(!cached?.diceLab?.canChooseMorale||value==='')throw Error('MORALE_CHOICE_NOT_AVAILABLE');
+  return sendAncients('CHOOSE_SECTION_MORALE_LAB',{ignored:Number(value)});
+});
 action('ancients-evade-leader',()=>{
   const candidate=cached?.diceLab?.leaderEvasionOptions?.find(o=>JSON.stringify(o)===el('ancients-evasion-choice').value);
   if(!cached?.diceLab?.canEvadeLeader||!candidate)throw Error('LEADER_EVASION_NOT_AVAILABLE');
