@@ -28,7 +28,8 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-dispute-physical':'ancients-combat-feedback',
   'ancients-finalize-ranged':'ancients-combat-feedback',
   'ancients-archive-ranged':'ancients-combat-feedback',
-  'ancients-roll-leader':'ancients-combat-feedback'
+  'ancients-roll-leader':'ancients-combat-feedback',
+  'ancients-evade-leader':'ancients-combat-feedback'
 });
 function clearDeckFeedback() {
   for(const id of new Set(Object.values(deckFeedbackSlots))) el(id).textContent='';
@@ -289,7 +290,23 @@ function renderAncients() {
   el('ancients-finalize-ranged').disabled=!dice?.canFinalize;
   el('ancients-roll-leader').disabled=!dice?.canRollLeader;
   el('ancients-roll-leader').hidden=!dice?.banners;
-  el('ancients-archive-ranged').disabled=!dice?.canArchive;
+  el('ancients-archive-ranged').disabled=!dice?.canArchive||!!dice?.leaderEvasionAvailable;
+  const evadeChoice=el('ancients-evasion-choice'),oldEvasion=evadeChoice.value;
+  const evasionOptions=dice?.leaderEvasionOptions??[];
+  evadeChoice.replaceChildren();
+  for(const candidate of evasionOptions){
+    const option=document.createElement('option');
+    option.value=JSON.stringify(candidate);
+    const route=candidate.path.map(p=>`(${p.col+1},${p.row+1})`).join(' → ');
+    option.textContent=candidate.exit?(route?route+' → fuera del tablero':'Salir del tablero'):route;
+    evadeChoice.appendChild(option);
+  }
+  if(evasionOptions.some(o=>JSON.stringify(o)===oldEvasion))evadeChoice.value=oldEvasion;
+  el('ancients-evasion-controls').hidden=dice?.blocker!=='LEADER_EVASION_PENDING';
+  el('ancients-evade-leader').disabled=!dice?.canEvadeLeader;
+  el('ancients-evasion-status').textContent=dice?.leaderEvasionAvailable
+    ?dice.canEvadeLeader?'Elige la ruta de evasión de tu líder.':'El adversario debe elegir la evasión de su líder.'
+    :'No hay una ruta sin enemigos disponible en este laboratorio.';
   const faceNames={LIGHT:'Ligera',MEDIUM:'Media',HEAVY:'Pesada',
     LEADER:'Líder',FLAG:'Bandera',SWORDS:'Espadas'};
   const reviewNames={SERVER_GENERATED:'Digital, generada por el servidor',
@@ -312,6 +329,9 @@ function renderAncients() {
   el('ancients-casualty-status').textContent=last?.unitEliminated||last?.leaderEliminated
     ?`Bajas aplicadas: ${last.unitEliminated?'unidad '+last.targetId:''}${last.unitEliminated&&last.leaderEliminated?' y ':''}${last.leaderEliminated?'líder '+last.leaderCheck.leaderId:''}.`
     :'';
+  if(last?.leaderEvasion)el('ancients-casualty-status').textContent+=last.leaderEvasion.exit
+    ?' El líder salió del tablero sin conceder medalla.'
+    :' El líder se desplazó a ('+(last.leaderEvasion.path.at(-1).col+1)+','+(last.leaderEvasion.path.at(-1).row+1)+').';
   const svg=el('ancients-board');
   if(svg?.ownerDocument?.createElementNS){
     renderMovementBoard(svg,cached.board??[],ancientsDraft,selectAncientsHex,cached.you,{
@@ -834,6 +854,11 @@ action('ancients-declare-physical',()=>{
 action('ancients-accept-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true}));
 action('ancients-dispute-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:false}));
 action('ancients-roll-leader',()=>sendAncients('ROLL_SECTION_LEADER_CASUALTY_LAB'));
+action('ancients-evade-leader',()=>{
+  const candidate=cached?.diceLab?.leaderEvasionOptions?.find(o=>JSON.stringify(o)===el('ancients-evasion-choice').value);
+  if(!cached?.diceLab?.canEvadeLeader||!candidate)throw Error('LEADER_EVASION_NOT_AVAILABLE');
+  return sendAncients('EVADE_SECTION_LEADER_LAB',{path:candidate.path,exit:candidate.exit});
+});
 action('ancients-finalize-ranged',()=>sendAncients('FINALIZE_SECTION_RANGED_LAB'));
 action('ancients-archive-ranged',()=>sendAncients('ARCHIVE_SECTION_RANGED_LAB'));
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));

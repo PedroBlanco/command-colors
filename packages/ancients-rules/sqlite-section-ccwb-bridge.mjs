@@ -33,6 +33,7 @@ const TYPES=Object.freeze({
   FINALIZE_SECTION_RANGED_LAB:[],
   ARCHIVE_SECTION_RANGED_LAB:[],
   ROLL_SECTION_LEADER_CASUALTY_LAB:[],
+  EVADE_SECTION_LEADER_LAB:['path','exit'],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied=(status,code)=>Object.freeze({status,code});

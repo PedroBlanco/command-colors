@@ -263,9 +263,10 @@ export function applySectionHistoryLabCommand(state,command={}){
      !Number.isSafeInteger(command.expectedRevision)||command.expectedRevision<0)
     return reject('INVALID_LAB_COMMAND');
   if(command.expectedRevision!==state.revision)return reject('STALE_REVISION');
-  // Only the opposing participant may review a pending declared physical roll.
-  // All other commands still require the acting side, even after movement closes.
-  if(command.actor!==state.turn&&command.type!=='REVIEW_SECTION_RANGED_PHYSICAL_LAB')
+  // Defensive review and mandatory leader evasion belong to the opponent.
+  // All other commands require the acting side.
+  if(command.actor!==state.turn&&!['REVIEW_SECTION_RANGED_PHYSICAL_LAB',
+    'EVADE_SECTION_LEADER_LAB'].includes(command.type))
     return reject('NOT_YOUR_TURN');
   if(state.combatLab?.movementClosed&&['MOVE_SECTION_FOOT_PATH_V2',
     'MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1'].includes(command.type))

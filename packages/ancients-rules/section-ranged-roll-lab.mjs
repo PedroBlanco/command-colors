@@ -5,6 +5,7 @@
  * Physical faces are declarations, never cryptographically verified.
  */
 import {randomBytes,createHmac} from 'node:crypto';
+import {neighbors} from '../hex-grid/hex.mjs';
 import {captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS,previewBaseAncientsRangedBlockLoss} from './block-loss-preview.mjs';
 import {planBaseAncientsRangedResolution,captureBaseAncientsLeaderCasualtyDice,
@@ -73,6 +74,33 @@ function unsupported(state,pending){
     if(d.leaderCheck.outcome.leaderMustEvadeIfApplied)return 'LEADER_EVASION_PENDING';
   }
   return null;
+}
+
+// LAB odd-q board: A's rear edge is row 8, B's is row 0.
+// Enemy-occupied cells require a separate Leader Escape procedure.
+function leaderEvasionOptions(state){
+  const d=state.diceLab,p=d.pending;
+  if(d.version!==2||!p||!['SERVER_GENERATED','ACCEPTED'].includes(p.review)||
+     unsupported(state,p)!=='LEADER_EVASION_PENDING')return [];
+  const leader=state.board.leaders.find(l=>l.id===d.leaderCheck.leaderId);
+  if(!leader)return [];
+  const options=[],rear=leader.side==='A'?8:0,sign=leader.side==='A'?1:-1;
+  // Physical vertical coordinate of the existing flat-top board.
+  const depth=c=>2*c.row+(c.col&1);
+  function visit(cell,path){
+    const occupiedLeader=state.board.leaders.some(l=>l.id!==leader.id&&hex(l)===hex(cell));
+    if(path.length&&!occupiedLeader)options.push({path,exit:false});
+    if(path.length<3&&cell.row===rear)options.push({path,exit:true});
+    if(path.length===3)return;
+    for(const dest of neighbors(cell)){
+      if(sign*(depth(dest)-depth(cell))<=0)continue;
+      if([...state.board.units,...state.board.leaders].some(x=>x.side!==leader.side&&hex(x)===hex(dest)))continue;
+      // Current terrain scope contains only three passable types.
+      visit(dest,[...path,{col:dest.col,row:dest.row}]);
+    }
+  }
+  visit(leader,[]);
+  return options;
 }
 
 function deriveLeaderCheck(state,revision){
@@ -167,7 +195,8 @@ export function assertSectionDiceLab(state){
 export const SECTION_DICE_COMMANDS=Object.freeze([
   'ROLL_SECTION_RANGED_DIGITAL_LAB','DECLARE_SECTION_RANGED_PHYSICAL_LAB',
   'REVIEW_SECTION_RANGED_PHYSICAL_LAB','FINALIZE_SECTION_RANGED_LAB',
-  'ARCHIVE_SECTION_RANGED_LAB','ROLL_SECTION_LEADER_CASUALTY_LAB'
+  'ARCHIVE_SECTION_RANGED_LAB','ROLL_SECTION_LEADER_CASUALTY_LAB',
+  'EVADE_SECTION_LEADER_LAB'
 ]);
 
 export function applySectionDiceCommand(state,next,command){
@@ -207,25 +236,44 @@ export function applySectionDiceCommand(state,next,command){
     if(!p)return deny('RANGED_ROLL_REQUIRED');
     if(p.review==='AWAITING_OPPONENT')return deny('PHYSICAL_REVIEW_REQUIRED');
     const blocker=p.review==='DISPUTED'?'PHYSICAL_ROLL_DISPUTED':unsupported(state,p);
-    const finalize=command.type==='FINALIZE_SECTION_RANGED_LAB';
-    if(finalize&&blocker)return deny(blocker);
+    const evade=command.type==='EVADE_SECTION_LEADER_LAB';
+    let evasion;
+    if(evade){
+      if(side===state.turn||blocker!=='LEADER_EVASION_PENDING')
+        return deny('LEADER_EVASION_NOT_AVAILABLE');
+      if(typeof command.exit!=='boolean'||!Array.isArray(command.path)||
+         command.path.length>3||!command.path.every(c=>record(c)&&
+         Object.keys(c).length===2&&Number.isSafeInteger(c.col)&&Number.isSafeInteger(c.row)))
+        return deny('INVALID_LEADER_EVASION_PATH');
+      const path=command.path.map(c=>({col:c.col,row:c.row}));
+      evasion=leaderEvasionOptions(state).find(o=>o.exit===command.exit&&same(o.path,path));
+      if(!evasion)return deny('INVALID_LEADER_EVASION_PATH');
+    }
+    const finalize=command.type==='FINALIZE_SECTION_RANGED_LAB'||evade;
+    if(finalize&&blocker&&!evade)return deny(blocker);
     if(!finalize&&!blocker)return deny('DIRECT_HIT_FINALIZATION_REQUIRED');
     if(d.version===2&&!finalize&&blocker==='LEADER_CHECK_PENDING')
       return deny('LEADER_CHECK_REQUIRED');
     if(finalize){
       if(d.version===2)applyDirectLoss(state,next,plan,p);
       else next.diceLab.blocks[plan.targetId]=p.loss.remainingBlocks;
+      if(evasion){
+        const leader=next.board.leaders.find(l=>l.id===d.leaderCheck.leaderId);
+        if(evasion.exit)next.board.leaders=next.board.leaders.filter(l=>l.id!==leader.id);
+        else Object.assign(leader,evasion.path.at(-1));
+      }
     }
     next.diceLab.resolvedUnitIds.push(plan.attackerId);
     const result={attackerId:plan.attackerId,targetId:plan.targetId,roll:p.roll,
       review:p.review,interpretation:p.interpretation,loss:p.loss,
       outcome:finalize?'DIRECT_HITS_APPLIED':'ARCHIVED_WITHOUT_EFFECTS',
-      reason:blocker,blocksApplied:finalize?p.loss.blocksToRemove:0,
+      reason:evade?null:blocker,blocksApplied:finalize?p.loss.blocksToRemove:0,
       blocksRemaining:next.diceLab.blocks[plan.targetId]??0,
       ...(d.version===2?{leaderCheck:structuredClone(d.leaderCheck),
         unitEliminated:finalize&&p.loss.unitWouldBeEliminated,
         leaderEliminated:finalize&&!!d.leaderCheck?.outcome.leaderWouldBeEliminated,
-        banners:banners(next.diceLab)}:{})};
+        banners:banners(next.diceLab)}:{}),
+      ...(evasion?{leaderEvasion:{leaderId:d.leaderCheck.leaderId,...evasion}}:{})};
     next.diceLab.last=structuredClone(result);
     next.diceLab.pending=null;
     if(d.version===2)next.diceLab.leaderCheck=null;
@@ -239,6 +287,7 @@ export function applySectionDiceCommand(state,next,command){
 export function projectSectionDiceLab(state,side){
   const d=state.diceLab,p=d.pending;
   const blocker=p?(p.review==='DISPUTED'?'PHYSICAL_ROLL_DISPUTED':unsupported(state,p)):null;
+  const evasionOptions=blocker==='LEADER_EVASION_PENDING'?leaderEvasionOptions(state):[];
   return {blocks:{...d.blocks},resolvedUnitIds:[...d.resolvedUnitIds],
     pending:p?structuredClone(p):null,last:d.last?structuredClone(d.last):null,
     canReview:side!==state.turn&&p?.review==='AWAITING_OPPONENT',
@@ -247,6 +296,9 @@ export function projectSectionDiceLab(state,side){
       !(d.version===2&&blocker==='LEADER_CHECK_PENDING'),
     ...(d.version===2?{banners:banners(d),casualties:structuredClone(d.casualties),
       leaderCheck:structuredClone(d.leaderCheck),
+      leaderEvasionOptions:side!==state.turn?evasionOptions:[],
+      canEvadeLeader:side!==state.turn&&evasionOptions.length>0,
+      leaderEvasionAvailable:evasionOptions.length>0,
       canRollLeader:side===state.turn&&blocker==='LEADER_CHECK_PENDING'&&
         ['SERVER_GENERATED','ACCEPTED'].includes(p?.review)}:{}),
     blocker};
