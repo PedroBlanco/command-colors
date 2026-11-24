@@ -10,6 +10,9 @@ import {assessAncientsMovementRegime} from './movement-regimes.mjs';
 import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
 import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
+import {screenAncientsCombatTurn} from './combat-turn-guard.mjs';
+import {precheckAncientsRangedAttack} from './ranged-precheck.mjs';
+import {createRangedDicePlan} from './dice-plan.mjs';
 import {
   OPEN_FOOT_PATH_CORE_KIND, OPEN_FOOT_PATH_CORE_POLICY, reduceCoreOpenFootPath
 } from './core-open-foot-path-v2.mjs';
@@ -91,7 +94,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false}={}) {
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -99,7 +102,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     !Array.isArray(board.leaders)||board.units.length+board.leaders.length>117||
     !isRecord(sectorCells)||typeof randomIndex!=='function'||
     !['FIXED','PLAYER_RELATIVE'].includes(sectorPerspective)||
-    typeof enableLeaderLab!=='boolean')fail('INVALID_SECTION_HISTORY_SETUP');
+    (typeof enableLeaderLab!=='boolean'||typeof enableCombatLab!=='boolean'))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -127,11 +130,49 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[],
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
-  }else if(enableLeaderLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
+    if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
+  }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
   assertSectionHistoryLab(state);
   return state;
+}
+
+/** Only the replayed server state may supply movement, orders, terrain or dice. */
+function screenRangedPlan(state,attackerId,targetId){
+  if(!state.combatLab?.movementClosed||state.phase!=='LAB_RESOLUTION_PENDING')
+    return reject('COMBAT_PHASE_NOT_AVAILABLE');
+  const attacker=state.board.units.find(u=>u.id===attackerId);
+  const target=state.board.units.find(u=>u.id===targetId);
+  if(!validId(attackerId)||!validId(targetId)||!attacker||!target||
+     attacker.side!==state.turn||target.side===state.turn)
+    return reject('INVALID_RANGED_TARGET');
+  const ordered=state.orderSnapshot.pieces.filter(p=>p.kind==='UNIT'&&
+    p.side===state.turn).map(p=>p.id);
+  const movedStepsByUnit=Object.fromEntries(ordered.map(id=>[
+    id,state.combatLab.movement[id]?.steps??0
+  ]));
+  const gate=screenAncientsCombatTurn({
+    turnState:{schemaVersion:1,ruleset:ANCIENTS_RULESET,status:'ACTIVE',
+      phase:'COMBAT',turn:state.turn,revision:state.revision,
+      orderedUnitIds:ordered,resolvedBattleUnitIds:[],movedStepsByUnit,
+      pendingCombat:null,pendingDecision:null},
+    sessionSide:state.turn,attackerId,targetId,expectedRevision:state.revision
+  });
+  if(gate.status!=='CANDIDATE')return reject(gate.reason);
+  if(state.combatLab.movement[attackerId]?.battle!=='POSSIBLE'&&
+     Object.hasOwn(state.combatLab.movement,attackerId))
+    return reject('BATTLE_AFTER_MOVEMENT_UNAVAILABLE');
+  const units=state.board.units.map(u=>({...u,type:state.footLab.unitTypes[u.id]}));
+  const checked=precheckAncientsRangedAttack({units,leaders:state.board.leaders,
+    terrain:state.footLab.terrain??[],attackerId,targetId,movedSteps:gate.movedSteps});
+  if(checked.status!=='CANDIDATE')return reject(checked.reason);
+  const dice=createRangedDicePlan({mode:'OFFICIAL_PREVIEW',screening:{ranged:checked},
+    board:{units},targetId});
+  if(!dice)return reject('RANGED_DICE_PLAN_UNAVAILABLE');
+  return {accepted:true,plan:{kind:'RANGED_PREVIEW',attackerId,targetId,
+    distance:checked.distance,movedSteps:gate.movedSteps,baseDice:checked.baseDice,
+    diceCount:dice.diceCount,targetUnitType:dice.targetUnitType,dieFaces:[...dice.dieFaces]}};
 }
 
 /** Verify complete card conservation and the minimal internal lab contract. */
@@ -181,6 +222,25 @@ export function assertSectionHistoryLab(s){
          (info.movedLeaderIds.length>0||info.joinedUnitIds.length>0)))
       fail('INVALID_LEADER_LAB_STATE');
   }
+  if(Object.hasOwn(s,'combatLab')){
+    const c=s.combatLab;
+    if(!s.footLab||!isRecord(c)||Object.keys(c).length!==3||
+       typeof c.movementClosed!=='boolean'||!isRecord(c.movement)||
+       !(c.plan===null||isRecord(c.plan))||
+       (s.phase!=='LAB_RESOLUTION_PENDING'&&
+        (c.movementClosed||Object.keys(c.movement).length||c.plan!==null))||
+       Object.keys(c.movement).length!==s.footLab.movedUnitIds.length||
+       Object.entries(c.movement).some(([id,m])=>
+         !s.footLab.movedUnitIds.includes(id)||!isRecord(m)||
+         Object.keys(m).length!==2||!Number.isSafeInteger(m.steps)||
+         m.steps<1||m.steps>4||!['POSSIBLE','UNAVAILABLE'].includes(m.battle))||
+       (c.plan!==null&&!c.movementClosed))fail('INVALID_COMBAT_LAB_STATE');
+    if(c.plan!==null){
+      const checked=screenRangedPlan(s,c.plan.attackerId,c.plan.targetId);
+      if(!checked.accepted||JSON.stringify(checked.plan)!==JSON.stringify(c.plan))
+        fail('INVALID_COMBAT_LAB_PLAN');
+    }
+  }
   if((s.phase==='AWAIT_CARD')!== (s.activeCard===null)||
      (s.phase==='AWAIT_CARD'&&(s.cardPlay!==null||s.handAtPlay!==null||s.orderSnapshot!==null))||
      (s.phase!=='AWAIT_CARD'&&(!isRecord(s.cardPlay)||!isRecord(s.handAtPlay)))||
@@ -197,6 +257,9 @@ export function applySectionHistoryLabCommand(state,command={}){
     return reject('INVALID_LAB_COMMAND');
   if(command.expectedRevision!==state.revision)return reject('STALE_REVISION');
   if(command.actor!==state.turn)return reject('NOT_YOUR_TURN');
+  if(state.combatLab?.movementClosed&&['MOVE_SECTION_FOOT_PATH_V2',
+    'MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1'].includes(command.type))
+    return reject('MOVEMENT_PHASE_CLOSED');
   const next=copy(state),side=command.actor;
   let publicEvent;
   if(command.type==='PLAY_SECTION_CARD'){
@@ -304,6 +367,9 @@ export function applySectionHistoryLabCommand(state,command={}){
     // A client cannot supply its own board, rules or movement result.
     next.board.units=result.nextState.board.units;
     next.footLab.movedUnitIds=result.nextState.orderLedger.movedUnitIds;
+    if(next.combatLab)next.combatLab.movement[command.unitId]={
+      steps:command.path.length,battle:battleAfterMovement==='POSSIBLE'?'POSSIBLE':'UNAVAILABLE'
+    };
     if(attached){
       const destination=result.transition.to;
       const carried=next.board.leaders.find(l=>l.id===attached.id);
@@ -356,6 +422,9 @@ export function applySectionHistoryLabCommand(state,command={}){
     target.col=checked.destination.col;
     target.row=checked.destination.row;
     next.footLab.movedUnitIds.push(piece.id);
+    if(next.combatLab)next.combatLab.movement[piece.id]={
+      steps:command.path.length,battle:checked.battleAfterMovement==='POSSIBLE'?'POSSIBLE':'UNAVAILABLE'
+    };
     if(attached){
       const carried=next.board.leaders.find(l=>l.id===attached.id);
       carried.col=checked.destination.col;carried.row=checked.destination.row;
@@ -410,7 +479,23 @@ export function applySectionHistoryLabCommand(state,command={}){
       joinedUnit:targetUnit?.id??null,
       combatResolved:false
     };
+  }else if(command.type==='FINISH_SECTION_MOVEMENT_LAB'){
+    if(!state.combatLab||state.phase!=='LAB_RESOLUTION_PENDING'||state.combatLab.movementClosed)
+      return reject('COMBAT_PHASE_NOT_AVAILABLE');
+    next.combatLab.movementClosed=true;
+    publicEvent={kind:'SECTION_MOVEMENT_CLOSED_LAB',side};
+  }else if(command.type==='PREPARE_SECTION_RANGED_LAB'){
+    if(state.combatLab?.plan)return reject('COMBAT_PLAN_PENDING');
+    const checked=screenRangedPlan(state,command.attackerId,command.targetId);
+    if(!checked.accepted)return checked;
+    next.combatLab.plan=checked.plan;
+    publicEvent={kind:'SECTION_RANGED_PREPARED_LAB',side,...checked.plan,combatResolved:false};
+  }else if(command.type==='CANCEL_SECTION_RANGED_LAB'){
+    if(!state.combatLab?.plan)return reject('NO_COMBAT_PLAN_PENDING');
+    next.combatLab.plan=null;
+    publicEvent={kind:'SECTION_RANGED_CANCELLED_LAB',side};
   }else if(command.type==='END_EXPERIMENTAL_TURN'){
+    if(state.combatLab?.plan)return reject('COMBAT_PLAN_PENDING');
     if(state.phase!=='LAB_RESOLUTION_PENDING')return reject('WRONG_PHASE');
     next.discardPile.push(next.activeCard);
     next.activeCard=null;
@@ -419,6 +504,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     next.turn=side==='A'?'B':'A';
     next.phase='AWAIT_CARD';next.handAtPlay=null;next.cardPlay=null;next.orderSnapshot=null;
     if(next.footLab)next.footLab.movedUnitIds=[];
+    if(next.combatLab)next.combatLab={movementClosed:false,movement:{},plan:null};
     if(next.leaderLab){next.leaderLab.movedLeaderIds=[];next.leaderLab.joinedUnitIds=[];}
     publicEvent={kind:'LAB_TURN_ENDED_WITHOUT_COMBAT',side,drewCard:drew};
   }else return reject('UNSUPPORTED_LAB_COMMAND');
@@ -464,6 +550,16 @@ export function projectSectionHistoryLab(state,side){
         unitType:state.footLab.unitTypes[u.id]
       })),
       movedUnitIds:[...state.footLab.movedUnitIds],
+      ...(state.combatLab?{
+        combatLab:{movementClosed:state.combatLab.movementClosed,
+          plan:copy(state.combatLab.plan),
+          candidates:state.turn===side&&state.combatLab.movementClosed&&!state.combatLab.plan
+            ?state.orderSnapshot.pieces.filter(p=>p.kind==='UNIT'&&p.side===side)
+              .flatMap(p=>state.board.units.filter(u=>u.side!==side).flatMap(u=>{
+                const checked=screenRangedPlan(state,p.id,u.id);
+                return checked.accepted?[{attackerId:p.id,targetId:u.id,diceCount:checked.plan.diceCount}]:[];
+              })):[]}
+      }:{}),
       ...(state.leaderLab?{
         leaders:copy(state.board.leaders),
         movedLeaderIds:[...state.leaderLab.movedLeaderIds],
