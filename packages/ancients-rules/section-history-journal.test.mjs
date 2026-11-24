@@ -550,6 +550,9 @@ function diceReady(options={}){
  }
  if(options.lethal)setup.movementUnitTypes.b1='ELEPHANT';
  if(options.blockRetreat){
+  // Keep the shooter two hexes from the target and every rear blocker.
+  // Otherwise an adjacent enemy prevents the ranged attack before retreat.
+  setup.board.units[0].row=5;
   for(const [i,c] of [{col:4,row:3},{col:3,row:3},{col:5,row:3}].entries()){
    const id='blocker'+i;setup.board.units.push({id,side:'B',...c});setup.movementUnitTypes[id]='HEAVY_INFANTRY';
   }
@@ -562,8 +565,9 @@ function diceReady(options={}){
  const close=cmd('FINISH_SECTION_MOVEMENT_LAB',2);
  const closed=apply(ordered,close).nextState;
  const attack=cmd('PREPARE_SECTION_RANGED_LAB',3,{attackerId:'a1',targetId:'b1'});
- const prepared=apply(closed,attack).nextState;
- return {initial,prepared,commands:[...commands,close,attack]};
+ const result=apply(closed,attack);
+ assert.equal(result.accepted,true,result.code);
+ return {initial,prepared:result.nextState,commands:[...commands,close,attack]};
 }
 
 test('dice lab: physical review belongs to adversary, hits apply once and persist through replay/turn',()=>{
