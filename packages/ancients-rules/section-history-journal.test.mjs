@@ -525,3 +525,82 @@ test('ranged lab: movement record and forest cap limit dice; out of range and ad
   else assert.equal(r.code,expected);
  }
 });
+
+function diceReady(options={}){
+ const setup=rangedLabSetup(options);
+ setup.enableDiceLab=true;
+ if(options.leader){
+  setup.enableLeaderLab=true;
+  setup.board.leaders=[{id:'b_leader',side:'B',col:4,row:4}];
+ }
+ const {initial,ordered,commands}=rangedLabReady(setup);
+ const close=cmd('FINISH_SECTION_MOVEMENT_LAB',2);
+ const closed=apply(ordered,close).nextState;
+ const attack=cmd('PREPARE_SECTION_RANGED_LAB',3,{attackerId:'a1',targetId:'b1'});
+ const prepared=apply(closed,attack).nextState;
+ return {initial,prepared,commands:[...commands,close,attack]};
+}
+
+test('dice lab: physical review belongs to adversary, hits apply once and persist through replay/turn',()=>{
+ const {initial,prepared,commands}=diceReady();
+ assert.equal(apply(prepared,cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{
+  faces:['HEAVY']
+ })).code,'INVALID_PHYSICAL_DECLARATION');
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']});
+ const declared=apply(prepared,declare).nextState;
+ assert.equal(project(declared,'A').diceLab.canReview,false);
+ assert.equal(project(declared,'B').diceLab.canReview,true);
+ assert.equal(apply(declared,cmd('FINALIZE_SECTION_RANGED_LAB',5)).code,'PHYSICAL_REVIEW_REQUIRED');
+ assert.equal(apply(declared,cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{accept:true})).code,
+  'PHYSICAL_REVIEW_NOT_AVAILABLE');
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const reviewed=apply(declared,review).nextState;
+ assert.equal(apply(reviewed,cmd('CANCEL_SECTION_RANGED_LAB',6)).code,'RANGED_ROLL_ALREADY_CAPTURED');
+ assert.equal(apply(reviewed,cmd('ROLL_SECTION_RANGED_DIGITAL_LAB',6)).code,'RANGED_ROLL_ALREADY_CAPTURED');
+ const final=cmd('FINALIZE_SECTION_RANGED_LAB',6);
+ const result=apply(reviewed,final);
+ assert.equal(result.accepted,true);
+ assert.equal(result.combatResolved,false);
+ assert.equal(result.nextState.diceLab.blocks.b1,2);
+ assert.equal(result.publicEvent.blocksApplied,2);
+ assert.equal(apply(result.nextState,cmd('PREPARE_SECTION_RANGED_LAB',7,{
+  attackerId:'a1',targetId:'b1'
+ })).code,'UNIT_ALREADY_BATTLED');
+ const end=cmd('END_EXPERIMENTAL_TURN',7);
+ const ended=apply(result.nextState,end).nextState;
+ assert.equal(project(ended,'B').board.find(u=>u.id==='b1').blocksRemaining,2);
+ assert.deepEqual(ended.diceLab.resolvedUnitIds,[]);
+ assert.deepEqual(replay(initial,[...commands,declare,review,final,end]),ended);
+ for(const side of ['A','B'])assert.equal(JSON.stringify(project(ended,side)).includes(initial.diceLab.key),false);
+});
+
+test('dice lab: digital results are reproducible and tamper-evident; no reroll',()=>{
+ const {initial,prepared,commands}=diceReady();
+ const command=cmd('ROLL_SECTION_RANGED_DIGITAL_LAB',4);
+ const captured=apply(prepared,command).nextState;
+ assert.equal(captured.diceLab.pending.roll.verification,'SERVER_GENERATED');
+ assert.equal(captured.diceLab.pending.roll.results.length,2);
+ assert.deepEqual(apply(prepared,command).nextState,captured);
+ assert.deepEqual(replay(initial,[...commands,command]),captured);
+ assert.equal(apply(captured,cmd('ROLL_SECTION_RANGED_DIGITAL_LAB',5)).code,'RANGED_ROLL_ALREADY_CAPTURED');
+ const changed=structuredClone(captured);
+ changed.diceLab.pending.roll.results[0]=changed.diceLab.pending.roll.results[0]==='FLAG'?'HEAVY':'FLAG';
+ assert.throws(()=>validate(changed),/INVALID_SECTION_DICE_LAB_STATE/);
+});
+
+test('dice lab: unsupported retreat, leader checks and disputed physical roll cannot apply effects',()=>{
+ for(const [options,faces,accept,code] of [
+  [{},['HEAVY','FLAG'],true,'RETREAT_PENDING'],
+  [{leader:true},['HEAVY','SWORDS'],true,'LEADER_CHECK_PENDING'],
+  [{},['HEAVY','HEAVY'],false,'PHYSICAL_ROLL_DISPUTED']
+ ]){
+  const {prepared}=diceReady(options);
+  const declared=apply(prepared,cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces})).nextState;
+  const reviewed=apply(declared,cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept})).nextState;
+  assert.equal(apply(reviewed,cmd('FINALIZE_SECTION_RANGED_LAB',6)).code,code);
+  const archived=apply(reviewed,cmd('ARCHIVE_SECTION_RANGED_LAB',6)).nextState;
+  assert.equal(archived.diceLab.blocks.b1,4);
+  assert.equal(archived.diceLab.last.outcome,'ARCHIVED_WITHOUT_EFFECTS');
+  assert.equal(archived.diceLab.last.reason,code);
+ }
+});
