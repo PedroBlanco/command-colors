@@ -26,6 +26,7 @@ const ANCIENTS_LAB_COMMAND_FIELDS=Object.freeze({
   REVIEW_SECTION_RANGED_PHYSICAL_LAB:['accept'],
   FINALIZE_SECTION_RANGED_LAB:[],
   ARCHIVE_SECTION_RANGED_LAB:[],
+  ROLL_SECTION_LEADER_CASUALTY_LAB:[],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied = (code, status = 403) => ({status, body: {code}});
