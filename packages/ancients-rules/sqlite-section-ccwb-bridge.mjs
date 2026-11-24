@@ -24,6 +24,9 @@ const TYPES=Object.freeze({
   MOVE_SECTION_FOOT_PATH_V2:['unitId','path'],
   MOVE_SECTION_MOUNTED_PATH_V1:['unitId','path'],
   MOVE_SECTION_LEADER_PATH_V1:['leaderId','path'],
+  FINISH_SECTION_MOVEMENT_LAB:[],
+  PREPARE_SECTION_RANGED_LAB:['attackerId','targetId'],
+  CANCEL_SECTION_RANGED_LAB:[],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied=(status,code)=>Object.freeze({status,code});
