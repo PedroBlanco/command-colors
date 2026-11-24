@@ -22,7 +22,7 @@ export function createAncientsLoopbackSetup(){
   }
   return {
     cardInstances,handSizes:{A:3,B:3},startingSide:'A',
-    sectorPerspective:'PLAYER_RELATIVE',enableLeaderLab:true,enableCombatLab:true,
+    sectorPerspective:'PLAYER_RELATIVE',enableLeaderLab:true,enableCombatLab:true,enableDiceLab:true,
     board:{units:[
       {id:'A_light',side:'A',col:2,row:7},
       {id:'A_medium',side:'A',col:6,row:7},
