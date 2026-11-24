@@ -529,6 +529,7 @@ test('ranged lab: movement record and forest cap limit dice; out of range and ad
 function diceReady(options={}){
  const setup=rangedLabSetup(options);
  setup.enableDiceLab=true;
+ if(options.rampageLeaders)options={...options,rampage:true};
  if(options.rampage)options={...options,escape:true,lethal:true};
  if(options.escape)options={...options,retreatLeaders:true};
  setup.enableCasualtyLab=options.casualty===true||options.morale===true||options.retreat===true||options.retreatLeaders===true;
@@ -537,6 +538,8 @@ function diceReady(options={}){
  setup.enableRetreatLeaderLab=options.retreatLeaders===true;
  setup.enableLeaderEscapeLab=options.escape===true;
  setup.enableRampageLab=options.rampage===true;
+ setup.enableRampageLeaderLab=options.rampageLeaders===true;
+ if(options.rampageLeaders){setup.enableLeaderLab=true;setup.board.leaders=[{id:'lone',side:'A',col:5,row:4}];}
  if(options.escape){
   setup.board.units.push({id:'escape_enemy',side:'A',col:4,row:3});
   setup.movementUnitTypes.escape_enemy='LIGHT_INFANTRY';
@@ -810,4 +813,26 @@ test('elephant rampage lab: attacker orders two-dice rolls before defender retre
  assert.equal(done.diceLab.blocks.escape_enemy,4-staged.diceLab.rampage[0].blocksLost);
  assert.equal(done.diceLab.last.rampage.length,1);
  assert.deepEqual(replay(initial,[...commands,declare,review,roll,retreat]),done);
+});
+
+test('rampage leader lab: lone adjacent leader rolls and if surviving must evade before further rolls',()=>{
+ const {initial,prepared,commands}=diceReady({rampageLeaders:true});
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['FLAG','SWORDS']});
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const pending=apply(apply(prepared,declare).nextState,review).nextState;
+ const roll=cmd('ROLL_SECTION_ELEPHANT_RAMPAGE_LAB',6,{unitId:'lone'});
+ const staged=apply(pending,roll).nextState;
+ assert.equal(staged.diceLab.rampage[0].leaderId,'lone');
+ const commandsAfter=[roll];
+ let current=staged;
+ if(staged.diceLab.rampage[0].needsEvasion){
+  const evasion=project(staged,'A').diceLab.rampage.evasion;
+  assert.ok(evasion.options.length);
+  assert.equal(project(staged,'B').diceLab.rampage.evasion.options.length,0);
+  assert.equal(apply(staged,cmd('ROLL_SECTION_ELEPHANT_RAMPAGE_LAB',7,{unitId:'escape_enemy'})).code,'RAMPAGE_LEADER_EVASION_PENDING');
+  const o=evasion.options[0],evade=cmd('EVADE_SECTION_RAMPAGE_LEADER_LAB',7,{path:o.path,exit:o.exit});
+  current=apply(staged,evade).nextState;commandsAfter.push(evade);
+ }
+ assert.equal(project(current,'A').diceLab.rampage.canRoll,true);
+ assert.deepEqual(replay(initial,[...commands,declare,review,...commandsAfter]),current);
 });

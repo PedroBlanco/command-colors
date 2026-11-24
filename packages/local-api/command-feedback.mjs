@@ -57,6 +57,8 @@ const explanations=Object.freeze({
   INVALID_RETREAT_PATH:'La ruta no es una opción de retirada válida. Actualiza la partida.',
   RETREAT_LEADER_RESOLUTION_PENDING:'La retirada requiere una comprobación o evasión de líder aún no implementada.',
   ELEPHANT_RAMPAGE_NOT_AVAILABLE:'No hay tiradas de estampida disponibles para este jugador.',
+  RAMPAGE_LEADER_EVASION_PENDING:'Resuelve la evasión del líder antes de continuar la estampida.',
+  ELEPHANT_BLOCKER_LEADERS_PENDING:'Las consecuencias para líderes de unidades bloqueadoras aún no están disponibles.',
   ELEPHANT_LEADER_EFFECTS_PENDING:'La estampida afecta a líderes; este caso aún no está disponible.',
   INVALID_RAMPAGE_TARGET:'La unidad no es adyacente o ya tiene una tirada de estampida registrada.',
   ELEPHANT_RAMPAGE_PENDING:'La estampida del elefante debe resolverse antes de su retirada.' ,
