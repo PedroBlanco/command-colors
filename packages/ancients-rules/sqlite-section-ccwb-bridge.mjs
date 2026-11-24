@@ -32,6 +32,7 @@ const TYPES=Object.freeze({
   REVIEW_SECTION_RANGED_PHYSICAL_LAB:['accept'],
   FINALIZE_SECTION_RANGED_LAB:[],
   ARCHIVE_SECTION_RANGED_LAB:[],
+  ROLL_SECTION_LEADER_CASUALTY_LAB:[],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied=(status,code)=>Object.freeze({status,code});
