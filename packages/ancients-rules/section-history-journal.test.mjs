@@ -529,6 +529,7 @@ test('ranged lab: movement record and forest cap limit dice; out of range and ad
 function diceReady(options={}){
  const setup=rangedLabSetup(options);
  setup.enableDiceLab=true;
+ if(options.elephantRetreatLeaders)options={...options,rampageLeaders:true};
  if(options.rampageLeaders)options={...options,rampage:true};
  if(options.rampage)options={...options,escape:true,lethal:true};
  if(options.escape)options={...options,retreatLeaders:true};
@@ -539,6 +540,7 @@ function diceReady(options={}){
  setup.enableLeaderEscapeLab=options.escape===true;
  setup.enableRampageLab=options.rampage===true;
  setup.enableRampageLeaderLab=options.rampageLeaders===true;
+ setup.enableElephantRetreatLeaderLab=options.elephantRetreatLeaders===true;
  if(options.rampageLeaders){setup.enableLeaderLab=true;setup.board.leaders=[{id:'lone',side:'A',col:5,row:4}];}
  if(options.escape){
   setup.board.units.push({id:'escape_enemy',side:'A',col:4,row:3});
@@ -835,4 +837,20 @@ test('rampage leader lab: lone adjacent leader rolls and if surviving must evade
  }
  assert.equal(project(current,'A').diceLab.rampage.canRoll,true);
  assert.deepEqual(replay(initial,[...commands,declare,review,...commandsAfter]),current);
+});
+
+test('elephant retreat leader lab: attached leader can accompany elephant after rampage',()=>{
+ const {initial,prepared,commands}=diceReady({elephantRetreatLeaders:true,leader:true});
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['FLAG','SWORDS']});
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const pending=apply(apply(prepared,declare).nextState,review).nextState;
+ const roll=cmd('ROLL_SECTION_ELEPHANT_RAMPAGE_LAB',6,{unitId:'escape_enemy'});
+ const staged=apply(pending,roll).nextState;
+ const o=project(staged,'B').diceLab.retreat.options.find(o=>o.path.length===1);
+ assert.ok(o);
+ const retreat=cmd('RETREAT_SECTION_UNIT_LAB',7,{actor:'B',path:o.path});
+ const done=apply(staged,retreat).nextState;
+ const elephant=done.board.units.find(u=>u.id==='b1'),leader=done.board.leaders.find(l=>l.id==='b_leader');
+ assert.deepEqual([leader.col,leader.row],[elephant.col,elephant.row]);
+ assert.deepEqual(replay(initial,[...commands,declare,review,roll,retreat]),done);
 });

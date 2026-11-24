@@ -370,16 +370,20 @@ function renderAncients() {
   el('ancients-rampage-evasion-controls').hidden=!rampageEvasion;
   el('ancients-evade-rampage').disabled=!rampageEvasion?.options.length;
   el('ancients-rampage-evasion-status').textContent=rampageEvasion?'Evasión de '+rampageEvasion.leaderId+' (bando '+rampageEvasion.side+').':'';
+  const elephantStage=dice?.elephantRetreatPending;
+  if(elephantStage)el('ancients-retreat-status').textContent='Retirada confirmada: resolver los líderes antes de aplicar las bajas.';
   const faceNames={LIGHT:'Ligera',MEDIUM:'Media',HEAVY:'Pesada',
     LEADER:'Líder',FLAG:'Bandera',SWORDS:'Espadas'};
   el('ancients-rampage-status').textContent=(rampage?.rolls??last?.rampage??[]).map(r=>r.unitId+': '+r.results.map(f=>faceNames[f]??f).join(', ')+'; bajas: '+r.blocksLost+(r.leaderId?' · líder '+r.leaderId+(r.leaderEliminated||r.evasion?.escape.eliminated?' eliminado':r.needsEvasion&&!r.evasion?' debe evadirse':' superviviente'):'')).join(' | ');
+  const elephantChecks=elephantStage?.checks??last?.elephantChecks;
+  if(elephantChecks?.length)el('ancients-rampage-status').textContent+=' | Comprobaciones de retirada: '+elephantChecks.map(c=>c.leaderId+': '+(c.reused?'tirada anterior':c.faces.map(f=>faceNames[f]??f).join(', '))+(c.leaderEliminated?' (baja)':c.needsEvasion?' (evasión)':' (superviviente)')).join('; ');
   const reviewNames={SERVER_GENERATED:'Digital, generada por el servidor',
     AWAITING_OPPONENT:'Física, pendiente de revisión del adversario',
     ACCEPTED:'Física, aceptada por el adversario',DISPUTED:'Física, en desacuerdo'};
   const shown=pending??last;
   const blockerNames={ELIMINATION_PENDING:'eliminación de unidad',
     LEADER_CHECK_PENDING:'comprobación de líder',RETREAT_PENDING:'retirada',
-    LEADER_EVASION_PENDING:'evasión del líder superviviente',MORALE_CHOICE_PENDING:'decisión de moral del defensor',
+    LEADER_EVASION_PENDING:'evasión del líder superviviente',MORALE_CHOICE_PENDING:'decisión de moral del defensor',ELEPHANT_RETREAT_EVASION_PENDING:'evasión de líder tras retirada de elefante',
     PHYSICAL_ROLL_DISPUTED:'desacuerdo sobre la tirada física'};
   el('ancients-dice-status').textContent=shown
     ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}. Coincidencias: ${shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
