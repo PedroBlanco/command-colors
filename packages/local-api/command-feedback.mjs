@@ -60,7 +60,7 @@ const explanations=Object.freeze({
   LEADER_EVASION_PENDING:'El líder ha sobrevivido a la eliminación de su unidad; debe resolver su evasión el defensor.',
   LEADER_EVASION_REQUIRED:'No se puede archivar el ataque mientras exista una evasión ordinaria disponible.',
   LEADER_EVASION_NOT_AVAILABLE:'Solo el defensor puede elegir una ruta cuando hay una evasión pendiente.',
-  INVALID_LEADER_EVASION_PATH:'La ruta no es una evasión disponible; actualiza la partida y elige otra.'
+  INVALID_LEADER_EVASION_PATH:'La ruta no es una evasión disponible; actualiza la partida y elige otra.',
   ELIMINATION_PENDING:'La eliminación y sus consecuencias todavía no se resuelven en este laboratorio.',
   DIRECT_HIT_FINALIZATION_REQUIRED:'El resultado se puede aplicar directamente; no procede archivarlo sin efectos.'
 });
