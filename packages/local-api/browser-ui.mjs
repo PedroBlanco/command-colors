@@ -31,7 +31,8 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-roll-leader':'ancients-combat-feedback',
   'ancients-evade-leader':'ancients-combat-feedback',
   'ancients-confirm-morale':'ancients-combat-feedback',
-  'ancients-confirm-retreat':'ancients-combat-feedback'
+  'ancients-confirm-retreat':'ancients-combat-feedback',
+  'ancients-roll-rampage':'ancients-combat-feedback'
 });
 function clearDeckFeedback() {
   for(const id of new Set(Object.values(deckFeedbackSlots))) el(id).textContent='';
@@ -331,6 +332,7 @@ function renderAncients() {
     const option=document.createElement('option');option.value=JSON.stringify(candidate.path);
     const route=candidate.path.map(p=>`(${p.col+1},${p.row+1})`).join(' → ')||'Sin desplazamiento';
     option.textContent=route+` · bajas: ${candidate.blocksLost}`+(candidate.joinedLeaderId?' · unión a '+candidate.joinedLeaderId:'')+(candidate.needsLeaderResolution?' · comprobar consecuencias del líder':'');
+    if(candidate.blockingLosses?.length)option.textContent+=' · pérdidas de bloqueadores: '+candidate.blockingLosses.map(l=>l.unitId+' ('+l.blocksLost+')').join(', ');
     retreatChoice.appendChild(option);
   }
   if(retreat?.options.some(o=>JSON.stringify(o.path)===oldRetreat))retreatChoice.value=oldRetreat;
@@ -338,13 +340,24 @@ function renderAncients() {
   el('ancients-confirm-retreat').disabled=!dice?.canRetreat;
   el('ancients-retreat-status').textContent=retreat
     ?`Retirada de ${retreat.required} hexágonos por ${retreat.flags} bandera(s). `+
-       (retreat.reason==='ELEPHANT_RAMPAGE_PENDING'?'Estampida pendiente.':
+       (retreat.reason==='ELEPHANT_RAMPAGE_PENDING'?'El atacante debe resolver las tiradas de estampida.':
+        retreat.reason==='ELEPHANT_LEADER_EFFECTS_PENDING'?'Estampida con líderes aún no disponible.':
         retreat.reason?'Consecuencias para el líder aún no implementadas.':
         dice.canRetreat?'Elige una ruta validada.':'El defensor debe elegir la ruta.')
     :dice?.retreatPending?`Ruta confirmada: ${dice.retreatPending.choice.path.length} pasos; ${dice.retreatPending.choice.blocksLost} bajas previstas. Pendiente de resolver el líder.`
     :last?.retreat?`Retirada aplicada: ${last.retreat.path.length} pasos, ${last.retreat.blocksLost} bloques perdidos.`:'';
+  const rampage=dice?.rampage,rampageChoice=el('ancients-rampage-choice'),oldRampage=rampageChoice.value;
+  rampageChoice.replaceChildren();
+  for(const u of rampage?.remaining??[]){
+    const option=document.createElement('option');option.value=u.unitId;
+    option.textContent=u.unitId+' ('+(u.side===cached.you?'propia':'adversaria')+')';rampageChoice.appendChild(option);
+  }
+  if(rampage?.remaining.some(u=>u.unitId===oldRampage))rampageChoice.value=oldRampage;
+  el('ancients-rampage-controls').hidden=!rampage&&!last?.rampage;
+  el('ancients-roll-rampage').disabled=!rampage?.canRoll;
   const faceNames={LIGHT:'Ligera',MEDIUM:'Media',HEAVY:'Pesada',
     LEADER:'Líder',FLAG:'Bandera',SWORDS:'Espadas'};
+  el('ancients-rampage-status').textContent=(rampage?.rolls??last?.rampage??[]).map(r=>r.unitId+': '+r.results.map(f=>faceNames[f]??f).join(', ')+'; bajas: '+r.blocksLost).join(' | ');
   const reviewNames={SERVER_GENERATED:'Digital, generada por el servidor',
     AWAITING_OPPONENT:'Física, pendiente de revisión del adversario',
     ACCEPTED:'Física, aceptada por el adversario',DISPUTED:'Física, en desacuerdo'};
@@ -893,6 +906,10 @@ action('ancients-declare-physical',()=>{
 action('ancients-accept-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true}));
 action('ancients-dispute-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:false}));
 action('ancients-roll-leader',()=>sendAncients('ROLL_SECTION_LEADER_CASUALTY_LAB'));
+action('ancients-roll-rampage',()=>{
+  if(!cached?.diceLab?.rampage?.canRoll)throw Error('ELEPHANT_RAMPAGE_NOT_AVAILABLE');
+  return sendAncients('ROLL_SECTION_ELEPHANT_RAMPAGE_LAB',{unitId:el('ancients-rampage-choice').value});
+});
 action('ancients-confirm-retreat',()=>{
   const candidate=cached?.diceLab?.retreat?.options.find(o=>JSON.stringify(o.path)===el('ancients-retreat-choice').value);
   if(!cached?.diceLab?.canRetreat||!candidate)throw Error('RETREAT_NOT_AVAILABLE');

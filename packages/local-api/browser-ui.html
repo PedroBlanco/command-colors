@@ -141,7 +141,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button id="ancients-finish-movement" disabled>Cerrar movimiento y preparar combate</button>
 <section id="ancients-combat" hidden>
 <h3>Combate a distancia experimental</h3>
-<p>El servidor calcula los dados y permite tiradas digitales o físicas. Las físicas requieren revisión del adversario. Se aplican bajas directas y eliminaciones; las comprobaciones de líderes son digitales. La evasión de líderes supervivientes admite rutas sin enemigos y salida por el borde propio. Las retiradas ordinarias incluyen comprobaciones de bajas de líderes, evasión y escape con dados digitales. La estampida sigue pendiente.</p>
+<p>El servidor calcula los dados y permite tiradas digitales o físicas. Las físicas requieren revisión del adversario. Se aplican bajas directas y eliminaciones; las comprobaciones de líderes son digitales. La evasión de líderes supervivientes admite rutas sin enemigos y salida por el borde propio. Las retiradas ordinarias incluyen comprobaciones de bajas de líderes, evasión y escape con dados digitales. La estampida con unidades sin líderes está disponible; sus efectos sobre líderes siguen pendientes.</p>
 <label>Ataque disponible<select id="ancients-ranged-choice"></select></label>
 <button id="ancients-prepare-ranged" disabled>Preparar ataque</button>
 <p id="ancients-combat-status" role="status" aria-live="polite"></p>
@@ -163,6 +163,11 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <p id="ancients-morale-status" role="status" aria-live="polite"></p>
 <label>Decisión de moral del defensor<select id="ancients-morale-choice"></select></label>
 <button id="ancients-confirm-morale" disabled>Confirmar banderas ignoradas</button>
+</div>
+<div id="ancients-rampage-controls" hidden>
+<p id="ancients-rampage-status" role="status" aria-live="polite"></p>
+<label>Orden de estampida (atacante)<select id="ancients-rampage-choice"></select></label>
+<button id="ancients-roll-rampage" disabled>Tirar dos dados de estampida</button>
 </div>
 <div id="ancients-retreat-controls" hidden>
 <p id="ancients-retreat-status" role="status" aria-live="polite"></p>
