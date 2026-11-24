@@ -31,7 +31,19 @@ const explanations=Object.freeze({
   BORRADOR_DESACTUALIZADO:'La partida ha cambiado. Vuelve a seleccionar la unidad.',
   SELECCIONA_UNIDAD_PROPIA:'Selecciona primero una unidad propia.',
   OBJETIVO_RIVAL_REQUERIDO:'Selecciona una unidad rival antes de solicitar defensa.',
-  MOVIMIENTO_NO_DISPONIBLE:'No puedes mover una unidad en esta fase.'
+  MOVIMIENTO_NO_DISPONIBLE:'No puedes mover una unidad en esta fase.',
+  MOVEMENT_PHASE_CLOSED:'El movimiento ya está cerrado para este turno.',
+  COMBAT_PHASE_NOT_AVAILABLE:'Cierra el movimiento antes de preparar el combate.',
+  COMBAT_PLAN_PENDING:'Descarta la preparación actual antes de continuar.',
+  NO_COMBAT_PLAN_PENDING:'No hay una preparación pendiente.',
+  INVALID_RANGED_TARGET:'Selecciona una unidad propia y un objetivo enemigo válido.',
+  UNIT_NOT_ELIGIBLE:'La unidad no ha recibido una orden para este turno.',
+  BATTLE_AFTER_MOVEMENT_UNAVAILABLE:'Esta unidad no puede combatir después de ese movimiento.',
+  NO_BASE_RANGED_WEAPON:'La unidad no dispone de un arma a distancia en este laboratorio.',
+  TARGET_OUT_OF_RANGE:'El objetivo está fuera del alcance de la unidad.',
+  RANGED_TARGET_ADJACENT:'El objetivo es adyacente: requiere combate cuerpo a cuerpo.',
+  ADJACENT_ENEMY_PREVENTS_RANGED:'Una unidad enemiga adyacente impide el ataque a distancia.',
+  LINE_OF_SIGHT_BLOCKED:'La línea de visión está bloqueada.'
 });
 const generic='No se pudo completar la acción. Comprueba el estado de la partida y vuelve a intentarlo.';
 export function describeCommandError(error) {
