@@ -40,7 +40,7 @@ const invalid = reason => { throw new TypeError(reason); };
 /**
  * Capture a roll with official six-face distribution. The caller must derive
  * actor/diceCount/rollId from trusted server state and persist atomically.
- * Injecting randomIndex is permitted only in tests. This does NOT resolve a battle.
+ * An injected randomIndex must be server-owned (tests or versioned replay). This does NOT resolve a battle.
  */
 export function captureBaseAncientsRangedDice({rollId, actor, diceCount, mode,
   declaredFaces, randomIndex} = {}) {
