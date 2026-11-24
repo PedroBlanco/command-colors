@@ -529,6 +529,8 @@ test('ranged lab: movement record and forest cap limit dice; out of range and ad
 function diceReady(options={}){
  const setup=rangedLabSetup(options);
  setup.enableDiceLab=true;
+ setup.enableCasualtyLab=options.casualty===true;
+ if(options.lethal)setup.movementUnitTypes.b1='ELEPHANT';
  if(options.leader){
   setup.enableLeaderLab=true;
   setup.board.leaders=[{id:'b_leader',side:'B',col:4,row:4}];
@@ -602,5 +604,62 @@ test('dice lab: unsupported retreat, leader checks and disputed physical roll ca
   assert.equal(archived.diceLab.blocks.b1,4);
   assert.equal(archived.diceLab.last.outcome,'ARCHIVED_WITHOUT_EFFECTS');
   assert.equal(archived.diceLab.last.reason,code);
+ }
+});
+
+test('casualty lab: eliminating an unaccompanied unit removes all live indexes and awards one persistent banner',()=>{
+ const {initial,prepared,commands}=diceReady({casualty:true,lethal:true});
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']});
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const final=cmd('FINALIZE_SECTION_RANGED_LAB',6);
+ const end=cmd('END_EXPERIMENTAL_TURN',7);
+ const declared=apply(prepared,declare).nextState;
+ const reviewed=apply(declared,review).nextState;
+ const result=apply(reviewed,final);
+ assert.equal(result.accepted,true);
+ assert.equal(result.publicEvent.unitEliminated,true);
+ assert.equal(result.publicEvent.blocksRemaining,0);
+ assert.equal(result.nextState.board.units.some(u=>u.id==='b1'),false);
+ assert.equal(Object.hasOwn(result.nextState.footLab.unitTypes,'b1'),false);
+ assert.equal(Object.hasOwn(result.nextState.diceLab.blocks,'b1'),false);
+ assert.deepEqual(project(result.nextState,'B').diceLab.banners,{A:1,B:0});
+ const ended=apply(result.nextState,end).nextState;
+ assert.deepEqual(project(ended,'A').diceLab.banners,{A:1,B:0});
+ assert.deepEqual(replay(initial,[...commands,declare,review,final,end]),ended);
+});
+
+test('casualty lab: separate digital leader check cannot be skipped or repeated; replay preserves results',()=>{
+ for(const [key,lethal,leaderDies] of [
+  ['1f'.repeat(32),false,true],['00'.repeat(32),false,false],
+  ['1f'.repeat(32),true,true],['00'.repeat(32),true,false]
+ ]){
+  const {initial,prepared,commands}=diceReady({casualty:true,leader:true,lethal});
+  // Explicit deterministic fixture key, never accepted over HTTP.
+  initial.diceLab.key=key;prepared.diceLab.key=key;
+  const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']});
+  const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+  const declared=apply(prepared,declare).nextState;
+  const reviewed=apply(declared,review).nextState;
+  assert.equal(apply(reviewed,cmd('FINALIZE_SECTION_RANGED_LAB',6)).code,'LEADER_CHECK_PENDING');
+  assert.equal(apply(reviewed,cmd('ARCHIVE_SECTION_RANGED_LAB',6)).code,'LEADER_CHECK_REQUIRED');
+  assert.equal(project(reviewed,'A').diceLab.canRollLeader,true);
+  assert.equal(project(reviewed,'B').diceLab.canRollLeader,false);
+  const roll=cmd('ROLL_SECTION_LEADER_CASUALTY_LAB',6);
+  const checked=apply(reviewed,roll).nextState;
+  assert.equal(checked.diceLab.leaderCheck.roll.diceCount,lethal?1:2);
+  assert.equal(checked.diceLab.leaderCheck.outcome.leaderWouldBeEliminated,leaderDies);
+  assert.equal(apply(checked,cmd('ROLL_SECTION_LEADER_CASUALTY_LAB',7)).code,'LEADER_CHECK_ALREADY_CAPTURED');
+  const final=cmd('FINALIZE_SECTION_RANGED_LAB',7);
+  const result=apply(checked,final);
+  if(lethal&&!leaderDies){
+   assert.equal(result.code,'LEADER_EVASION_PENDING');
+   assert.equal(apply(checked,cmd('END_EXPERIMENTAL_TURN',7)).code,'COMBAT_PLAN_PENDING');
+   assert.deepEqual(replay(initial,[...commands,declare,review,roll]),checked);
+  }else{
+   assert.equal(result.accepted,true);
+   assert.equal(result.nextState.board.leaders.length,leaderDies?0:1);
+   assert.equal(project(result.nextState,'A').diceLab.banners.A,Number(leaderDies)+Number(lethal));
+   assert.deepEqual(replay(initial,[...commands,declare,review,roll,final]),result.nextState);
+  }
  }
 });
