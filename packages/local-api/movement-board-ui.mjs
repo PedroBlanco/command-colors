@@ -129,6 +129,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const leader=leadersByCell.get(key(cell));
     const unitType=unit&&Object.hasOwn(TYPE_LABELS,unit.unitType)
       ? TYPE_LABELS[unit.unitType]:null;
+    const blocks=Number.isSafeInteger(unit?.blocksRemaining)&&unit.blocksRemaining>=1&&unit.blocksRemaining<=4?unit.blocksRemaining:null;
     const terrainLabel=terrainByCell.get(key(cell));
     const origin = draft && key(draft.origin) === key(cell);
     const step = marked.get(key(cell));
@@ -139,7 +140,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}` : leader ? ', sin unidad' : ', vacía'}${leader ? `, líder ${leader.id} del bando ${leader.side}`:''}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}${blocks!==null?`, ${blocks} bloques restantes`:''}` : leader ? ', sin unidad' : ', vacía'}${leader ? `, líder ${leader.id} del bando ${leader.side}`:''}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
       'aria-pressed':String(Boolean(origin || step)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -171,6 +172,12 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       const text = svgNode(doc,'text',{x:position.x,y:position.y+4,'text-anchor':'middle',class:'unit-label','pointer-events':'none'});
       text.textContent=unitType?unitType[0]:unit.side;
       hex.append(badge,text);
+      if(blocks!==null){
+        const counter=svgNode(doc,'text',{x:position.x,y:position.y+24,
+          'text-anchor':'middle',class:'unit-block-label','pointer-events':'none'});
+        counter.textContent=String(blocks);
+        hex.append(counter);
+      }
     }
     if (leader){
       const leaderMarker=svgNode(doc,'text',{
