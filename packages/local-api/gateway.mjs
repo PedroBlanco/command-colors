@@ -27,6 +27,7 @@ const ANCIENTS_LAB_COMMAND_FIELDS=Object.freeze({
   FINALIZE_SECTION_RANGED_LAB:[],
   ARCHIVE_SECTION_RANGED_LAB:[],
   ROLL_SECTION_LEADER_CASUALTY_LAB:[],
+  EVADE_SECTION_LEADER_LAB:['path','exit'],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied = (code, status = 403) => ({status, body: {code}});

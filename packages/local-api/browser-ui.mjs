@@ -28,7 +28,8 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-dispute-physical':'ancients-combat-feedback',
   'ancients-finalize-ranged':'ancients-combat-feedback',
   'ancients-archive-ranged':'ancients-combat-feedback',
-  'ancients-roll-leader':'ancients-combat-feedback'
+  'ancients-roll-leader':'ancients-combat-feedback',
+  'ancients-evade-leader':'ancients-combat-feedback'
 });
 function clearDeckFeedback() {
   for(const id of new Set(Object.values(deckFeedbackSlots))) el(id).textContent='';
@@ -312,6 +313,28 @@ function renderAncients() {
   el('ancients-casualty-status').textContent=last?.unitEliminated||last?.leaderEliminated
     ?`Bajas aplicadas: ${last.unitEliminated?'unidad '+last.targetId:''}${last.unitEliminated&&last.leaderEliminated?' y ':''}${last.leaderEliminated?'líder '+last.leaderCheck.leaderId:''}.`
     :'';
+  const evadeRoutes=dice?.evadeRoutes??[];
+  const evadeChoice=el('ancients-evade-choice');
+  const oldRoute=evadeChoice.value;
+  evadeChoice.replaceChildren();
+  for(const [index,route] of evadeRoutes.entries()){
+    const option=document.createElement('option');
+    option.value=String(index);
+    const path=route.path.map(c=>`(${c.col+1},${c.row+1})`).join(' → ');
+    option.textContent=(path||'Desde el hexágono actual')+
+      (route.exit?' → salir por el borde propio':route.joinedUnitId?' · unir a '+route.joinedUnitId:'');
+    evadeChoice.appendChild(option);
+  }
+  if(evadeRoutes.length)evadeChoice.value=evadeRoutes[Number(oldRoute)]?oldRoute||'0':'0';
+  el('ancients-evade-panel').hidden=!dice?.canEvade;
+  el('ancients-evade-leader').disabled=!dice?.canEvade;
+  el('ancients-evade-status').textContent=dice?.escapeRequired
+    ?'No existe una ruta de evasión ordinaria disponible. El escape por hexágonos enemigos aún no está implementado.'
+    :dice?.canEvade?'Elige una ruta hacia tu propio borde. El servidor aplicará conjuntamente la baja y la evasión.'
+    :dice?.blocker==='LEADER_EVASION_PENDING'?'Esperando la decisión del defensor.'
+    :last?.leaderEvasion
+      ?`Líder ${last.leaderEvasion.leaderId}: ${last.leaderEvasion.exit?'salió del campo sin conceder medalla':last.leaderEvasion.joinedUnitId?'se unió a '+last.leaderEvasion.joinedUnitId:'evadió hacia su propio lado'}.`
+      :'';
   const svg=el('ancients-board');
   if(svg?.ownerDocument?.createElementNS){
     renderMovementBoard(svg,cached.board??[],ancientsDraft,selectAncientsHex,cached.you,{
@@ -834,6 +857,11 @@ action('ancients-declare-physical',()=>{
 action('ancients-accept-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true}));
 action('ancients-dispute-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:false}));
 action('ancients-roll-leader',()=>sendAncients('ROLL_SECTION_LEADER_CASUALTY_LAB'));
+action('ancients-evade-leader',()=>{
+  const route=cached?.diceLab?.evadeRoutes?.[Number(el('ancients-evade-choice').value)];
+  if(!cached?.diceLab?.canEvade||!route)throw Error('LEADER_EVASION_NOT_AVAILABLE');
+  return sendAncients('EVADE_SECTION_LEADER_LAB',{path:route.path.map(p=>({col:p.col,row:p.row})),exit:route.exit});
+});
 action('ancients-finalize-ranged',()=>sendAncients('FINALIZE_SECTION_RANGED_LAB'));
 action('ancients-archive-ranged',()=>sendAncients('ARCHIVE_SECTION_RANGED_LAB'));
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));
