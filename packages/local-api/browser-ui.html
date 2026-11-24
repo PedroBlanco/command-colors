@@ -141,7 +141,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button id="ancients-finish-movement" disabled>Cerrar movimiento y preparar combate</button>
 <section id="ancients-combat" hidden>
 <h3>Combate a distancia experimental</h3>
-<p>El servidor calcula los dados y permite tiradas digitales o físicas. Las físicas requieren revisión del adversario. Se aplican bajas directas y eliminaciones; las comprobaciones de líderes son digitales. La retirada y la evasión de un líder superviviente siguen pendientes.</p>
+<p>El servidor calcula los dados y permite tiradas digitales o físicas. Las físicas requieren revisión del adversario. Se aplican bajas directas y eliminaciones; las comprobaciones de líderes son digitales. Se admite la evasión ordinaria del líder superviviente; siguen pendientes el escape a través del enemigo y la retirada por banderas.</p>
 <label>Ataque disponible<select id="ancients-ranged-choice"></select></label>
 <button id="ancients-prepare-ranged" disabled>Preparar ataque</button>
 <p id="ancients-combat-status" role="status" aria-live="polite"></p>
@@ -159,6 +159,11 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button id="ancients-dispute-physical" disabled>Discrepar de los resultados físicos</button>
 <button id="ancients-roll-leader" disabled>Comprobar baja del líder (dados digitales)</button>
 <p id="ancients-leader-check-status" role="status" aria-live="polite"></p>
+<div id="ancients-evade-panel" hidden>
+<label>Ruta de evasión del líder (columna, fila)<select id="ancients-evade-choice"></select></label>
+<button id="ancients-evade-leader" disabled>Confirmar evasión y aplicar bajas</button>
+</div>
+<p id="ancients-evade-status" role="status" aria-live="polite"></p>
 <button id="ancients-finalize-ranged" disabled>Aplicar bajas y medallas</button>
 <p id="ancients-casualty-status" role="status" aria-live="polite"></p>
 <button id="ancients-archive-ranged" disabled>Archivar sin aplicar efectos (solo laboratorio)</button>
