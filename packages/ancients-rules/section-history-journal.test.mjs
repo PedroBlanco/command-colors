@@ -530,10 +530,16 @@ function diceReady(options={}){
  const setup=rangedLabSetup(options);
  setup.enableDiceLab=true;
  setup.enableCasualtyLab=options.casualty===true;
+ setup.enableEvadeLab=options.evade===true;
+ if(options.edge){for(const u of setup.board.units)u.row=0;}
  if(options.lethal)setup.movementUnitTypes.b1='ELEPHANT';
  if(options.leader){
   setup.enableLeaderLab=true;
-  setup.board.leaders=[{id:'b_leader',side:'B',col:4,row:4}];
+  setup.board.leaders=[{id:'b_leader',side:'B',col:4,row:options.edge?0:4}];
+ }
+ if(options.friend){
+  setup.board.units.push({id:'b_friend',side:'B',col:4,row:3});
+  setup.movementUnitTypes.b_friend='MEDIUM_INFANTRY';
  }
  const {initial,ordered,commands}=rangedLabReady(setup);
  const close=cmd('FINISH_SECTION_MOVEMENT_LAB',2);
@@ -662,4 +668,64 @@ test('casualty lab: separate digital leader check cannot be skipped or repeated;
    assert.deepEqual(replay(initial,[...commands,declare,review,roll,final]),result.nextState);
   }
  }
+});
+
+function leaderEvadeReady(options={}){
+ const {initial,prepared,commands}=diceReady({casualty:true,evade:true,lethal:true,leader:true,...options});
+ initial.diceLab.key='00'.repeat(32);prepared.diceLab.key=initial.diceLab.key;
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']});
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const roll=cmd('ROLL_SECTION_LEADER_CASUALTY_LAB',6);
+ const declared=apply(prepared,declare).nextState;
+ const reviewed=apply(declared,review).nextState;
+ const checked=apply(reviewed,roll).nextState;
+ assert.equal(checked.diceLab.leaderCheck.outcome.leaderMustEvadeIfApplied,true);
+ return {initial,checked,commands:[...commands,declare,review,roll]};
+}
+
+test('leader evade lab: only defender selects rearward route; atomic elimination and joining survive replay',()=>{
+ const {initial,checked,commands}=leaderEvadeReady({friend:true});
+ const a=project(checked,'A').diceLab,b=project(checked,'B').diceLab;
+ assert.equal(a.canEvade,false);assert.deepEqual(a.evadeRoutes,[]);
+ assert.equal(b.canEvade,true);assert.equal(a.canArchive,false);
+ const route=b.evadeRoutes.find(r=>r.joinedUnitId==='b_friend');
+ assert.ok(route);
+ assert.equal(apply(checked,cmd('ARCHIVE_SECTION_RANGED_LAB',7)).code,'LEADER_EVASION_REQUIRED');
+ assert.equal(apply(checked,cmd('END_EXPERIMENTAL_TURN',7)).code,'COMBAT_PLAN_PENDING');
+ const fields={path:route.path,exit:route.exit};
+ assert.equal(apply(checked,cmd('EVADE_SECTION_LEADER_LAB',7,fields)).code,'LEADER_EVASION_NOT_AVAILABLE');
+ for(const invalid of [
+  {path:[],exit:false},{path:[],exit:true},
+  {path:[{col:4,row:5}],exit:false},{path:[{col:4,row:2}],exit:false},
+  {path:[{col:4,row:3,extra:1}],exit:false}
+ ]){
+  assert.equal(apply(checked,cmd('EVADE_SECTION_LEADER_LAB',7,{actor:'B',...invalid})).code,'INVALID_LEADER_EVASION_PATH');
+ }
+ const command=cmd('EVADE_SECTION_LEADER_LAB',7,{actor:'B',...fields});
+ const result=apply(checked,command);
+ assert.equal(result.accepted,true);
+ assert.equal(result.publicEvent.kind,'SECTION_LEADER_EVADED_LAB');
+ assert.equal(result.publicEvent.side,'B');
+ assert.deepEqual(result.nextState.board.leaders[0],{id:'b_leader',side:'B',col:4,row:3});
+ assert.equal(result.nextState.board.units.some(u=>u.id==='b1'),false);
+ assert.deepEqual(project(result.nextState,'A').diceLab.banners,{A:1,B:0});
+ assert.equal(result.nextState.combatLab.plan,null);
+ assert.deepEqual(replay(initial,[...commands,command]),result.nextState);
+});
+
+test('leader evade lab: voluntary own-baseline exit costs the piece but awards no leader banner',()=>{
+ const {initial,checked,commands}=leaderEvadeReady({edge:true});
+ assert.ok(project(checked,'B').diceLab.evadeRoutes.some(r=>r.exit&&r.path.length===0));
+ const command=cmd('EVADE_SECTION_LEADER_LAB',7,{actor:'B',path:[],exit:true});
+ const result=apply(checked,command);
+ assert.equal(result.accepted,true);
+ assert.equal(result.nextState.board.leaders.length,0);
+ assert.deepEqual(result.nextState.diceLab.escapedLeaders,[{id:'b_leader',side:'B',revision:8}]);
+ assert.equal(result.publicEvent.leaderEliminated,false);
+ assert.deepEqual(result.publicEvent.banners,{A:1,B:0});
+ assert.deepEqual(replay(initial,[...commands,command]),result.nextState);
+ const end=cmd('END_EXPERIMENTAL_TURN',8);
+ const ended=apply(result.nextState,end).nextState;
+ assert.deepEqual(project(ended,'B').diceLab.escapedLeaders,result.nextState.diceLab.escapedLeaders);
+ assert.deepEqual(project(ended,'B').diceLab.banners,{A:1,B:0});
 });
