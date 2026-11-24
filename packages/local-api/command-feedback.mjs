@@ -43,7 +43,19 @@ const explanations=Object.freeze({
   TARGET_OUT_OF_RANGE:'El objetivo está fuera del alcance de la unidad.',
   RANGED_TARGET_ADJACENT:'El objetivo es adyacente: requiere combate cuerpo a cuerpo.',
   ADJACENT_ENEMY_PREVENTS_RANGED:'Una unidad enemiga adyacente impide el ataque a distancia.',
-  LINE_OF_SIGHT_BLOCKED:'La línea de visión está bloqueada.'
+  LINE_OF_SIGHT_BLOCKED:'La línea de visión está bloqueada.',
+  INVALID_PHYSICAL_DECLARATION:'Introduce exactamente los símbolos correspondientes al número de dados.',
+  INVALID_PHYSICAL_REVIEW:'La revisión de la tirada física no es válida.',
+  PHYSICAL_REVIEW_NOT_AVAILABLE:'Solo el adversario puede revisar la tirada física pendiente.',
+  PHYSICAL_REVIEW_REQUIRED:'Es necesaria la conformidad del adversario con la tirada física.',
+  PHYSICAL_ROLL_DISPUTED:'El adversario no está de acuerdo con los resultados declarados.',
+  RANGED_ROLL_ALREADY_CAPTURED:'La tirada ya está registrada y no se puede repetir ni cancelar.',
+  RANGED_ROLL_REQUIRED:'Registra una tirada antes de intentar aplicar los resultados.',
+  UNIT_ALREADY_BATTLED:'Esta unidad ya ha efectuado su ataque durante el turno.',
+  RETREAT_PENDING:'El resultado requiere resolver una retirada; todavía no está implementada.',
+  LEADER_CHECK_PENDING:'El resultado requiere comprobar el líder; todavía no está implementado.',
+  ELIMINATION_PENDING:'La eliminación y sus consecuencias todavía no se resuelven en este laboratorio.',
+  DIRECT_HIT_FINALIZATION_REQUIRED:'El resultado se puede aplicar directamente; no procede archivarlo sin efectos.'
 });
 const generic='No se pudo completar la acción. Comprueba el estado de la partida y vuelve a intentarlo.';
 export function describeCommandError(error) {
