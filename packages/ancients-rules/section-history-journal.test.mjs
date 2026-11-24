@@ -445,3 +445,83 @@ test('leader lab: carrying on foot and cavalry, joining unit prevents later move
   unitId:'a2',path:[{col:4,row:4}]
  })).code,'UNIT_LOCKED_BY_LEADER_MOVE');
 });
+
+function rangedLabSetup({targetCol=4,terrain=[]}={}){
+ const c=completeFootSetup();
+ c.enableCombatLab=true;
+ c.board.units[1].col=targetCol;
+ c.movementTerrain=terrain;
+ return c;
+}
+function rangedLabReady(c){
+ const initial=init(c),play=cmd('PLAY_SECTION_CARD',0,{
+  cardInstanceId:initial.hands.A[0].instanceId
+ });
+ const played=apply(initial,play).nextState;
+ const order=cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:[]});
+ const ordered=apply(played,order).nextState;
+ return {initial,ordered,commands:[play,order]};
+}
+test('ranged lab: closes movement, derives two stationary dice, persists plan and cancels safely',()=>{
+ const {initial,ordered,commands}=rangedLabReady(rangedLabSetup());
+ const attackFields={attackerId:'a1',targetId:'b1'};
+ assert.equal(apply(ordered,cmd('PREPARE_SECTION_RANGED_LAB',2,attackFields)).code,
+  'COMBAT_PHASE_NOT_AVAILABLE');
+ const close=cmd('FINISH_SECTION_MOVEMENT_LAB',2);
+ const closed=apply(ordered,close).nextState;
+ assert.deepEqual(project(closed,'A').combatLab.candidates,[
+  {attackerId:'a1',targetId:'b1',diceCount:2}
+ ]);
+ assert.deepEqual(project(closed,'B').combatLab.candidates,[]);
+ assert.equal(apply(closed,cmd('MOVE_SECTION_FOOT_PATH_V2',3,{
+  unitId:'a1',path:[{col:3,row:4}]
+ })).code,'MOVEMENT_PHASE_CLOSED');
+ const attack=cmd('PREPARE_SECTION_RANGED_LAB',3,attackFields);
+ const prepared=apply(closed,attack);
+ assert.equal(prepared.accepted,true);
+ assert.equal(prepared.combatResolved,false);
+ const plan=prepared.nextState.combatLab.plan;
+ assert.equal(plan.diceCount,2);
+ assert.equal(plan.baseDice,2);
+ assert.equal(plan.movedSteps,0);
+ assert.equal(plan.distance,2);
+ assert.deepEqual(plan.dieFaces,['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS']);
+ assert.deepEqual(project(prepared.nextState,'B').combatLab.plan,plan);
+ assert.deepEqual(prepared.nextState.board,ordered.board);
+ assert.deepEqual(replay(initial,[...commands,close,attack]),prepared.nextState);
+ assert.equal(apply(prepared.nextState,cmd('END_EXPERIMENTAL_TURN',4)).code,
+  'COMBAT_PLAN_PENDING');
+ const cancelled=apply(prepared.nextState,cmd('CANCEL_SECTION_RANGED_LAB',4));
+ assert.equal(cancelled.accepted,true);
+ assert.equal(cancelled.nextState.combatLab.plan,null);
+ const finished=apply(cancelled.nextState,cmd('END_EXPERIMENTAL_TURN',5));
+ assert.equal(finished.nextState.turn,'B');
+ assert.deepEqual(finished.nextState.combatLab,{movementClosed:false,movement:{},plan:null});
+});
+
+test('ranged lab: movement record and forest cap limit dice; out of range and adjacent denied',()=>{
+ const {ordered}=rangedLabReady(rangedLabSetup({targetCol:5}));
+ const moved=apply(ordered,cmd('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'a1',path:[{col:3,row:4}]
+ })).nextState;
+ assert.deepEqual(moved.combatLab.movement.a1,{steps:1,battle:'POSSIBLE'});
+ const closed=apply(moved,cmd('FINISH_SECTION_MOVEMENT_LAB',3)).nextState;
+ const plan=apply(closed,cmd('PREPARE_SECTION_RANGED_LAB',4,{
+  attackerId:'a1',targetId:'b1'
+ })).nextState.combatLab.plan;
+ assert.equal(plan.movedSteps,1);
+ assert.equal(plan.diceCount,1);
+ for(const [options,expected] of [
+  [{terrain:[{col:4,row:4,kind:'FOREST'}]},1],
+  [{targetCol:7},'TARGET_OUT_OF_RANGE'],
+  [{targetCol:3},'RANGED_TARGET_ADJACENT']
+ ]){
+  const {ordered}=rangedLabReady(rangedLabSetup(options));
+  const s=apply(ordered,cmd('FINISH_SECTION_MOVEMENT_LAB',2)).nextState;
+  const r=apply(s,cmd('PREPARE_SECTION_RANGED_LAB',3,{
+   attackerId:'a1',targetId:'b1'
+  }));
+  if(typeof expected==='number')assert.equal(r.nextState.combatLab.plan.diceCount,expected);
+  else assert.equal(r.code,expected);
+ }
+});
