@@ -18,7 +18,10 @@ const deckFeedbackSlots=Object.freeze({
   'deck-move':'deck-move-feedback','deck-movement':'deck-move-feedback',
   'deck-ask-defense':'deck-combat-feedback','deck-stand':'deck-combat-feedback',
   'deck-evade':'deck-combat-feedback','deck-combat':'deck-combat-feedback',
-  'deck-draw':'deck-combat-feedback'
+  'deck-draw':'deck-combat-feedback',
+  'ancients-finish-movement':'ancients-combat-feedback',
+  'ancients-prepare-ranged':'ancients-combat-feedback',
+  'ancients-cancel-ranged':'ancients-combat-feedback'
 });
 function clearDeckFeedback() {
   for(const id of new Set(Object.values(deckFeedbackSlots))) el(id).textContent='';
