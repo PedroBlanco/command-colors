@@ -324,15 +324,15 @@ test('browser markup: every phase has native details and all unit fields are sel
   const html=readFileSync(new URL('./browser-ui.html',import.meta.url),'utf8');
   for(const id of [
     'login-details','match-details','invite-details','state-details',
-    'deck-details','movement-details'
+    'deck-details','movement-details','ancients-details'
   ]) assert.match(html,new RegExp(`<details id="${id}"`));
   for(const id of ['deck-units','deck-move-unit','deck-target'])
     assert.match(html,new RegExp(`<select id="${id}"`));
   assert.match(html,/<button id="deck-unit-add"/);
   assert.match(html,/<button id="deck-unit-clear"/);
   assert.doesNotMatch(html,/<input id="deck-units"/);
-  assert.equal((html.match(/<details\b/g)||[]).length,6);
-  assert.equal((html.match(/<\/details>/g)||[]).length,6);
+  assert.equal((html.match(/<details\b/g)||[]).length,7);
+  assert.equal((html.match(/<\/details>/g)||[]).length,7);
   assert.equal((html.match(/class="panel-stack"/g)||[]).length,2,
     'two independent vertical columns collapse without shared grid row height');
   assert.match(html,/\.panel-stack\{display:flex;flex-direction:column/);
