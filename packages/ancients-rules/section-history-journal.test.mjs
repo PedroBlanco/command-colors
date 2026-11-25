@@ -926,3 +926,38 @@ test('V11 close: server derives dice, applies swords and helmets, requires defen
  const old=rangedLabReady(c);
  assert.equal(apply(apply(old.ordered,close).nextState,prepare).code,'CLOSE_COMBAT_NOT_AVAILABLE');
 });
+
+test('V12 unit evade: decision precedes dice, only color hits, survives and moves, no battle back',()=>{
+ const c=rangedLabSetup({targetCol:3});
+ Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+   enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+   enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,victoryTargets:{A:3,B:3}});
+ c.movementUnitTypes.a1='HEAVY_INFANTRY';c.movementUnitTypes.b1='LIGHT_INFANTRY';
+ const {initial,ordered,commands}=rangedLabReady(c);
+ const close=cmd('FINISH_SECTION_MOVEMENT_LAB',2);
+ const closed=apply(ordered,close).nextState;
+ const prepare=cmd('PREPARE_SECTION_CLOSE_LAB',3,{attackerId:'a1',targetId:'b1'});
+ const prepared=apply(closed,prepare).nextState;
+ const plan=prepared.combatLab.plan,path=plan.evadeOptions[0];
+ assert.equal(path.length,2);
+ assert.equal(project(prepared,'B').diceLab.canChooseUnitEvade,true);
+ assert.equal(apply(prepared,cmd('ROLL_SECTION_RANGED_DIGITAL_LAB',4)).code,'UNIT_EVADE_CHOICE_PENDING');
+ assert.equal(apply(prepared,cmd('CHOOSE_SECTION_UNIT_EVADE_LAB',4,{path})).code,'UNIT_EVADE_NOT_AVAILABLE');
+ assert.equal(apply(prepared,cmd('CHOOSE_SECTION_UNIT_EVADE_LAB',4,{actor:'B',path:[{col:12,row:8}]})).code,'INVALID_UNIT_EVADE_PATH');
+ const choose=cmd('CHOOSE_SECTION_UNIT_EVADE_LAB',4,{actor:'B',path});
+ const chosen=apply(prepared,choose).nextState;
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',5,{faces:['LIGHT','SWORDS','LEADER','FLAG','HEAVY']});
+ const declared=apply(chosen,declare).nextState;
+ assert.equal(declared.diceLab.pending.interpretation.hits,1);
+ assert.equal(declared.diceLab.pending.interpretation.flagsPending,0);
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',6,{actor:'B',accept:true});
+ const reviewed=apply(declared,review).nextState;
+ const final=cmd('FINALIZE_SECTION_RANGED_LAB',7);
+ const done=apply(reviewed,final).nextState;
+ assert.equal(done.diceLab.blocks.b1,3);
+ assert.deepEqual(done.board.units.find(u=>u.id==='b1'),{id:'b1',side:'B',...path.at(-1)});
+ assert.equal(done.diceLab.last.battleBackPending,false);
+ assert.deepEqual(replay(initial,[...commands,close,prepare,choose,declare,review,final]),done);
+ const stand=apply(prepared,cmd('CHOOSE_SECTION_UNIT_EVADE_LAB',4,{actor:'B',path:[]})).nextState;
+ assert.deepEqual(stand.combatLab.plan.evadePath,[]);
+});
