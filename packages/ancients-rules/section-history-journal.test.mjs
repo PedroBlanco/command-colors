@@ -891,3 +891,38 @@ test('section history limit: final valid revision remains readable and replayabl
  assert.equal(apply(current,cmd('CANCEL_SECTION_RANGED_LAB',current.revision)).code,'SECTION_HISTORY_LIMIT_REACHED');
  assert.throws(()=>replay(initial,[...log,cmd('CANCEL_SECTION_RANGED_LAB',current.revision)]),/INVALID_SECTION_HISTORY_REPLAY/);
 });
+
+test('V11 close: server derives dice, applies swords and helmets, requires defender decision, replays',()=>{
+ const c=rangedLabSetup({targetCol:3});
+ Object.assign(c,{enableLeaderLab:true,enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,
+   enableRetreatLab:true,enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,
+   enableRampageLeaderLab:true,enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,victoryTargets:{A:3,B:3}});
+ c.movementUnitTypes.a1='HEAVY_INFANTRY';
+ c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
+ const {initial,ordered,commands}=rangedLabReady(c);
+ const close=cmd('FINISH_SECTION_MOVEMENT_LAB',2);
+ const closed=apply(ordered,close).nextState;
+ const prepare=cmd('PREPARE_SECTION_CLOSE_LAB',3,{attackerId:'a1',targetId:'b1'});
+ assert.equal(project(closed,'A').combatLab.candidates[0].diceCount,5);
+ assert.deepEqual(project(closed,'B').combatLab.candidates,[]);
+ const p=apply(closed,prepare);
+ assert.equal(p.accepted,true,p.code);assert.equal(p.nextState.combatLab.plan.leaderHit,true);
+ const declare=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['SWORDS','LEADER','LIGHT','MEDIUM','LIGHT']});
+ const declared=apply(p.nextState,declare).nextState;
+ assert.equal(declared.diceLab.pending.interpretation.hits,2);
+ const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true});
+ const reviewed=apply(declared,review).nextState;
+ const final=cmd('FINALIZE_SECTION_RANGED_LAB',6);
+ const resolved=apply(reviewed,final).nextState;
+ assert.equal(resolved.diceLab.blocks.b1,2);
+ assert.equal(project(resolved,'B').diceLab.canDeclineBattleBack,true);
+ assert.equal(apply(resolved,cmd('END_EXPERIMENTAL_TURN',7)).code,'BATTLE_BACK_PENDING');
+ assert.equal(apply(resolved,cmd('DECLINE_SECTION_BATTLE_BACK_LAB',7)).code,'BATTLE_BACK_NOT_AVAILABLE');
+ const decline=cmd('DECLINE_SECTION_BATTLE_BACK_LAB',7,{actor:'B'});
+ const done=apply(resolved,decline).nextState;
+ assert.equal(done.diceLab.last.battleBackPending,false);
+ assert.deepEqual(replay(initial,[...commands,close,prepare,declare,review,final,decline]),done);
+ c.enableCloseCombatLab=false;
+ const old=rangedLabReady(c);
+ assert.equal(apply(apply(old.ordered,close).nextState,prepare).code,'CLOSE_COMBAT_NOT_AVAILABLE');
+});

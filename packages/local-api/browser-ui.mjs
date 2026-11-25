@@ -28,6 +28,7 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-dispute-physical':'ancients-combat-feedback',
   'ancients-finalize-ranged':'ancients-combat-feedback',
   'ancients-archive-ranged':'ancients-combat-feedback',
+  'ancients-decline-battle-back':'ancients-combat-feedback',
   'ancients-roll-leader':'ancients-combat-feedback',
   'ancients-evade-leader':'ancients-combat-feedback',
   'ancients-confirm-morale':'ancients-combat-feedback',
@@ -182,8 +183,7 @@ function renderAncients() {
   const scope=[cached.matchId,cached.you,cached.revision,cached.phase].join(':');
   if(ancientsDraftScope!==scope){
     ancientsDraft=null;ancientsRetry=null;ancientsDraftScope=scope;
-    el('ancients-physical-die-1').value='';
-    el('ancients-physical-die-2').value='';
+    for(let i=1;i<=5;i++)el('ancients-physical-die-'+i).value='';
   }
   el('ancients-status').textContent=
     finished?`Partida terminada · ${victory.winner==='DRAW'?'Empate':victory.winner===cached.you?'Victoria':'Derrota'} · revisión ${cached.revision}`:
@@ -257,7 +257,7 @@ function renderAncients() {
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
-  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan);
+  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending;
   el('ancients-finish-movement').hidden=!combat;
   el('ancients-finish-movement').disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed;
   el('ancients-clear-path').disabled=!ancientsDraft;
@@ -265,7 +265,7 @@ function renderAncients() {
     !ancientsDraft?.path.length;
   el('ancients-route-status').textContent=ancientsDraft
     ? `${ancientsDraft.kind==='LEADER'?'Líder':'Unidad'} ${ancientsDraft.unitId}: ${ancientsDraft.path.length} hexágonos. Confirma para validar en el servidor.`
-    : movementClosed?'Movimiento cerrado. Prepara un ataque a distancia si está disponible.':`${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
+    : movementClosed?'Movimiento cerrado. Prepara un ataque si está disponible.':`${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
   el('ancients-combat').hidden=!combat||!movementClosed;
   const choice=el('ancients-ranged-choice'),oldChoice=choice.value;
   choice.replaceChildren();
@@ -273,7 +273,7 @@ function renderAncients() {
   for(const [index,candidate] of candidates.entries()){
     const option=document.createElement('option');
     option.value=String(index);
-    option.textContent=`${candidate.attackerId} → ${candidate.targetId} (${candidate.diceCount} dados)`;
+    option.textContent=`${candidate.kind==='CLOSE_PREVIEW'?'Cuerpo a cuerpo':'A distancia'}: ${candidate.attackerId} → ${candidate.targetId} (${candidate.diceCount} dados)`;
     choice.appendChild(option);
   }
   if(candidates.length)choice.value=candidates[Number(oldChoice)]?oldChoice||'0':'0';
@@ -284,15 +284,20 @@ function renderAncients() {
   el('ancients-combat-status').textContent=plan
     ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}).`
     :!isTurn?'El adversario prepara su combate.':candidates.length
-      ?`${candidates.length} ataques a distancia candidatos.`:'No hay ataques a distancia candidatos en esta posición.';
+      ?`${candidates.length} ataques disponibles.`:'No hay ataques disponibles en esta posición.';
   el('ancients-banners').textContent=dice?.banners?`Medallas: A ${dice.banners.A}${victory?'/'+victory.targets.A:''} · B ${dice.banners.B}${victory?'/'+victory.targets.B:''}`+(finished?` · ${victory.winner==='DRAW'?'Empate':'Vencedor: '+victory.winner}`:''):'';
   el('ancients-dice-controls').hidden=!dice||!movementClosed;
   const mayRoll=!!dice&&isTurn&&!!plan&&!pending;
   el('ancients-roll-digital').disabled=!mayRoll;
   el('ancients-declare-physical').disabled=!mayRoll;
-  el('ancients-physical-die-1').disabled=!mayRoll;
-  el('ancients-physical-die-2').disabled=!mayRoll||plan?.diceCount!==2;
-  el('ancients-physical-die-2-label').hidden=plan?.diceCount!==2;
+  for(let i=1;i<=5;i++){
+    el('ancients-physical-die-'+i).disabled=!mayRoll||i>(plan?.diceCount??0);
+    if(i>1)el('ancients-physical-die-'+i+'-label').hidden=i>(plan?.diceCount??0);
+  }
+  el('ancients-decline-battle-back').hidden=!dice?.battleBackPending;
+  el('ancients-decline-battle-back').disabled=stopped||!dice?.canDeclineBattleBack;
+  if(dice?.battleBackPending)el('ancients-combat-status').textContent=
+    'Respuesta al combate pendiente. Solo el defensor puede renunciar; la ejecución de Battle Back aún no está implementada.';
   el('ancients-accept-physical').disabled=stopped||!dice?.canReview;
   el('ancients-dispute-physical').disabled=stopped||!dice?.canReview;
   el('ancients-finalize-ranged').disabled=stopped||!dice?.canFinalize;
@@ -392,7 +397,7 @@ function renderAncients() {
     LEADER_EVASION_PENDING:'evasión del líder superviviente',MORALE_CHOICE_PENDING:'decisión de moral del defensor',ELEPHANT_RETREAT_EVASION_PENDING:'evasión de líder tras retirada de elefante',
     PHYSICAL_ROLL_DISPUTED:'desacuerdo sobre la tirada física'};
   el('ancients-dice-status').textContent=shown
-    ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}. Coincidencias: ${shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
+    ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}. Impactos: ${shown.interpretation.hits??shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
       (pending?(dice.blocker?` Pendiente: ${blockerNames[dice.blocker]??'efecto no disponible'}.`:' Aún no se han aplicado bajas.')
         :last.outcome==='DIRECT_HITS_APPLIED'?` Bloques retirados: ${last.blocksApplied}; quedan ${last.blocksRemaining}.`:' Archivado sin aplicar efectos (solo laboratorio).')
     :plan?'Elige tirada digital o registra los dados físicos.':'Sin tirada registrada en este turno.';
@@ -921,7 +926,7 @@ action('ancients-finish-movement',()=>sendAncients('FINISH_SECTION_MOVEMENT_LAB'
 action('ancients-prepare-ranged',()=>{
   const candidate=cached?.combatLab?.candidates?.[Number(el('ancients-ranged-choice').value)];
   if(!candidate)throw Error('ACCION_NO_DISPONIBLE');
-  return sendAncients('PREPARE_SECTION_RANGED_LAB',{
+  return sendAncients(candidate.kind==='CLOSE_PREVIEW'?'PREPARE_SECTION_CLOSE_LAB':'PREPARE_SECTION_RANGED_LAB',{
     attackerId:candidate.attackerId,targetId:candidate.targetId
   });
 });
@@ -929,8 +934,8 @@ action('ancients-cancel-ranged',()=>sendAncients('CANCEL_SECTION_RANGED_LAB'));
 action('ancients-roll-digital',()=>sendAncients('ROLL_SECTION_RANGED_DIGITAL_LAB'));
 action('ancients-declare-physical',()=>{
   const n=cached?.combatLab?.plan?.diceCount;
-  const faces=[el('ancients-physical-die-1').value,el('ancients-physical-die-2').value].slice(0,n);
-  if(![1,2].includes(n)||faces.some(x=>!['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS'].includes(x)))
+  const faces=Array.from({length:Number.isInteger(n)&&n>=1&&n<=5?n:0},(_,i)=>el('ancients-physical-die-'+(i+1)).value);
+  if(![1,2,3,4,5].includes(n)||faces.some(x=>!['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS'].includes(x)))
     throw Error('INVALID_PHYSICAL_DECLARATION');
   return sendAncients('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
 });
@@ -963,6 +968,7 @@ action('ancients-evade-leader',()=>{
 });
 action('ancients-finalize-ranged',()=>sendAncients('FINALIZE_SECTION_RANGED_LAB'));
 action('ancients-archive-ranged',()=>sendAncients('ARCHIVE_SECTION_RANGED_LAB'));
+action('ancients-decline-battle-back',()=>sendAncients('DECLINE_SECTION_BATTLE_BACK_LAB'));
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));
 action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));
 el('deck-units').addEventListener('change',()=>{

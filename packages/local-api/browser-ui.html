@@ -140,7 +140,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button id="ancients-move" disabled>Confirmar ruta</button>
 <button id="ancients-finish-movement" disabled>Cerrar movimiento y preparar combate</button>
 <section id="ancients-combat" hidden>
-<h3>Combate a distancia experimental</h3>
+<h3>Combate experimental (a distancia y cuerpo a cuerpo)</h3>
 <p>El servidor calcula los dados y permite tiradas digitales o físicas. Las físicas requieren revisión del adversario. Se aplican bajas directas y eliminaciones; las comprobaciones de líderes son digitales. La evasión de líderes supervivientes admite rutas sin enemigos y salida por el borde propio. Las retiradas ordinarias incluyen comprobaciones de bajas de líderes, evasión y escape con dados digitales. La estampida incluye líderes adyacentes y evasiones. Se incluyen las bajas de líderes en las retiradas de elefantes; algunas combinaciones de líderes amigos que bloquean el paso siguen pendientes.</p>
 <label>Ataque disponible<select id="ancients-ranged-choice"></select></label>
 <button id="ancients-prepare-ranged" disabled>Preparar ataque</button>
@@ -153,6 +153,12 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <select id="ancients-physical-die-1"><option value="">Seleccionar</option><option value="LIGHT">Ligera</option><option value="MEDIUM">Media</option><option value="HEAVY">Pesada</option><option value="LEADER">Líder</option><option value="FLAG">Bandera</option><option value="SWORDS">Espadas</option></select></label>
 <label id="ancients-physical-die-2-label">Segundo dado
 <select id="ancients-physical-die-2"><option value="">Seleccionar</option><option value="LIGHT">Ligera</option><option value="MEDIUM">Media</option><option value="HEAVY">Pesada</option><option value="LEADER">Líder</option><option value="FLAG">Bandera</option><option value="SWORDS">Espadas</option></select></label>
+<label id="ancients-physical-die-3-label" hidden>Dado 3
+<select id="ancients-physical-die-3"><option value="">Seleccionar</option><option value="LIGHT">Ligera</option><option value="MEDIUM">Media</option><option value="HEAVY">Pesada</option><option value="LEADER">Líder</option><option value="FLAG">Bandera</option><option value="SWORDS">Espadas</option></select></label>
+<label id="ancients-physical-die-4-label" hidden>Dado 4
+<select id="ancients-physical-die-4"><option value="">Seleccionar</option><option value="LIGHT">Ligera</option><option value="MEDIUM">Media</option><option value="HEAVY">Pesada</option><option value="LEADER">Líder</option><option value="FLAG">Bandera</option><option value="SWORDS">Espadas</option></select></label>
+<label id="ancients-physical-die-5-label" hidden>Dado 5
+<select id="ancients-physical-die-5"><option value="">Seleccionar</option><option value="LIGHT">Ligera</option><option value="MEDIUM">Media</option><option value="HEAVY">Pesada</option><option value="LEADER">Líder</option><option value="FLAG">Bandera</option><option value="SWORDS">Espadas</option></select></label>
 <button id="ancients-declare-physical" disabled>Registrar tirada física</button>
 <p id="ancients-dice-status" role="status" aria-live="polite"></p>
 <button id="ancients-accept-physical" disabled>Confirmar resultados físicos</button>
@@ -185,6 +191,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button id="ancients-evade-leader" disabled>Confirmar evasión</button>
 </div>
 <button id="ancients-finalize-ranged" disabled>Aplicar bajas y medallas</button>
+<button id="ancients-decline-battle-back" hidden disabled>Renunciar a responder al combate (defensor)</button>
 <p id="ancients-casualty-status" role="status" aria-live="polite"></p>
 <button id="ancients-archive-ranged" disabled>Archivar sin aplicar efectos (solo laboratorio)</button>
 </div>

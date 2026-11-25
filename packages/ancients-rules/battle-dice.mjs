@@ -101,3 +101,19 @@ export function interpretBaseAncientsRangedDice({roll, targetUnitType, expectedD
     needsFullLegalityCheck:true
   });
 }
+
+/** Ordinary close attack against a non-evading unit. Capture validation and
+ * die distribution are shared; close-only symbols do not alter ranged replay. */
+export function interpretBaseAncientsCloseDice({roll,targetUnitType,expectedDiceCount,swordsHit,leaderHit}={}){
+  if(typeof swordsHit!=='boolean'||typeof leaderHit!=='boolean')invalid('INVALID_CLOSE_DICE_MODIFIERS');
+  const ranged=interpretBaseAncientsRangedDice({roll,targetUnitType,expectedDiceCount});
+  let swordHits=0,leaderHits=0;
+  const dieEffects=ranged.dieEffects.map(effect=>{
+    if(effect.face==='SWORDS'&&swordsHit){swordHits++;return Object.freeze({face:effect.face,outcome:'SWORD_HIT'});}
+    if(effect.face==='LEADER'&&leaderHit){leaderHits++;return Object.freeze({face:effect.face,outcome:'LEADER_HIT'});}
+    return effect.outcome==='NO_RANGED_EFFECT'?Object.freeze({face:effect.face,outcome:'NO_CLOSE_EFFECT'}):effect;
+  });
+  return Object.freeze({...ranged,kind:'BASE_CLOSE_UNIT_DICE_INTERPRETATION',
+    swordHits,leaderHits,hits:ranged.matchingColorHits+swordHits+leaderHits,
+    misses:ranged.misses-swordHits-leaderHits,dieEffects:Object.freeze(dieEffects)});
+}

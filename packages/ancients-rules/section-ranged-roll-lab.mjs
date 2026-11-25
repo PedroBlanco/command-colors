@@ -7,7 +7,7 @@
 import {randomBytes,createHmac} from 'node:crypto';
 import {neighbors} from '../hex-grid/hex.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
-import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS,captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice} from './battle-dice.mjs';
+import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS,captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice,interpretBaseAncientsCloseDice} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS,previewBaseAncientsRangedBlockLoss} from './block-loss-preview.mjs';
 import {planBaseAncientsRangedResolution,captureBaseAncientsLeaderCasualtyDice,
   previewBaseAncientsLeaderCasualtyCheck} from './ranged-resolution-sequence.mjs';
@@ -23,7 +23,7 @@ const hex=p=>p.col+','+p.row;
 // is generated once by Node crypto at server setup and never projected.
 // Independent domain from the shuffled deck; stable version for old replay.
 export function sectionRollIndex(key,rollId){
-  if(!keyOK(key)||!/^section_(?:ranged|leader|escape|rampage|blocker)_[1-9][0-9]*$/.test(rollId))fail();
+  if(!keyOK(key)||!/^section_(?:ranged|close|leader|escape|rampage|blocker)_[1-9][0-9]*$/.test(rollId))fail();
   let counter=0;
   return n=>{
     if(!Number.isSafeInteger(n)||n<2||n>256)fail();
@@ -36,10 +36,11 @@ export function sectionRollIndex(key,rollId){
   };
 }
 
-export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null}={}){
+export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null,closeCombat=false}={}){
   if((morale&&!casualties)||(retreat&&!morale)||(retreatLeaders&&!retreat)||(leaderEscape&&!retreatLeaders)||(rampage&&!leaderEscape)||(rampageLeaders&&!rampage)||(elephantRetreatLeaders&&!rampageLeaders))fail();
   if(victoryTargets!==null&&(!elephantRetreatLeaders||!validVictoryTargets(victoryTargets)))fail();
-  return {version:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
+  if(typeof closeCombat!=='boolean'||(closeCombat&&victoryTargets===null))fail();
+  return {version:closeCombat?11:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
     blocks:Object.fromEntries(Object.entries(unitTypes).map(([id,type])=>[
       id,BASE_UNIT_STARTING_BLOCKS[type]
     ])),
@@ -54,16 +55,20 @@ export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=fals
 
 function derivePending(state,{revision,mode,faces,review}){
   const plan=state.combatLab.plan,target=state.board.units.find(u=>u.id===plan.targetId);
-  const rollId='section_ranged_'+revision;
+  const close=plan.kind==='CLOSE_PREVIEW';
+  const rollId=(close?'section_close_':'section_ranged_')+revision;
   const roll=captureBaseAncientsRangedDice({rollId,actor:state.turn,
     diceCount:plan.diceCount,mode,
     ...(mode==='DIGITAL'?{randomIndex:sectionRollIndex(state.diceLab.key,rollId)}:{declaredFaces:faces})});
-  const interpretation=interpretBaseAncientsRangedDice({
+  const interpretation=close?interpretBaseAncientsCloseDice({
+    roll,targetUnitType:plan.targetUnitType,expectedDiceCount:plan.diceCount,
+    swordsHit:plan.swordsHit,leaderHit:plan.leaderHit
+  }):interpretBaseAncientsRangedDice({
     roll,targetUnitType:plan.targetUnitType,expectedDiceCount:plan.diceCount
   });
   const loss=previewBaseAncientsRangedBlockLoss({
     unitType:plan.targetUnitType,blocksRemaining:state.diceLab.blocks[target.id],
-    diceCount:plan.diceCount,matchingColorHits:interpretation.matchingColorHits,
+    diceCount:plan.diceCount,matchingColorHits:close?interpretation.hits:interpretation.matchingColorHits,
     flagsPending:interpretation.flagsPending,
     leaderAttached:state.board.leaders.some(l=>l.side===target.side&&hex(l)===hex(target))
   });
@@ -508,7 +513,7 @@ export function sectionVictory(state){
 // prefix, never resolve later dice or require another player to confirm it.
 export function settleSectionVictory(next,event){
   const d=next.diceLab;
-  if(d?.version!==10)return event;
+  if(!(d?.version>=10))return event;
   let result=sectionVictory(next),source=next;
   const p=d.pending,plan=next.combatLab.plan;
   if(!result.winner&&p&&plan&&['ACCEPTED','SERVER_GENERATED'].includes(p.review)){
@@ -546,7 +551,7 @@ export function settleSectionVictory(next,event){
       d.pending=null;d.leaderCheck=null;d.morale=null;d.retreatPending=null;
       d.rampage=[];d.elephantRetreatPending=null;next.combatLab.plan=null;
     }
-    if(d.last)d.last.victory=result;
+    if(d.last){d.last.victory=result;if(d.last.battleBackPending)d.last.battleBackPending=false;}
   }
   // Rampage may eliminate an ordered friendly unit or a moved leader.
   if(next.leaderLab){
@@ -558,7 +563,7 @@ export function settleSectionVictory(next,event){
 
 export function assertSectionDiceLab(state){
   const d=state.diceLab;
-  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10].includes(d.version)||!keyOK(d.key)||
+  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11].includes(d.version)||!keyOK(d.key)||
      Object.keys(d).length!==(d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
      Object.keys(d.blocks).length!==state.board.units.length||
      state.board.units.some(u=>!Object.hasOwn(d.blocks,u.id)||
@@ -571,6 +576,8 @@ export function assertSectionDiceLab(state){
      !(d.last===null||(record(d.last)&&['DIRECT_HITS_APPLIED','ARCHIVED_WITHOUT_EFFECTS'].includes(d.last.outcome)&&
        d.resolvedUnitIds.includes(d.last.attackerId)))||
      !(d.pending===null||record(d.pending)))fail();
+  if(d.last?.battleBackPending&&(d.version<11||d.last.attackKind!=='CLOSE'||state.combatLab.plan||
+      !state.board.units.some(u=>u.id===d.last.targetId&&u.side!==state.turn)))fail();
   if(d.version>=2){
     const live=new Set([...state.board.units,...state.board.leaders].map(p=>p.id));
     if(!Array.isArray(d.casualties)||d.casualties.length+live.size>117||
@@ -669,7 +676,7 @@ export function applySectionDiceCommand(state,next,command){
       throw e;
     }
     const captured=next.diceLab.pending;
-    event={kind:'SECTION_RANGED_ROLL_CAPTURED_LAB',side,attackerId:plan.attackerId,
+    event={kind:plan.kind==='CLOSE_PREVIEW'?'SECTION_CLOSE_ROLL_CAPTURED_LAB':'SECTION_RANGED_ROLL_CAPTURED_LAB',side,attackerId:plan.attackerId,
       targetId:plan.targetId,roll:captured.roll,review:captured.review};
   }else if(command.type==='REVIEW_SECTION_RANGED_PHYSICAL_LAB'){
     if(side===state.turn||p?.review!=='AWAITING_OPPONENT')return deny('PHYSICAL_REVIEW_NOT_AVAILABLE');
@@ -848,6 +855,13 @@ export function applySectionDiceCommand(state,next,command){
       ...(retreatChoice?{retreat:{...retreatChoice,required:retreatRequired}}:{}),
       ...(retreatChoice?.blockingLosses||d.version>=8&&d.rampage.length?{rampage:structuredClone(d.rampage)}:{}),
       ...(elephantChecks?{elephantChecks,elephantEvasions:structuredClone(d.elephantRetreatPending?.evasions??[])}:{})};
+    if(plan.kind==='CLOSE_PREVIEW'){
+      const defender=next.board.units.find(u=>u.id===plan.targetId);
+      const original=state.board.units.find(u=>u.id===plan.targetId);
+      result.attackKind='CLOSE';
+      // Only the defender may decline. Execution of Battle Back follows.
+      result.battleBackPending=!!(finalize&&defender&&hex(defender)===hex(original));
+    }
     next.diceLab.last=structuredClone(result);
     next.diceLab.pending=null;
     if(d.version>=2)next.diceLab.leaderCheck=null;
@@ -856,7 +870,7 @@ export function applySectionDiceCommand(state,next,command){
     if(d.version>=7)next.diceLab.rampage=[];
     if(d.version>=9)next.diceLab.elephantRetreatPending=null;
     next.combatLab.plan=null;
-    event={kind:retreatChoice?'SECTION_RETREAT_APPLIED_LAB':finalize?'SECTION_RANGED_DIRECT_HITS_APPLIED_LAB':'SECTION_RANGED_ARCHIVED_LAB',
+    event={kind:retreatChoice?'SECTION_RETREAT_APPLIED_LAB':plan.kind==='CLOSE_PREVIEW'?(finalize?'SECTION_CLOSE_DIRECT_HITS_APPLIED_LAB':'SECTION_CLOSE_ARCHIVED_LAB'):finalize?'SECTION_RANGED_DIRECT_HITS_APPLIED_LAB':'SECTION_RANGED_ARCHIVED_LAB',
       side,...result,combatResolved:false};
   }
   return {accepted:true,event};
@@ -895,6 +909,7 @@ export function projectSectionDiceLab(state,side){
       canRoll:side===state.turn&&remaining.length>0,...(d.version>=8?{evasion:rampageReplay?.pending?{leaderId:rampageReplay.pending.leaderId,side:rampageReplay.pending.side,options:side===rampageReplay.pending.side?rampageReplay.pending.options:[]}:null}:{})}:null}:{}),
     ...(d.version>=9?{elephantRetreatPending:structuredClone(d.elephantRetreatPending)}:{}),
     ...(d.version>=10?{victory:sectionVictory(state)}:{}),
+    ...(d.version>=11?{battleBackPending:!!d.last?.battleBackPending,canDeclineBattleBack:side!==state.turn&&!!d.last?.battleBackPending}:{}),
     blocker};
 }
 
