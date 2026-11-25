@@ -28,7 +28,7 @@ async function withBrowser(run,{owner='alice'}={}) {
   const state={login:false,lobby:'INVITING',revision:0,deckPhase:null,
     lab:false,labRevision:0,labPhase:'AWAIT_CARD',labTurn:'A',
     labOrderedLeaderIds:[],labMovedLeaderIds:[],labLeaderAt:{col:2,row:7},
-    labCombatClosed:false,labCombatPlan:null,
+    labCombatClosed:false,labCombatPlan:null,labHistoryLimit:false,labDice:null,
     board:[{id:'synthetic-a',side:'A',col:2,row:4},
       {id:'synthetic-a2',side:'A',col:3,row:4},
       {id:'synthetic-b',side:'B',col:10,row:4}]};
@@ -68,6 +68,8 @@ async function withBrowser(run,{owner='alice'}={}) {
             state.labOrderedLeaderIds:[],
           movedLeaderIds:[...state.labMovedLeaderIds],
           unitsLockedByLeader:[],terrain:[],
+          ...(state.labHistoryLimit?{historyLimitReached:true}:{}),
+          ...(state.labDice?{diceLab:state.labDice}:{}),
           combatLab:{movementClosed:state.labCombatClosed,plan:state.labCombatPlan,
             candidates:state.labCombatClosed&&!state.labCombatPlan&&state.labTurn==='A'
               ?[{attackerId:'unitA',targetId:'unitB',diceCount:2}]:[]}}};
@@ -492,4 +494,26 @@ test('browser: ranged plan uses server candidates, locks movement and displays d
  assert.equal(Object.hasOwn(attack,'diceCount'),false);
  await ctx.element('ancients-cancel-ranged').dispatch('click');
  assert.equal(ctx.element('ancients-end').disabled,false);
+}));
+
+test('browser: history limit and victory block commands, but keep the match readable',()=>withBrowser(async ctx=>{
+ await ctx.element('login-form').dispatch('submit');
+ await ctx.element('create').dispatch('click');
+ ctx.state.lobby='READY';
+ await ctx.element('refresh').dispatch('click');
+ await ctx.element('ancients-start').dispatch('click');
+ const sent=()=>ctx.requests.filter(r=>r.path.endsWith('/ancients-lab/commands')).length;
+ ctx.state.labHistoryLimit=true;ctx.state.labRevision=256;
+ await ctx.element('ancients-refresh').dispatch('click');
+ assert.match(ctx.element('ancients-status').textContent,/Límite de comandos/);
+ assert.equal(ctx.element('ancients-play').disabled,true);
+ await ctx.element('ancients-play').dispatch('click');
+ assert.equal(sent(),0);
+ ctx.state.labHistoryLimit=false;ctx.state.labDice={banners:{A:3,B:1},victory:{winner:'A',targets:{A:3,B:3}}};
+ await ctx.element('ancients-refresh').dispatch('click');
+ assert.match(ctx.element('ancients-status').textContent,/Victoria/);
+ assert.match(ctx.element('ancients-banners').textContent,/A 3\/3.*B 1\/3/);
+ await ctx.element('ancients-play').dispatch('click');
+ assert.equal(sent(),0);
+ assert.equal(ctx.element('ancients-refresh').disabled,false);
 }));

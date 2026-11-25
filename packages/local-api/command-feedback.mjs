@@ -17,6 +17,7 @@ const explanations=Object.freeze({
   PARTIDA_DESACTUALIZADA:'La partida ha cambiado. Vuelve a consultarla.',
   INICIALIZACION_NO_DISPONIBLE:'El mazo no puede iniciarse en este momento.',
   STALE_REVISION:'La partida ha cambiado. Actualiza su estado antes de repetir la acción.',
+  SECTION_HISTORY_LIMIT_REACHED:'Se ha alcanzado el límite de comandos de este laboratorio. La partida sigue disponible para consulta.',
   MATCH_FINISHED:'La partida ha terminado. No se admiten más acciones de juego.',
   NOT_YOUR_TURN:'No te corresponde actuar en este turno.',
   NOT_AVAILABLE:'La acción no está disponible en este momento.',

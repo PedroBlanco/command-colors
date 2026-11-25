@@ -21,6 +21,7 @@ import {
 } from './core-open-foot-path-v2.mjs';
 
 export const SECTION_HISTORY_LAB_KIND='ANCIENTS_SECTION_HISTORY_LAB_V1';
+export const SECTION_HISTORY_MAX_COMMANDS=256;
 const ID=/^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES=['A','B'];
 const validId=x=>typeof x==='string'&&ID.test(x)&&x!=='__proto__';
@@ -272,6 +273,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     return reject('INVALID_LAB_COMMAND');
   if(command.expectedRevision!==state.revision)return reject('STALE_REVISION');
   if(sectionVictory(state)?.winner)return reject('MATCH_FINISHED');
+  if(state.revision>=SECTION_HISTORY_MAX_COMMANDS)return reject('SECTION_HISTORY_LIMIT_REACHED');
   // Defensive review and mandatory leader evasion belong to the opponent.
   // All other commands require the acting side.
   if(command.actor!==state.turn&&!['REVIEW_SECTION_RANGED_PHYSICAL_LAB',
@@ -550,7 +552,7 @@ export function applySectionHistoryLabCommand(state,command={}){
 /** Rebuild an entire state from a server-only initial snapshot and private commands. */
 export function replaySectionHistoryLab(initialState,commands){
   assertSectionHistoryLab(initialState);
-  if(initialState.revision!==0||!Array.isArray(commands)||commands.length>256)
+  if(initialState.revision!==0||!Array.isArray(commands)||commands.length>SECTION_HISTORY_MAX_COMMANDS)
     fail('INVALID_SECTION_HISTORY_REPLAY');
   let state=copy(initialState);
   for(const command of commands){
@@ -567,6 +569,7 @@ export function projectSectionHistoryLab(state,side){
   const other=side==='A'?'B':'A';
   return Object.freeze({revision:state.revision,you:side,turn:state.turn,
     phase:state.phase, yourHand:copy(state.hands[side]),
+    ...(state.revision>=SECTION_HISTORY_MAX_COMMANDS?{historyLimitReached:true}:{}),
     opponentCardCount:state.hands[other].length,
     drawPileCount:state.drawPile.length,
     discardPile:state.discardPile.map(c=>c.definitionId),
@@ -583,7 +586,7 @@ export function projectSectionHistoryLab(state,side){
       ...(state.combatLab?{
         combatLab:{movementClosed:state.combatLab.movementClosed,
           plan:copy(state.combatLab.plan),
-          candidates:!sectionVictory(state)?.winner&&state.turn===side&&state.combatLab.movementClosed&&!state.combatLab.plan
+          candidates:state.revision<SECTION_HISTORY_MAX_COMMANDS&&!sectionVictory(state)?.winner&&state.turn===side&&state.combatLab.movementClosed&&!state.combatLab.plan
             ?state.orderSnapshot.pieces.filter(p=>p.kind==='UNIT'&&p.side===side)
               .flatMap(p=>state.board.units.filter(u=>u.side!==side).flatMap(u=>{
                 const checked=screenRangedPlan(state,p.id,u.id);

@@ -5,7 +5,7 @@
  * No migration, no rules-authorised combat and NO production scenario data.
  */
 import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
-  assertSectionHistoryLab, projectSectionHistoryLab} from './section-history-journal.mjs';
+  assertSectionHistoryLab, projectSectionHistoryLab, SECTION_HISTORY_MAX_COMMANDS} from './section-history-journal.mjs';
 import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
@@ -76,7 +76,7 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     const journal=persisted.ancientsSectionHistoryLab;
     if(!record(journal)||Object.hasOwn(persisted,'commandSession')||
        !record(journal.initial)||!Array.isArray(journal.commands)||!record(journal.state)||
-       !Number.isSafeInteger(row.game_revision)||row.game_revision<0||row.game_revision>256)
+       !Number.isSafeInteger(row.game_revision)||row.game_revision<0||row.game_revision>SECTION_HISTORY_MAX_COMMANDS)
       throw new Error('SECTION_CCWB_HISTORY_INVALID');
     assertSectionHistoryLab(journal.initial);
     if(journal.initial.revision!==0||journal.commands.length!==row.game_revision)

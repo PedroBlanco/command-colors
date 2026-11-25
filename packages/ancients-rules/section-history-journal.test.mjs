@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply,
  replaySectionHistoryLab as replay,projectSectionHistoryLab as project,
- assertSectionHistoryLab as validate} from './section-history-journal.mjs';
+ assertSectionHistoryLab as validate,SECTION_HISTORY_MAX_COMMANDS} from './section-history-journal.mjs';
 
 const config=()=>({cardInstances:[
  {instanceId:'a_card_left',definitionId:'ORDER_2_LEFT'},
@@ -873,4 +873,21 @@ test('victory lab: accepted lethal roll wins immediately, freezes commands and r
  assert.equal(project(done,'B').diceLab.victory.winner,'A');
  assert.equal(apply(done,cmd('END_EXPERIMENTAL_TURN',6)).code,'MATCH_FINISHED');
  assert.deepEqual(replay(initial,[...commands,declare,review]),done);
+});
+
+test('section history limit: final valid revision remains readable and replayable; no next command',()=>{
+ const {initial,prepared,commands}=diceReady();
+ let current=prepared;const log=[...commands];
+ while(current.revision<SECTION_HISTORY_MAX_COMMANDS){
+  const command=current.combatLab.plan
+   ?cmd('CANCEL_SECTION_RANGED_LAB',current.revision)
+   :cmd('PREPARE_SECTION_RANGED_LAB',current.revision,{attackerId:'a1',targetId:'b1'});
+  const result=apply(current,command);assert.equal(result.accepted,true,result.code);
+  current=result.nextState;log.push(command);
+ }
+ assert.equal(current.revision,SECTION_HISTORY_MAX_COMMANDS);
+ assert.equal(project(current,'A').historyLimitReached,true);
+ assert.deepEqual(replay(initial,log),current);
+ assert.equal(apply(current,cmd('CANCEL_SECTION_RANGED_LAB',current.revision)).code,'SECTION_HISTORY_LIMIT_REACHED');
+ assert.throws(()=>replay(initial,[...log,cmd('CANCEL_SECTION_RANGED_LAB',current.revision)]),/INVALID_SECTION_HISTORY_REPLAY/);
 });

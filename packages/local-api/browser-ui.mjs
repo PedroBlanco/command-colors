@@ -175,7 +175,8 @@ function renderAncients() {
     return;
   }
   const victory=cached.diceLab?.victory,finished=!!victory?.winner;
-  const isTurn=!finished&&cached.turn===cached.you;
+  const stopped=finished||cached.historyLimitReached===true;
+  const isTurn=!stopped&&cached.turn===cached.you;
   const combat=cached.combatLab;
   const movementClosed=combat?.movementClosed===true;
   const scope=[cached.matchId,cached.you,cached.revision,cached.phase].join(':');
@@ -186,6 +187,7 @@ function renderAncients() {
   }
   el('ancients-status').textContent=
     finished?`Partida terminada · ${victory.winner==='DRAW'?'Empate':victory.winner===cached.you?'Victoria':'Derrota'} · revisión ${cached.revision}`:
+    cached.historyLimitReached?'Límite de comandos del laboratorio alcanzado. Consulta disponible; partida sin resolución.':
     `Ancients experimental · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
   const terrainNames={FOREST:'bosque',HILL:'colina',
     BROKEN_GROUND:'terreno accidentado'};
@@ -291,12 +293,12 @@ function renderAncients() {
   el('ancients-physical-die-1').disabled=!mayRoll;
   el('ancients-physical-die-2').disabled=!mayRoll||plan?.diceCount!==2;
   el('ancients-physical-die-2-label').hidden=plan?.diceCount!==2;
-  el('ancients-accept-physical').disabled=!dice?.canReview;
-  el('ancients-dispute-physical').disabled=!dice?.canReview;
-  el('ancients-finalize-ranged').disabled=!dice?.canFinalize;
-  el('ancients-roll-leader').disabled=!dice?.canRollLeader;
+  el('ancients-accept-physical').disabled=stopped||!dice?.canReview;
+  el('ancients-dispute-physical').disabled=stopped||!dice?.canReview;
+  el('ancients-finalize-ranged').disabled=stopped||!dice?.canFinalize;
+  el('ancients-roll-leader').disabled=stopped||!dice?.canRollLeader;
   el('ancients-roll-leader').hidden=!dice?.banners;
-  el('ancients-archive-ranged').disabled=!dice?.canArchive||!!dice?.leaderEvasionAvailable;
+  el('ancients-archive-ranged').disabled=stopped||!dice?.canArchive||!!dice?.leaderEvasionAvailable;
   const evadeChoice=el('ancients-evasion-choice'),oldEvasion=evadeChoice.value;
   const evasionOptions=dice?.leaderEvasionOptions??[];
   evadeChoice.replaceChildren();
@@ -310,7 +312,7 @@ function renderAncients() {
   }
   if(evasionOptions.some(o=>JSON.stringify(o)===oldEvasion))evadeChoice.value=oldEvasion;
   el('ancients-evasion-controls').hidden=dice?.blocker!=='LEADER_EVASION_PENDING';
-  el('ancients-evade-leader').disabled=!dice?.canEvadeLeader;
+  el('ancients-evade-leader').disabled=stopped||!dice?.canEvadeLeader;
   el('ancients-evasion-status').textContent=dice?.leaderEvasionAvailable
     ?dice.canEvadeLeader?'Elige la ruta de evasión de tu líder.':'El adversario debe elegir la evasión de su líder.'
     :'No hay una ruta sin enemigos disponible en este laboratorio.';
@@ -325,7 +327,7 @@ function renderAncients() {
     moraleChoice.value=previousMorale!==''&&Number(previousMorale)<=morale.maxIgnored?previousMorale:String(morale.maxIgnored);
   }
   el('ancients-morale-controls').hidden=!morale&&!decision;
-  el('ancients-confirm-morale').disabled=!dice?.canChooseMorale;
+  el('ancients-confirm-morale').disabled=stopped||!dice?.canChooseMorale;
   el('ancients-morale-status').textContent=morale
     ?`Banderas: ${morale.flags}; máximo ignorable: ${morale.maxIgnored}. Líder: ${morale.attachedLeader?'sí':'no'}; apoyo: ${morale.supported?'sí':'no'}; guerreros al completo: ${morale.fullWarrior?'sí':'no'}.`+(decision?` Ignoradas: ${decision.ignored}; pendientes de retirada: ${decision.remaining}.`:'')
     :decision?`Banderas ignoradas: ${decision.ignored}; aceptadas: ${decision.remaining}.`:'';
@@ -340,7 +342,7 @@ function renderAncients() {
   }
   if(retreat?.options.some(o=>JSON.stringify(o.path)===oldRetreat))retreatChoice.value=oldRetreat;
   el('ancients-retreat-controls').hidden=!retreat&&!last?.retreat&&!dice?.retreatPending&&!dice?.elephantRetreatPending;
-  el('ancients-confirm-retreat').disabled=!dice?.canRetreat;
+  el('ancients-confirm-retreat').disabled=stopped||!dice?.canRetreat;
   el('ancients-retreat-status').textContent=retreat
     ?`Retirada de ${retreat.required} hexágonos por ${retreat.flags} bandera(s). `+
        (retreat.reason==='ELEPHANT_RAMPAGE_PENDING'?'El atacante debe resolver las tiradas de estampida.':
@@ -359,7 +361,7 @@ function renderAncients() {
   }
   if(rampage?.remaining.some(u=>u.unitId===oldRampage))rampageChoice.value=oldRampage;
   el('ancients-rampage-controls').hidden=!rampage&&!last?.rampage;
-  el('ancients-roll-rampage').disabled=!rampage?.canRoll;
+  el('ancients-roll-rampage').disabled=stopped||!rampage?.canRoll;
   const rampageEvasion=rampage?.evasion,rampageRoute=el('ancients-rampage-evasion'),oldRampageRoute=rampageRoute.value;
   rampageRoute.replaceChildren();
   for(const o of rampageEvasion?.options??[]){
@@ -370,7 +372,7 @@ function renderAncients() {
   }
   if(rampageEvasion?.options.some(o=>JSON.stringify(o)===oldRampageRoute))rampageRoute.value=oldRampageRoute;
   el('ancients-rampage-evasion-controls').hidden=!rampageEvasion;
-  el('ancients-evade-rampage').disabled=!rampageEvasion?.options.length;
+  el('ancients-evade-rampage').disabled=stopped||!rampageEvasion?.options.length;
   el('ancients-rampage-evasion-status').textContent=rampageEvasion?'Evasión de '+rampageEvasion.leaderId+' (bando '+rampageEvasion.side+').':'';
   const elephantStage=dice?.elephantRetreatPending;
   if(elephantStage)el('ancients-retreat-status').textContent=dice.blocker
@@ -417,7 +419,7 @@ function renderAncients() {
   }
 }
 function selectAncientsHex(cell){
-  if(cached?.status!=='LAB_ONLY'||cached.turn!==cached.you||
+  if(cached?.status!=='LAB_ONLY'||cached.diceLab?.victory?.winner||cached.historyLimitReached||cached.turn!==cached.you||
      cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed)return;
   const units=cached.board??[];
   const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
@@ -453,15 +455,21 @@ function selectAncientsHex(cell){
 async function sendAncients(type,fields={},idempotencyKey=null){
   if(cached?.status!=='LAB_ONLY'||!cached?.matchId)
     throw Error('LABORATORIO_NO_DISPONIBLE');
-  const matchId=cached.matchId,ticket=privateScope.capture();
+  const matchId=cached.matchId,ticket=privateScope.capture(),revision=cached.revision;
+  if(cached.diceLab?.victory?.winner)throw Error('MATCH_FINISHED');
+  if(cached.historyLimitReached)throw Error('SECTION_HISTORY_LIMIT_REACHED');
   if(!await confirmCurrentSession(ticket,matchId))return false;
+  // Never attach a newer revision to fields selected from an older view.
+  if(cached?.revision!==revision)throw Error('STALE_REVISION');
+  if(cached.diceLab?.victory?.winner)throw Error('MATCH_FINISHED');
+  if(cached.historyLimitReached)throw Error('SECTION_HISTORY_LIMIT_REACHED');
   const signature=JSON.stringify({matchId,side:cached.you,
-    revision:cached.revision,type,fields});
+    revision,type,fields});
   if(!ancientsRetry||ancientsRetry.signature!==signature){
     ancientsRetry={signature,
       key:idempotencyKey??crypto.randomUUID().replaceAll('-','')};
   }
-  const command={type,expectedRevision:cached.revision,
+  const command={type,expectedRevision:revision,
     idempotencyKey:ancientsRetry.key,...fields};
   // Retry the exact same command with the exact same key after transport
   // uncertainty. Never allow a network retry to create a second movement.
@@ -879,7 +887,7 @@ action('ancients-order',()=>sendAncients('ASSIGN_SECTION_ORDERS',{
   leaderIds:Array.from(el('ancients-leader-orders').selectedOptions??[],x=>x.value)
 }));
 action('ancients-select-leader',async()=>{
-  if(cached?.status!=='LAB_ONLY'||cached.turn!==cached.you||
+  if(cached?.status!=='LAB_ONLY'||cached.diceLab?.victory?.winner||cached.historyLimitReached||cached.turn!==cached.you||
      cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed)throw Error('ACCION_NO_DISPONIBLE');
   const leader=(cached.leaders??[]).find(l=>l.id===
     el('ancients-leader-choice').value&&l.side===cached.you);
