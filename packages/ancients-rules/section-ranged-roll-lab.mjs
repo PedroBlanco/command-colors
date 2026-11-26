@@ -773,6 +773,7 @@ export function applySectionDiceCommand(state,next,command){
         faces:command.faces,review:mode==='DIGITAL'?'SERVER_GENERATED':'AWAITING_OPPONENT'});
     }catch(e){
       if(mode==='PHYSICAL'&&e.message==='INVALID_PHYSICAL_DECLARATION')return deny('INVALID_PHYSICAL_DECLARATION');
+      if(e.message==='ELEPHANT_ROLL_LIMIT_REACHED')return deny(e.message);
       throw e;
     }
     const captured=next.diceLab.pending;

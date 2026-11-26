@@ -1126,7 +1126,7 @@ test('V15 bonus close: same ordered unit, new adjacent target, second advance, d
 });
 
 test('V16 elephant close: dice by target, sword chain, immunities, defense choice and replay',()=>{
- for(const mode of ['CHAIN','MIRROR','EVADE','WARRIOR','CAVALRY_IGNORE','CAVALRY_ACCEPT','BATTLE_BACK']){
+ for(const mode of ['CHAIN','LONG_CHAIN','MIRROR','EVADE','WARRIOR','CAVALRY_IGNORE','CAVALRY_ACCEPT','HORSE_RETREAT','BATTLE_BACK']){
   const c=rangedLabSetup({targetCol:3});
   Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
     enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
@@ -1134,23 +1134,27 @@ test('V16 elephant close: dice by target, sword chain, immunities, defense choic
     enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,victoryTargets:{A:3,B:3}});
   const cavalry=mode.startsWith('CAVALRY');
   c.movementUnitTypes.a1=cavalry?'HEAVY_CAVALRY':mode==='BATTLE_BACK'?'HEAVY_INFANTRY':'ELEPHANT';
-  c.movementUnitTypes.b1=cavalry||['MIRROR','BATTLE_BACK'].includes(mode)?'ELEPHANT':mode==='WARRIOR'?'WARRIOR_INFANTRY':mode==='EVADE'?'LIGHT_INFANTRY':'HEAVY_INFANTRY';
+  c.movementUnitTypes.b1=cavalry||['MIRROR','BATTLE_BACK'].includes(mode)?'ELEPHANT':mode==='WARRIOR'?'WARRIOR_INFANTRY':mode==='EVADE'?'LIGHT_INFANTRY':mode==='HORSE_RETREAT'?'HEAVY_CAVALRY':'HEAVY_INFANTRY';
   const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
   const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);
     assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};
   run('FINISH_SECTION_MOVEMENT_LAB');run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
-  assert.equal(s.combatLab.plan.diceCount,cavalry?4:mode==='EVADE'?2:['MIRROR','WARRIOR'].includes(mode)?3:5);
+  assert.equal(s.combatLab.plan.diceCount,cavalry||mode==='HORSE_RETREAT'?4:mode==='EVADE'?2:['MIRROR','WARRIOR'].includes(mode)?3:5);
+  if(mode==='HORSE_RETREAT')run('CHOOSE_SECTION_UNIT_EVADE_LAB',{actor:'B',path:[]});
   if(mode==='EVADE')run('CHOOSE_SECTION_UNIT_EVADE_LAB',{actor:'B',path:s.combatLab.plan.evadeOptions[0]});
   let faces=Array(s.combatLab.plan.diceCount).fill('LIGHT');
   if(mode==='CHAIN'){
     faces=['SWORDS','SWORDS','LEADER','LIGHT','MEDIUM','SWORDS','HEAVY','LIGHT'];
     assert.equal(apply(s,cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',s.revision,{faces:faces.slice(0,6)})).code,'INVALID_PHYSICAL_DECLARATION');
-  }else if(mode==='MIRROR')faces=['SWORDS','SWORDS','LEADER'];
+  }else if(mode==='LONG_CHAIN')faces=['SWORDS','LIGHT','LIGHT','LIGHT','LIGHT',...Array(35).fill('SWORDS'),'LIGHT'];
+  else if(mode==='HORSE_RETREAT')faces=['FLAG','LIGHT','LIGHT','LIGHT'];
+  else if(mode==='MIRROR')faces=['SWORDS','SWORDS','LEADER'];
   else if(mode==='EVADE')faces=['SWORDS','LIGHT'];
   else if(cavalry)faces=['HEAVY','FLAG','SWORDS','LIGHT'];
   run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
   if(mode==='CHAIN')assert.deepEqual(s.diceLab.pending.interpretation.rerolls,['SWORDS','HEAVY','LIGHT']);
   if(mode==='MIRROR')assert.equal(s.diceLab.pending.interpretation.hits,0);
+  if(mode==='LONG_CHAIN'){assert.equal(s.diceLab.pending.loss.extendedDice,true);assert.equal(s.diceLab.pending.interpretation.hits,36);}
   run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
   if(cavalry){
     assert.equal(project(s,'B').diceLab.canChooseElephantRed,true);
@@ -1159,8 +1163,15 @@ test('V16 elephant close: dice by target, sword chain, immunities, defense choic
     assert.equal(project(s,'B').diceLab.moralePreview.maxIgnored,1);
     run('CHOOSE_SECTION_MORALE_LAB',{actor:'B',ignored:1});
   }
-  run('FINALIZE_SECTION_RANGED_LAB');
-  if(mode==='CHAIN'){assert.equal(s.diceLab.blocks.b1,undefined);assert.equal(project(s,'A').diceLab.momentumPending,true);}
+  if(mode==='HORSE_RETREAT'){
+    const p=project(s,'B').diceLab.retreat;
+    assert.equal(p.required,3);const route=p.options.find(o=>o.blocksLost===0);assert.ok(route);
+    run('RETREAT_SECTION_UNIT_LAB',{actor:'B',path:route.path});
+    const m=project(s,'A').diceLab;assert.equal(m.momentumPending,true);
+    assert.deepEqual(m.momentumOptions,[{path:[{col:3,row:4}],bonusEligible:true}]);
+    run('CHOOSE_SECTION_MOMENTUM_LAB',{path:m.momentumOptions[0].path});
+  }else run('FINALIZE_SECTION_RANGED_LAB');
+  if(['CHAIN','LONG_CHAIN'].includes(mode)){assert.equal(s.diceLab.blocks.b1,undefined);assert.equal(project(s,'A').diceLab.momentumPending,true);}
   else if(mode==='EVADE'){assert.equal(s.diceLab.blocks.b1,3);assert.equal(project(s,'A').diceLab.momentumPending,false);}
   else if(cavalry){assert.equal(s.diceLab.blocks.b1,mode==='CAVALRY_IGNORE'?2:1);}
   else if(mode==='BATTLE_BACK'){
