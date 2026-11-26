@@ -1449,6 +1449,14 @@ test('V21 long history: cross 256 with repeated deck cycles, combat candidates a
     assert.equal(project(s,s.turn).historyLimitReached,undefined);
   }
   assert.equal(s.revision,300);
+  run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A[0].instanceId});
+  run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  assert.ok(project(s,'A').combatLab.candidates.some(x=>x.attackerId==='a1'&&x.targetId==='b1'));
+  run('PREPARE_SECTION_RANGED_LAB',{attackerId:'a1',targetId:'b1'});
+  run('CANCEL_SECTION_RANGED_LAB');
+  run('END_EXPERIMENTAL_TURN');
+  assert.equal(s.revision,306);
   assert.deepEqual(replay(initial,log),s);
   assert.equal(apply(s,log.at(-1)).code,'STALE_REVISION');
   const corrupt=structuredClone(log);corrupt[256].expectedRevision=0;
