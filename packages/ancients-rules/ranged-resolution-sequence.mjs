@@ -26,7 +26,8 @@ export function planBaseAncientsRangedResolution({blockLoss} = {}) {
     checked = previewBaseAncientsRangedBlockLoss({
       unitType:blockLoss.unitType,blocksRemaining:blockLoss.originalBlocks,
       diceCount:blockLoss.diceCount,matchingColorHits:blockLoss.matchingColorHits,
-      flagsPending:blockLoss.flagsRolled,leaderAttached:blockLoss.leaderAttached
+      flagsPending:blockLoss.flagsRolled,leaderAttached:blockLoss.leaderAttached,
+      ...(blockLoss.extendedDice?{extendedDice:true}:{})
     });
   } catch {reject('INVALID_BLOCK_LOSS_SEQUENCE_INPUT');}
   // Ensure no contradictory cached values, not merely matching leading fields.

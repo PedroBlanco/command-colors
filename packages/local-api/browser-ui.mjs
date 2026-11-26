@@ -24,6 +24,8 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-cancel-ranged':'ancients-combat-feedback',
   'ancients-roll-digital':'ancients-combat-feedback',
   'ancients-declare-physical':'ancients-combat-feedback',
+  'ancients-elephant-red-ignore':'ancients-combat-feedback',
+  'ancients-elephant-red-accept':'ancients-combat-feedback',
   'ancients-accept-physical':'ancients-combat-feedback',
   'ancients-dispute-physical':'ancients-combat-feedback',
   'ancients-finalize-ranged':'ancients-combat-feedback',
@@ -311,6 +313,14 @@ function renderAncients() {
   const mayRoll=!!dice&&!stopped&&(dice.combatSide??cached.turn)===cached.you&&!!plan&&!pending&&!dice.unitEvadePending;
   el('ancients-roll-digital').disabled=!mayRoll;
   el('ancients-declare-physical').disabled=!mayRoll;
+  const rerollField=el('ancients-elephant-rerolls');
+  const repeats=!!plan?.elephantAttack&&plan.swordsHit&&!plan.evadePath?.length;
+  el('ancients-elephant-reroll-controls').hidden=!repeats;
+  rerollField.disabled=!mayRoll||!repeats;
+  if(!repeats||pending)rerollField.value='';
+  el('ancients-elephant-red-controls').hidden=!dice?.elephantRedPending;
+  el('ancients-elephant-red-ignore').disabled=stopped||!dice?.canChooseElephantRed;
+  el('ancients-elephant-red-accept').disabled=stopped||!dice?.canChooseElephantRed;
   for(let i=1;i<=5;i++){
     el('ancients-physical-die-'+i).disabled=!mayRoll||i>(plan?.diceCount??0);
     if(i>1)el('ancients-physical-die-'+i+'-label').hidden=i>(plan?.diceCount??0);
@@ -440,7 +450,7 @@ function renderAncients() {
     LEADER_EVASION_PENDING:'evasión del líder superviviente',MORALE_CHOICE_PENDING:'decisión de moral del defensor',ELEPHANT_RETREAT_EVASION_PENDING:'evasión de líder tras retirada de elefante',
     PHYSICAL_ROLL_DISPUTED:'desacuerdo sobre la tirada física'};
   el('ancients-dice-status').textContent=shown
-    ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}. Impactos: ${shown.interpretation.hits??shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
+    ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}${shown.interpretation.rerolls?.length?' · Repeticiones: '+shown.interpretation.rerolls.map(x=>faceNames[x]??x).join(', '):''}. Impactos: ${shown.interpretation.hits??shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
       (pending?(dice.blocker?` Pendiente: ${blockerNames[dice.blocker]??'efecto no disponible'}.`:' Aún no se han aplicado bajas.')
         :last.outcome==='DIRECT_HITS_APPLIED'?` Bloques retirados: ${last.blocksApplied}; quedan ${last.blocksRemaining}.`:' Archivado sin aplicar efectos (solo laboratorio).')
     :plan?'Elige tirada digital o registra los dados físicos.':'Sin tirada registrada en este turno.';
@@ -980,8 +990,15 @@ action('ancients-declare-physical',()=>{
   const faces=Array.from({length:Number.isInteger(n)&&n>=1&&n<=5?n:0},(_,i)=>el('ancients-physical-die-'+(i+1)).value);
   if(![1,2,3,4,5].includes(n)||faces.some(x=>!['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS'].includes(x)))
     throw Error('INVALID_PHYSICAL_DECLARATION');
+  const plan=cached.combatLab.plan;
+  if(plan.elephantAttack&&plan.swordsHit&&!plan.evadePath?.length){
+    const extra=(el('ancients-elephant-rerolls').value??'').trim();
+    if(extra)faces.push(...extra.toUpperCase().split(/[\s,;]+/));
+  }
   return sendAncients('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
 });
+action('ancients-elephant-red-ignore',()=>sendAncients('CHOOSE_SECTION_ELEPHANT_RED_LAB',{ignore:true}));
+action('ancients-elephant-red-accept',()=>sendAncients('CHOOSE_SECTION_ELEPHANT_RED_LAB',{ignore:false}));
 action('ancients-accept-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true}));
 action('ancients-dispute-physical',()=>sendAncients('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:false}));
 action('ancients-roll-leader',()=>sendAncients('ROLL_SECTION_LEADER_CASUALTY_LAB'));
