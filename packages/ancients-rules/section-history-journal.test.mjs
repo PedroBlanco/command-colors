@@ -1957,3 +1957,41 @@ test('fortifications: camp outgoing penalty, directional rampart protection and 
  c.enableDiceLab=true;const {ordered}=rangedLabReady(c);const closed=apply(ordered,cmd('FINISH_SECTION_MOVEMENT_LAB',2)).nextState;
  assert.equal(apply(closed,cmd('PREPARE_SECTION_RANGED_LAB',3,{attackerId:'a1',targetId:'b1'})).nextState.combatLab.plan.diceCount,1);
 });
+
+test('marsh terrain: ordered mounted move, deterministic loss and leader checks, replay',()=>{
+ for(const mode of ['UNIT','ATTACHED','LEADER']){
+  const c=tacticalCardSetup('ORDER_2_LEFT',true,10);
+  Object.assign(c,{enableMoveFireMoveLab:true,enableRallyLab:true,enableSpartacusLab:true,enableCounterAttackLab:true,enableFirstStrikeLab:true});
+  c.movementTerrain=[{col:3,row:4,kind:'MARSH'}];
+  c.movementUnitTypes.a1='LIGHT_CAVALRY';
+  if(mode!=='UNIT')c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
+  const initial=init(c);assert.equal(initial.diceLab.version,32);
+  if(mode==='ATTACHED')initial.diceLab.blocks.a1=1;
+  const play=cmd('PLAY_SECTION_CARD',0,{cardInstanceId:initial.hands.A[0].instanceId});
+  const order=cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:mode==='LEADER'?[]:['a1'],leaderIds:mode==='LEADER'?['a_leader']:[]});
+  const move=mode==='LEADER'?cmd('MOVE_SECTION_LEADER_PATH_V1',2,{leaderId:'a_leader',path:[{col:3,row:4}]}):cmd('MOVE_SECTION_MOUNTED_PATH_V1',2,{unitId:'a1',path:[{col:3,row:4}]});
+  let result,s;
+  for(let n=0;n<500;n++){
+    initial.diceLab.key=n.toString(16).padStart(64,'0');
+    s=apply(apply(initial,play).nextState,order).nextState;result=apply(s,move);
+    assert.equal(result.accepted,true,result.code);
+    const check=result.publicEvent.marshChecks[0];
+    if(mode==='LEADER'?check.leaderEliminated:check.blocksLost===1&&(mode!=='ATTACHED'||!check.leaderEliminated))break;
+  }
+  const check=result.publicEvent.marshChecks[0];s=result.nextState;
+  assert.equal(mode==='LEADER'?check.leaderEliminated:check.blocksLost===1,true);
+  const log=[play,order,move];
+  if(mode==='UNIT')assert.equal(s.diceLab.blocks.a1,3);
+  if(mode==='ATTACHED'){
+    assert.equal(s.diceLab.blocks.a1,undefined);assert.equal(s.diceLab.marshPending.leaderId,'a_leader');
+    assert.equal(apply(s,cmd('FINISH_SECTION_MOVEMENT_LAB',s.revision)).code,'MARSH_LEADER_EVASION_PENDING');
+    const view=project(s,'A').diceLab,option=view.leaderEvasionOptions.find(o=>!o.trapped&&!o.risks.length);
+    assert.ok(view.canEvadeLeader&&option);
+    const evade=cmd('EVADE_SECTION_LEADER_LAB',s.revision,{path:option.path,exit:option.exit});
+    const escaped=apply(s,evade);assert.equal(escaped.accepted,true,escaped.code);log.push(evade);s=escaped.nextState;
+    assert.equal(s.diceLab.marshPending,null);
+  }
+  if(mode==='LEADER')assert.equal(s.board.leaders.length,0);
+  assert.deepEqual(replay(initial,log),s);
+ }
+});

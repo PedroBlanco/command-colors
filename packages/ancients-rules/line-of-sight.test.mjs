@@ -69,7 +69,7 @@ test('rejects invalid coordinates, overlapping markers and unsupported terrain k
   for(const input of [{from:at(-1,0),to:at(3,3)},
     {from:at(0,0),to:at(0,0)},
     {from:at(0.5,0),to:at(4,4)},
-    {from:at(1,1),to:at(3,1),terrain:[{col:2,row:1,kind:'MARSH'}]},
+    {from:at(1,1),to:at(3,1),terrain:[{col:2,row:1,kind:'UNKNOWN_TERRAIN'}]},
     {from:at(1,1),to:at(3,1),terrain:terrain('HILL',at(2,1),at(2,1))},
     {from:at(1,1),to:at(3,1),units:[at(2,1),at(2,1)]}])
     assert.throws(()=>see(input),/INVALID_LOS_/);

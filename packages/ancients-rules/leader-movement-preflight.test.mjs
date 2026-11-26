@@ -70,7 +70,7 @@ test('forest and broken ground stop a leader while hill allows crossing',()=>{
 });
 
 test('missing, duplicate or unrecognized server terrain cannot create a candidate',()=>{
-  for(const terrain of [undefined,null,[{...at(2,5),kind:'MARSH'}],
+  for(const terrain of [undefined,null,[{...at(2,5),kind:'UNKNOWN_TERRAIN'}],
     [{...at(2,5),kind:'FOREST'},{...at(2,5),kind:'HILL'}],
     Array.from({length:118},(_,i)=>({...at(2,5),kind:'FOREST'}))])
     assert.throws(()=>check({terrain}),/INVALID_LEADER_TERRAIN_MAP/);

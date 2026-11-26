@@ -65,7 +65,7 @@ test('reject unknown or expansion units without prototype inheritance',()=>{
 
 test('reject unsupported or unspecified battle/terrain values',()=>{
   for(const [from,to,kind] of [
-    [null,'CLEAR','CLOSE'], ['CLEAR','MARSH','CLOSE'], ['CLEAR','CLEAR','MAGIC'],
+    [null,'CLEAR','CLOSE'], ['CLEAR','UNKNOWN_TERRAIN','CLOSE'], ['CLEAR','CLEAR','MAGIC'],
     [undefined,'CLEAR','CLOSE'], ['HILL',undefined,'RANGED']])
     assert.throws(()=>cap('HEAVY_INFANTRY',from,to,kind),/INVALID_TERRAIN_BATTLE/);
 });

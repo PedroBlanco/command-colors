@@ -8,7 +8,7 @@ import {BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
 
 const allowed = new Set(['CLEAR', ...BASE_TERRAIN_TYPES]);
 const mounted = new Set(['LIGHT_CAVALRY', 'MEDIUM_CAVALRY', 'HEAVY_CAVALRY', 'ELEPHANT', 'HEAVY_CHARIOT']);
-const reducedClose = new Set(['FOREST', 'BROKEN_GROUND', 'FORDABLE_RIVER', 'BRIDGE']);
+const reducedClose = new Set(['FOREST', 'BROKEN_GROUND', 'FORDABLE_RIVER', 'BRIDGE', 'MARSH']);
 
 /** maxDice null means *terrain* imposes no ordinary limit; it does not mean unlimited dice. */
 export function assessAncientsTerrainDiceCap({attackerType, attackerTerrain,
@@ -20,7 +20,7 @@ export function assessAncientsTerrainDiceCap({attackerType, attackerTerrain,
 
   let maxDice = null;
   if (attackKind === 'RANGED') {
-    if (targetTerrain === 'FOREST'||['FORDABLE_RIVER','BRIDGE'].includes(attackerTerrain)) maxDice = 1;
+    if (targetTerrain === 'FOREST'||['FORDABLE_RIVER','BRIDGE','MARSH'].includes(attackerTerrain)) maxDice = 1;
   } else {
     if (reducedClose.has(attackerTerrain) || reducedClose.has(targetTerrain)) maxDice = 2;
     const fromHill = attackerTerrain === 'HILL', toHill = targetTerrain === 'HILL';

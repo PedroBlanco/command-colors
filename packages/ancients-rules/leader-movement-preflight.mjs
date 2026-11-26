@@ -74,7 +74,7 @@ export function precheckAncientsLeaderPath({
     if(i===path.length-1&&otherLeader)return blocked('FRIENDLY_LEADER_AT_DESTINATION',i);
     const ground=terrainByCell.get(cellKey);
     if(isImpassableTerrain(ground))return blocked('IMPASSABLE_TERRAIN',i);
-    if((ground==='FOREST'||ground==='BROKEN_GROUND'||ground==='FORDABLE_RIVER')&&i!==path.length-1)
+    if((ground==='FOREST'||ground==='BROKEN_GROUND'||ground==='FORDABLE_RIVER'||ground==='MARSH')&&i!==path.length-1)
       return blocked('LEADER_MUST_STOP_ON_TERRAIN',i);
     seen.add(cellKey);last=destination;
   }

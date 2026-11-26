@@ -11,14 +11,14 @@ import {BASE_UNIT_STARTING_BLOCKS} from './block-loss-preview.mjs';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS, SELECTION_CARD_DEFINITIONS, GROUP_CARD_DEFINITIONS, ATTACK_CARD_DEFINITIONS, LEADERSHIP_CARD_DEFINITIONS, FIRE_CARD_DEFINITIONS, effectiveSectionCard, selectionCardOptions, screenSelectionCardOrders} from './section-card-order-screen.mjs';
 import {ANCIENTS_RULESET,assessBaseMovement} from './movement-profile.mjs';
 import {assessAncientsMovementRegime,assessOpenHexPathGeometry} from './movement-regimes.mjs';
-import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex,terrainTileShapeOK,fortificationProtects} from './terrain-movement.mjs';
+import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex,terrainTileShapeOK,fortificationProtects,isMarshHex,pathHasMarsh} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
 import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {screenAncientsCombatTurn} from './combat-turn-guard.mjs';
 import {precheckAncientsRangedAttack} from './ranged-precheck.mjs';
 import {createRangedDicePlan} from './dice-plan.mjs';
 import {initializeSectionDiceLab,assertSectionDiceLab,SECTION_DICE_COMMANDS,
-  applySectionDiceCommand,projectSectionDiceLab,resetSectionDiceTurn,sectionVictory,settleSectionVictory,baseCloseAttackDice,sectionCombatSide,sectionMomentumOptions,sectionRollIndex
+  applySectionDiceCommand,projectSectionDiceLab,resetSectionDiceTurn,sectionVictory,settleSectionVictory,baseCloseAttackDice,sectionCombatSide,sectionMomentumOptions,sectionRollIndex,applyMarshUnitPath,applyMarshLeaderPath,marshLeaderOptions,resolveMarshLeaderEvasion
 } from './section-ranged-roll-lab.mjs';
 import {
   OPEN_FOOT_PATH_CORE_KIND, OPEN_FOOT_PATH_CORE_POLICY, reduceCoreOpenFootPath
@@ -71,7 +71,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
        !['id','side','col','row'].every(k=>Object.hasOwn(unit,k))||
        !validId(unit.id)||!SIDES.includes(unit.side)||!goodLoc(unit)||
        ids.has(unit.id)||positions.has(loc(unit))||isImpassableHex(terrain,unit)||
-       !Object.hasOwn(types,unit.id))return false;
+       !Object.hasOwn(types,unit.id)||types[unit.id]==='HEAVY_WAR_MACHINE'&&isMarshHex(terrain,unit))return false;
     const regime=assessAncientsMovementRegime({
       unitType:types[unit.id],steps:1
     });
@@ -167,13 +167,14 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     board:copy(board),sectorCells:copy(sectorCells),
     ...(sectorPerspective==='PLAYER_RELATIVE'?{sectorPerspective}: {})};
   if(movementUnitTypes!==undefined){
+    if(movementTerrain.some(t=>t.kind==='MARSH')&&!enableFirstStrikeLab)fail('MARSH_REQUIRES_FULL_COMBAT_LAB');
     if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain,enableLeaderLab,false,enableElephantCloseLab,enableSpecialCloseLab))
       fail('INVALID_FOOT_LAB_SETUP');
     state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[],
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
     if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
-    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab,loneLeaderCombat:enableLoneLeaderCombatLab,deckRecycle:enableDeckRecycleLab,longHistory:enableLongHistoryLab,selectionCards:enableSelectionCardsLab,groupCards:enableGroupCardsLab,attackCards:enableAttackCardsLab,leadershipCards:enableLeadershipCardsLab,fireCards:enableFireCardsLab,moveFireMove:enableMoveFireMoveLab,rally:enableRallyLab,spartacus:enableSpartacusLab,counterAttack:enableCounterAttackLab,firstStrike:enableFirstStrikeLab});
+    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab,loneLeaderCombat:enableLoneLeaderCombatLab,deckRecycle:enableDeckRecycleLab,longHistory:enableLongHistoryLab,selectionCards:enableSelectionCardsLab,groupCards:enableGroupCardsLab,attackCards:enableAttackCardsLab,leadershipCards:enableLeadershipCardsLab,fireCards:enableFireCardsLab,moveFireMove:enableMoveFireMoveLab,rally:enableRallyLab,spartacus:enableSpartacusLab,counterAttack:enableCounterAttackLab,firstStrike:enableFirstStrikeLab,marsh:movementTerrain.some(t=>t.kind==='MARSH')});
   }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
@@ -405,7 +406,7 @@ function unitEvadePaths(state,attacker,target){
   const depth=c=>2*c.row+(c.col&1),sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
   const attached=state.board.leaders.some(l=>l.side===target.side&&loc(l)===loc(target));
   const leaderAt=c=>state.board.leaders.find(l=>loc(l)===loc(c));
-  const available=c=>!isImpassableHex(state.footLab.terrain??[],c)&&!state.board.units.some(u=>loc(u)===loc(c))&&
+  const available=c=>!isImpassableHex(state.footLab.terrain??[],c)&&!(tt==='HEAVY_WAR_MACHINE'&&isMarshHex(state.footLab.terrain??[],c))&&!state.board.units.some(u=>loc(u)===loc(c))&&
     (!leaderAt(c)||(!attached&&leaderAt(c).side===target.side));
   const successors=c=>c.row===rear?[]:neighbors(c).filter(n=>sign*(depth(n)-depth(c))>0&&available(n));
   const full=[],short=[],join=[];
@@ -594,6 +595,7 @@ export function assertSectionHistoryLab(s){
       (f.suppress&&(!p||p.kind!=='CLOSE_PREVIEW'||p.battleBack||f.window))||
       (s.phase!=='LAB_RESOLUTION_PENDING'&&(f.window||f.original!==null||f.prior!==null||f.suppress||f.replacements)))fail('INVALID_FIRST_STRIKE_STATE');
   }
+  if(s.footLab?.terrain?.some(t=>t.kind==='MARSH')&&s.diceLab?.version!==32)fail('MARSH_REQUIRES_FULL_COMBAT_LAB');
   if(Object.hasOwn(s,'diceLab'))assertSectionDiceLab(s);
   if((s.phase==='AWAIT_CARD')!== (s.activeCard===null)||
      (s.phase==='AWAIT_CARD'&&(s.cardPlay!==null||s.handAtPlay!==null||s.orderSnapshot!==null))||
@@ -615,6 +617,7 @@ export function applySectionHistoryLabCommand(state,command={}){
   // Defensive review and mandatory leader evasion belong to the opponent.
   // All other commands require the acting side.
   const actingSide=SECTION_DICE_COMMANDS.includes(command.type)?sectionCombatSide(state):state.turn;
+  if(state.diceLab?.marshPending&&command.type!=='EVADE_SECTION_LEADER_LAB')return reject('MARSH_LEADER_EVASION_PENDING');
   if(command.actor!==actingSide&&!['REVIEW_SECTION_RANGED_PHYSICAL_LAB',
     'EVADE_SECTION_LEADER_LAB','CHOOSE_SECTION_ELEPHANT_RED_LAB','CHOOSE_SECTION_MORALE_LAB','RETREAT_SECTION_UNIT_LAB','EVADE_SECTION_RAMPAGE_LEADER_LAB','DECLINE_SECTION_BATTLE_BACK_LAB','ACCEPT_SECTION_BATTLE_BACK_LAB','CHOOSE_SECTION_UNIT_EVADE_LAB','ACCEPT_SECTION_FIRST_STRIKE_LAB','DECLINE_SECTION_FIRST_STRIKE_LAB'].includes(command.type))
     return reject('NOT_YOUR_TURN');
@@ -632,7 +635,11 @@ export function applySectionHistoryLabCommand(state,command={}){
     return reject('BONUS_CLOSE_DECISION_PENDING');
   const next=copy(state),side=command.actor;
   let publicEvent;
-  if(command.type==='PLAY_SECTION_CARD'){
+  if(state.diceLab?.marshPending){
+    const result=resolveMarshLeaderEvasion(state,next,command);
+    if(!result.accepted)return result;
+    publicEvent=result.event;
+  }else if(command.type==='PLAY_SECTION_CARD'){
     if(state.phase!=='AWAIT_CARD'||!validId(command.cardInstanceId))return reject('WRONG_PHASE_OR_CARD');
     const index=next.hands[side].findIndex(c=>c.instanceId===command.cardInstanceId);
     if(index<0)return reject('CARD_NOT_IN_OWN_HAND');
@@ -1032,6 +1039,20 @@ export function applySectionHistoryLabCommand(state,command={}){
       ?'LAB_TURN_ENDED_AFTER_RANGED_REVIEW':'LAB_TURN_ENDED_WITHOUT_COMBAT',side,drewCard:drew,
       ...(recycledCards?{deckRecycled:true,recycledCardCount:recycledCards}:{}),...(replacements?{firstStrikeReplacementDraws:replacementDraws}:{})};
   }else return reject('UNSUPPORTED_LAB_COMMAND');
+  // Terrain dice are authoritative and part of the same accepted command.
+  if(next.diceLab?.version>=32&&['MOVE_SECTION_FOOT_PATH_V2','MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1','CHOOSE_SECTION_MOMENTUM_LAB'].includes(command.type)&&pathHasMarsh(state.footLab.terrain,command.path)){
+    const revision=state.revision+1;
+    let marshChecks;
+    if(command.type==='MOVE_SECTION_LEADER_PATH_V1'){
+      marshChecks=applyMarshLeaderPath(next,command.leaderId,command.path,revision);
+    }else{
+      const id=publicEvent.unitId,unit=state.board.units.find(u=>u.id===id);
+      const attached=state.board.leaders.find(l=>l.side===unit.side&&loc(l)===loc(unit));
+      marshChecks=applyMarshUnitPath(next,id,attached?.id,command.path,revision);
+      if(!next.board.units.some(u=>u.id===id)&&next.diceLab.last?.momentum?.bonusPending)next.diceLab.last.momentum.bonusPending=false;
+    }
+    publicEvent={...publicEvent,marshChecks};
+  }
   next.revision=state.revision+1;
   publicEvent=settleSectionVictory(next,publicEvent);
   // A defensive strike spends no ordered battle unless it stops the original attack.

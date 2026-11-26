@@ -197,7 +197,7 @@ function renderAncients() {
     cached.historyLimitReached?'Límite de comandos del laboratorio alcanzado. Consulta disponible; partida sin resolución.':
     `Ancients experimental · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
   const terrainNames={FOREST:'bosque',HILL:'colina',
-    BROKEN_GROUND:'terreno accidentado',RIVER:'río infranqueable',FORDABLE_RIVER:'río vadeable',SEACOAST:'costa',BRIDGE:'puente',FORTIFIED_CAMP:'campamento fortificado',RAMPART:'empalizada'};
+    BROKEN_GROUND:'terreno accidentado',RIVER:'río infranqueable',FORDABLE_RIVER:'río vadeable',SEACOAST:'costa',BRIDGE:'puente',FORTIFIED_CAMP:'campamento fortificado',RAMPART:'empalizada',MARSH:'marisma'};
   el('ancients-terrain-info').textContent='Terreno del escenario: '+
     (cached.terrain?.length
       ?cached.terrain.map(x=>`${terrainNames[x.kind]??'desconocido'} (${x.col+1},${x.row+1})`).join('; ')
@@ -283,7 +283,7 @@ function renderAncients() {
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
-  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending||!!cached.diceLab?.bonusClosePending||!!combat?.pendingWarriorCharges?.length;
+  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending||!!cached.diceLab?.bonusClosePending||!!combat?.pendingWarriorCharges?.length||!!cached.diceLab?.marshPending;
   el('ancients-finish-movement').hidden=!combat;
   const finishMove=el('ancients-finish-movement');
   finishMove.textContent=mfm==='FIRST'&&movementClosed?'Terminar disparos / segundo movimiento':'Terminar movimiento';
@@ -401,7 +401,7 @@ function renderAncients() {
   el('ancients-evasion-controls').hidden=dice?.blocker!=='LEADER_EVASION_PENDING';
   el('ancients-evade-leader').disabled=stopped||!dice?.canEvadeLeader;
   el('ancients-evasion-status').textContent=dice?.leaderEvasionAvailable
-    ?dice.canEvadeLeader?'Elige la ruta de evasión de tu líder.':'El adversario debe elegir la evasión de su líder.'
+    ?dice.canEvadeLeader?(dice.marshPending?'Pérdida de unidad en marisma: elige la evasión del líder.':'Elige la ruta de evasión de tu líder.'):'El adversario debe elegir la evasión de su líder.'
     :'No hay una ruta sin enemigos disponible en este laboratorio.';
   const morale=dice?.moralePreview,decision=dice?.morale??last?.morale;
   const moraleChoice=el('ancients-morale-choice'),previousMorale=moraleChoice.value;

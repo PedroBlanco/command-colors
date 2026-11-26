@@ -93,7 +93,7 @@ test('starting in a forest and ending in another forest triggers entry stop only
 });
 
 test('terrain map rejects malformed tiles and unsupported terrain kinds fail closed', () => {
-  const bad = [[tile(5,4,'MARSH')],[tile(5,4,'FOREST'),tile(5,4,'HILL')],
+  const bad = [[tile(5,4,'UNKNOWN_TERRAIN')],[tile(5,4,'FOREST'),tile(5,4,'HILL')],
     [tile(13,4,'FOREST')],[tile(-1,4,'FOREST')],[{kind:'HILL',col:4,row:4.5}],
     Array.from({length:118},()=>tile(5,4,'HILL')),null,{}];
   for (const terrain of bad)
@@ -122,7 +122,7 @@ test('battle screen is about terrain only; no legal battle or movement implied',
   assert.equal(res.needsFullLegalityCheck,true);
   assert.equal(Object.isFrozen(res),true);
   assert.equal(Object.isFrozen(BASE_TERRAIN_TYPES),true);
-  assert.deepEqual(BASE_TERRAIN_TYPES,['FOREST','HILL','BROKEN_GROUND','RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE','FORTIFIED_CAMP','RAMPART']);
+  assert.deepEqual(BASE_TERRAIN_TYPES,['FOREST','HILL','BROKEN_GROUND','RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE','FORTIFIED_CAMP','RAMPART','MARSH']);
 });
 
 test('water terrain: impassable river/coast, ford stop and open bridge',()=>{
@@ -135,4 +135,12 @@ test('water terrain: impassable river/coast, ford stop and open bridge',()=>{
 test('rampart accepts two or three contiguous canonical sides; no movement penalty',()=>{
  for(const sides of [[0,1],[5,0,1]])assert.equal(check('LIGHT_CAVALRY',[at(5,4),at(6,4)],[{...tile(5,4,'RAMPART'),sides}]).status,'CANDIDATE');
  for(const sides of [undefined,[],[0,2],[0,0],[6,0],[0,1,2,3]])assert.throws(()=>check('LIGHT_INFANTRY',[at(5,4)],[{...tile(5,4,'RAMPART'),sides}]),/INVALID_BASE_TERRAIN_MAP/);
+});
+
+test('marsh entry stops movement; exit is one hex and war machines cannot enter',()=>{
+ const terrain=[tile(5,4,'MARSH')];
+ assert.equal(check('LIGHT_CAVALRY',[at(5,4),at(6,4)],terrain).reason,'MUST_STOP_ON_MARSH_ENTRY');
+ assert.equal(check('LIGHT_CAVALRY',[at(5,4)],terrain).battleOnEntry,'NOT_BARRED_BY_TERRAIN');
+ assert.equal(check('HEAVY_WAR_MACHINE',[at(5,4)],terrain).reason,'WAR_MACHINE_CANNOT_ENTER_MARSH');
+ assert.equal(check('LIGHT_CAVALRY',[at(6,4),at(7,4)],terrain,at(5,4)).reason,'MARSH_EXIT_ONE_HEX');
 });

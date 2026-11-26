@@ -6,7 +6,9 @@
 import {distance, inBounds, pixelCenter} from '../hex-grid/hex.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 
-export const BASE_TERRAIN_TYPES = Object.freeze(['FOREST', 'HILL', 'BROKEN_GROUND', 'RIVER', 'FORDABLE_RIVER', 'SEACOAST', 'BRIDGE', 'FORTIFIED_CAMP', 'RAMPART']);
+export const BASE_TERRAIN_TYPES = Object.freeze(['FOREST', 'HILL', 'BROKEN_GROUND', 'RIVER', 'FORDABLE_RIVER', 'SEACOAST', 'BRIDGE', 'FORTIFIED_CAMP', 'RAMPART', 'MARSH']);
+export const isMarshHex=(terrain,cell)=>terrain.some(t=>t.kind==='MARSH'&&t.col===cell.col&&t.row===cell.row);
+export const pathHasMarsh=(terrain,path)=>path.some(c=>isMarshHex(terrain,c));
 export const isImpassableTerrain=kind=>kind==='RIVER'||kind==='SEACOAST';
 export const isImpassableHex=(terrain,cell)=>terrain.some(t=>t.col===cell.col&&t.row===cell.row&&isImpassableTerrain(t.kind));
 
@@ -67,6 +69,7 @@ export function assessAncientsTerrainMovement({unitType, origin, path, terrain =
   if (!cell(origin) || !Array.isArray(path) || path.length < 1 || path.length > 32
       || !path.every(cell)) throw new TypeError('INVALID_BASE_TERRAIN_PATH');
   const index = terrainIndex(terrain);
+  if(index.get(key(origin))==='MARSH'&&path.length>1)return result('BLOCKED','MARSH_EXIT_ONE_HEX',1,'MARSH','UNAVAILABLE');
   const visited = new Set([key(origin)]);
   let last = origin;
   for (let i = 0; i < path.length; i++) {
@@ -77,6 +80,10 @@ export function assessAncientsTerrainMovement({unitType, origin, path, terrain =
       return result('BLOCKED', 'REPEATED_HEX', i, null, 'UNAVAILABLE');
     const kind = index.get(hex) ?? 'CLEAR';
     if(isImpassableTerrain(kind))return result('BLOCKED','IMPASSABLE_TERRAIN',i,kind,'UNAVAILABLE');
+    if(kind==='MARSH'){
+      if(unitType==='HEAVY_WAR_MACHINE')return result('BLOCKED','WAR_MACHINE_CANNOT_ENTER_MARSH',i,kind,'UNAVAILABLE');
+      if(i!==path.length-1)return result('BLOCKED','MUST_STOP_ON_MARSH_ENTRY',i,kind,'UNAVAILABLE');
+    }
     if(kind==='FORDABLE_RIVER'&&i!==path.length-1)return result('BLOCKED','MUST_STOP_ON_FORD_ENTRY',i,kind,'UNAVAILABLE');
     if (kind === 'BROKEN_GROUND') {
       if (unitType === 'HEAVY_WAR_MACHINE')

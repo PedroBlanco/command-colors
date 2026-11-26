@@ -103,7 +103,7 @@ test('reject duplicate board IDs, occupied positions and wrong-side leaders',()=
     {leaders:[{id:'leader',side:'B',col:2,row:4}]},
     {leaders:[{id:'shooter',side:'A',col:2,row:4}]},
     {terrain:[{col:4,row:4,kind:'FOREST'},{col:4,row:4,kind:'HILL'}]},
-    {terrain:[{col:4,row:4,kind:'MARSH'}]},
+    {terrain:[{col:4,row:4,kind:'UNKNOWN_TERRAIN'}]},
     {units:[shooter,{...target,col:13}]}
   ]) assert.throws(()=>check(extra),/INVALID_RANGED_BOARD/);
 });
