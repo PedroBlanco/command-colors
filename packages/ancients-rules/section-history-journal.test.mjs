@@ -1817,3 +1817,38 @@ test('V29 Spartacus: restricted and wild orders, extra fire/close die, shuffle a
   assert.equal(s.discardPile.length,0);assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('V30 Counter Attack: physical identity, reversed sections, chaining and replay',()=>{
+ const c=tacticalCardSetup('ORDER_2_LEFT',true,3);
+ Object.assign(c,{enableMoveFireMoveLab:true,enableRallyLab:true,enableSpartacusLab:true,enableCounterAttackLab:true,sectorPerspective:'PLAYER_RELATIVE'});
+ for(const i of [3,4,5])c.cardInstances[i].definitionId='COUNTER_ATTACK';
+ c.board.units.push({id:'b2',side:'B',col:10,row:4});c.movementUnitTypes.b2='HEAVY_INFANTRY';
+ const initial=init(c);let s=initial;const log=[];
+ const run=(type,fields={})=>{const command=cmd(type,s.revision,{actor:s.turn,...fields}),result=apply(s,command);assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;return result;};
+ const play=id=>({cardInstanceId:s.hands[s.turn].find(x=>x.definitionId===id).instanceId});
+ const order=id=>({unitIds:[id],leaderIds:[]});
+ assert.equal(apply(s,cmd('PLAY_SECTION_CARD',0,play('COUNTER_ATTACK'))).code,'COUNTER_ATTACK_NO_PREVIOUS_CARD');
+ run('PLAY_SECTION_CARD',play('ORDER_2_LEFT'));run('ASSIGN_SECTION_ORDERS',order('a1'));run('END_EXPERIMENTAL_TURN');
+ run('PLAY_SECTION_CARD',play('COUNTER_ATTACK'));
+ assert.equal(s.activeCard.definitionId,'COUNTER_ATTACK');assert.equal(project(s,'B').effectiveCardInPlay,'ORDER_2_RIGHT');
+ assert.equal(apply(s,cmd('ASSIGN_SECTION_ORDERS',s.revision,{actor:'B',...order('b2')})).code,'ORDERS_NOT_ELIGIBLE');
+ run('ASSIGN_SECTION_ORDERS',order('b1'));run('END_EXPERIMENTAL_TURN');
+ run('PLAY_SECTION_CARD',play('COUNTER_ATTACK'));assert.equal(project(s,'A').effectiveCardInPlay,'ORDER_2_LEFT');
+ run('ASSIGN_SECTION_ORDERS',order('a1'));run('END_EXPERIMENTAL_TURN');
+ assert.equal(s.diceLab.counter.previous,'ORDER_2_LEFT');
+ assert.equal([...s.drawPile,...s.discardPile,...s.hands.A,...s.hands.B].filter(x=>x.definitionId==='COUNTER_ATTACK').length,3);
+ assert.deepEqual(replay(initial,log),s);
+});
+test('V30 Counter Attack recalculates troop fallback against own army',()=>{
+ const c=tacticalCardSetup('ORDER_HEAVY_TROOPS',true,10);
+ Object.assign(c,{enableMoveFireMoveLab:true,enableRallyLab:true,enableSpartacusLab:true,enableCounterAttackLab:true});
+ c.cardInstances[4].definitionId='COUNTER_ATTACK';
+ const initial=init(c);let s=initial;const log=[];
+ const run=(type,fields={})=>{const command=cmd(type,s.revision,{actor:s.turn,...fields}),result=apply(s,command);assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};
+ const play=id=>({cardInstanceId:s.hands[s.turn].find(x=>x.definitionId===id).instanceId});
+ run('PLAY_SECTION_CARD',play('ORDER_HEAVY_TROOPS'));assert.equal(project(s,'A').selectionCard.fallback,true);
+ run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});run('END_EXPERIMENTAL_TURN');
+ run('PLAY_SECTION_CARD',play('COUNTER_ATTACK'));const options=project(s,'B').selectionCard;
+ assert.equal(options.fallback,false);assert.equal(options.maximumOrders,2);assert.deepEqual(options.unitIds,['b1']);
+ run('ASSIGN_SECTION_ORDERS',{unitIds:['b1'],leaderIds:[]});assert.deepEqual(replay(initial,log),s);
+});

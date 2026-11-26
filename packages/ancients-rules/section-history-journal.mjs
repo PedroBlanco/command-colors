@@ -8,7 +8,7 @@ import {distance,neighbors} from '../hex-grid/hex.mjs';
 import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS} from './block-loss-preview.mjs';
-import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS, SELECTION_CARD_DEFINITIONS, GROUP_CARD_DEFINITIONS, ATTACK_CARD_DEFINITIONS, LEADERSHIP_CARD_DEFINITIONS, FIRE_CARD_DEFINITIONS, selectionCardOptions, screenSelectionCardOrders} from './section-card-order-screen.mjs';
+import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS, SELECTION_CARD_DEFINITIONS, GROUP_CARD_DEFINITIONS, ATTACK_CARD_DEFINITIONS, LEADERSHIP_CARD_DEFINITIONS, FIRE_CARD_DEFINITIONS, effectiveSectionCard, selectionCardOptions, screenSelectionCardOrders} from './section-card-order-screen.mjs';
 import {ANCIENTS_RULESET,assessBaseMovement} from './movement-profile.mjs';
 import {assessAncientsMovementRegime,assessOpenHexPathGeometry} from './movement-regimes.mjs';
 import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
@@ -42,7 +42,7 @@ const loc=p=>p.col+','+p.row;
 const reversedSection=sector=>sector==='LEFT'?'RIGHT':sector==='RIGHT'?'LEFT':sector;
 const goodLoc=p=>Number.isSafeInteger(p.col)&&p.col>=0&&p.col<13&&Number.isSafeInteger(p.row)&&p.row>=0&&p.row<9;
 const isCards=(a,version=0)=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validId(c.instanceId)&&
-  (Object.hasOwn(BASE_SECTION_CARD_LIMITS,c.definitionId)||version>=22&&Object.hasOwn(SELECTION_CARD_DEFINITIONS,c.definitionId)||version>=23&&Object.hasOwn(GROUP_CARD_DEFINITIONS,c.definitionId)||version>=24&&Object.hasOwn(ATTACK_CARD_DEFINITIONS,c.definitionId)||version>=25&&Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,c.definitionId)||version>=26&&Object.hasOwn(FIRE_CARD_DEFINITIONS,c.definitionId)||version>=27&&c.definitionId==='MOVE_FIRE_MOVE'||version>=28&&c.definitionId==='RALLY'||version>=29&&c.definitionId==='I_AM_SPARTACUS'));
+  (Object.hasOwn(BASE_SECTION_CARD_LIMITS,c.definitionId)||version>=22&&Object.hasOwn(SELECTION_CARD_DEFINITIONS,c.definitionId)||version>=23&&Object.hasOwn(GROUP_CARD_DEFINITIONS,c.definitionId)||version>=24&&Object.hasOwn(ATTACK_CARD_DEFINITIONS,c.definitionId)||version>=25&&Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,c.definitionId)||version>=26&&Object.hasOwn(FIRE_CARD_DEFINITIONS,c.definitionId)||version>=27&&c.definitionId==='MOVE_FIRE_MOVE'||version>=28&&c.definitionId==='RALLY'||version>=29&&c.definitionId==='I_AM_SPARTACUS'||version>=30&&c.definitionId==='COUNTER_ATTACK'));
 
 /**
  * Strict server-owned LAB scope: ordinary foot or five mounted base types,
@@ -106,8 +106,8 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false,enableDeckRecycleLab=false,enableLongHistoryLab=false,enableSelectionCardsLab=false,enableGroupCardsLab=false,enableAttackCardsLab=false,enableLeadershipCardsLab=false,enableFireCardsLab=false,enableMoveFireMoveLab=false,enableRallyLab=false,enableSpartacusLab=false}={}) {
-  if(!isCards(cardInstances,enableSpartacusLab===true?29:enableRallyLab===true?28:enableMoveFireMoveLab===true?27:enableFireCardsLab===true?26:enableLeadershipCardsLab===true?25:enableAttackCardsLab===true?24:enableGroupCardsLab===true?23:enableSelectionCardsLab===true?22:0)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false,enableDeckRecycleLab=false,enableLongHistoryLab=false,enableSelectionCardsLab=false,enableGroupCardsLab=false,enableAttackCardsLab=false,enableLeadershipCardsLab=false,enableFireCardsLab=false,enableMoveFireMoveLab=false,enableRallyLab=false,enableSpartacusLab=false,enableCounterAttackLab=false}={}) {
+  if(!isCards(cardInstances,enableCounterAttackLab===true?30:enableSpartacusLab===true?29:enableRallyLab===true?28:enableMoveFireMoveLab===true?27:enableFireCardsLab===true?26:enableLeadershipCardsLab===true?25:enableAttackCardsLab===true?24:enableGroupCardsLab===true?23:enableSelectionCardsLab===true?22:0)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
     !SIDES.includes(startingSide)||!isRecord(board)||!Array.isArray(board.units)||
@@ -143,7 +143,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       typeof enableFireCardsLab!=='boolean'||(enableFireCardsLab&&!enableLeadershipCardsLab)||
       typeof enableMoveFireMoveLab!=='boolean'||(enableMoveFireMoveLab&&!enableFireCardsLab)||
       typeof enableRallyLab!=='boolean'||(enableRallyLab&&!enableMoveFireMoveLab)||
-      typeof enableSpartacusLab!=='boolean'||(enableSpartacusLab&&!enableRallyLab)))fail('INVALID_SECTION_HISTORY_SETUP');
+      typeof enableSpartacusLab!=='boolean'||(enableSpartacusLab&&!enableRallyLab)||
+      typeof enableCounterAttackLab!=='boolean'||(enableCounterAttackLab&&!enableSpartacusLab)))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -172,7 +173,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
     if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
-    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab,loneLeaderCombat:enableLoneLeaderCombatLab,deckRecycle:enableDeckRecycleLab,longHistory:enableLongHistoryLab,selectionCards:enableSelectionCardsLab,groupCards:enableGroupCardsLab,attackCards:enableAttackCardsLab,leadershipCards:enableLeadershipCardsLab,fireCards:enableFireCardsLab,moveFireMove:enableMoveFireMoveLab,rally:enableRallyLab,spartacus:enableSpartacusLab});
+    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab,loneLeaderCombat:enableLoneLeaderCombatLab,deckRecycle:enableDeckRecycleLab,longHistory:enableLongHistoryLab,selectionCards:enableSelectionCardsLab,groupCards:enableGroupCardsLab,attackCards:enableAttackCardsLab,leadershipCards:enableLeadershipCardsLab,fireCards:enableFireCardsLab,moveFireMove:enableMoveFireMoveLab,rally:enableRallyLab,spartacus:enableSpartacusLab,counterAttack:enableCounterAttackLab});
   }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
@@ -232,27 +233,46 @@ function spartacusOrdersFit(state,selection,pieces){
   }
   return true;
 }
+function counteredDefinition(definition){
+  if(Object.hasOwn(BASE_SECTION_CARD_LIMITS,definition)||/^INSPIRED_(LEFT|CENTER|RIGHT)_LEADERSHIP$/.test(definition))
+    return definition.replace(/LEFT|RIGHT/,reversedSection);
+  return definition;
+}
+function leadershipSection(selection,pieces,sectors){
+  // Use the first valid anchor/sector in stable board order; a single-unit
+  // alternative uses that unit's sector. An empty selection has no anchor.
+  const anchor=selection.leadershipAnchors.find(a=>pieces.some(p=>p.id===a.orderId)&&
+    screenSelectionCardOrders({...selection,leadershipAnchors:[a]},pieces,sectors));
+  const cell=anchor??pieces[0];
+  return cell?sectors[loc(cell)]?.[0]??null:null;
+}
 function currentSelectionCard(state,side,sectors=relativeSectors(state,side)){
   if(!(state.diceLab?.version>=22)||!state.activeCard||!state.handAtPlay)return null;
-  if(state.diceLab.version>=28&&state.activeCard.definitionId==='RALLY')return rallySelection(state,side);
-  if(state.diceLab.version>=29&&state.activeCard.definitionId==='I_AM_SPARTACUS')return spartacusSelection(state,side);
-  return selectionCardOptions({definitionId:state.activeCard.definitionId,side,
+  if(state.diceLab.version>=28&&effectiveSectionCard(state)==='RALLY')return rallySelection(state,side);
+  if(state.diceLab.version>=29&&effectiveSectionCard(state)==='I_AM_SPARTACUS')return spartacusSelection(state,side);
+  const definition=effectiveSectionCard(state);
+  const selection=selectionCardOptions({definitionId:definition,side,
     command:state.handAtPlay.cards.length,board:state.board,unitTypes:state.footLab.unitTypes,sectorCells:sectors});
+  if(definition==='LEADERSHIP_ANY_SECTION'&&state.diceLab?.counter?.section&&selection){
+    const section=state.diceLab.counter.section;
+    return {...selection,section,leadershipAnchors:selection.leadershipAnchors.filter(a=>sectors[loc(a)]?.includes(section))};
+  }
+  return selection;
 }
 const lightFootPassTypes=new Set(['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY']);
 function mayPassFriendlyFoot(state,id){
-  return state.diceLab?.version>=22&&(state.activeCard?.definitionId==='ORDER_LIGHT_TROOPS'||!!state.diceLab?.moveFireMove)&&lightFootPassTypes.has(state.footLab.unitTypes[id]);
+  return state.diceLab?.version>=22&&(effectiveSectionCard(state)==='ORDER_LIGHT_TROOPS'||!!state.diceLab?.moveFireMove)&&lightFootPassTypes.has(state.footLab.unitTypes[id]);
 }
 // V23 group effects apply only to foot units, never to the single mounted
 // substitute allowed when the player has no foot units.
 function groupFootCard(state,id){
-  const type=state.footLab?.unitTypes[id],definition=state.activeCard?.definitionId;
+  const type=state.footLab?.unitTypes[id],definition=effectiveSectionCard(state);
   return state.diceLab?.version>=23&&type&&!BASE_MOUNTED_TYPES.includes(type)&&Object.hasOwn(GROUP_CARD_DEFINITIONS,definition)
     ?definition:null;
 }
 function attackCardEffect(state,unitId){
   if(!(state.diceLab?.version>=24))return null;
-  const card=state.activeCard?.definitionId;
+  const card=effectiveSectionCard(state);
   if(card==='CLASH_OF_SHIELDS')return card;
   if(card==='MOUNTED_CHARGE'&&BASE_MOUNTED_TYPES.includes(state.footLab.unitTypes[unitId]))return card;
   return null;
@@ -317,7 +337,7 @@ function recycleSectionDeck(state,revision,force=false){
   return state.drawPile.length;
 }
 
-const spartacusBonus=state=>state.diceLab?.version>=29&&state.activeCard?.definitionId==='I_AM_SPARTACUS'?1:0;
+const spartacusBonus=state=>state.diceLab?.version>=29&&effectiveSectionCard(state)==='I_AM_SPARTACUS'?1:0;
 
 /** Only the replayed server state may supply movement, orders, terrain or dice. */
 function screenRangedPlan(state,attackerId,targetId){
@@ -535,7 +555,7 @@ export function assertSectionHistoryLab(s){
        Object.entries(c.movement).some(([id,m])=>
          !s.footLab.movedUnitIds.includes(id)||!isRecord(m)||
          Object.keys(m).length!==2||!Number.isSafeInteger(m.steps)||
-         m.steps<1||m.steps>4||!['POSSIBLE','UNAVAILABLE',...(s.diceLab?.version>=18&&(m.steps===2||s.diceLab.version>=23&&m.steps===3&&s.activeCard?.definitionId==='DOUBLE_TIME')&&(s.footLab.unitTypes[id]==='WARRIOR_INFANTRY'||!s.board.units.some(u=>u.id===id))?['MANDATORY_CLOSE_COMBAT']:[])].includes(m.battle))||
+         m.steps<1||m.steps>4||!['POSSIBLE','UNAVAILABLE',...(s.diceLab?.version>=18&&(m.steps===2||s.diceLab.version>=23&&m.steps===3&&effectiveSectionCard(s)==='DOUBLE_TIME')&&(s.footLab.unitTypes[id]==='WARRIOR_INFANTRY'||!s.board.units.some(u=>u.id===id))?['MANDATORY_CLOSE_COMBAT']:[])].includes(m.battle))||
        (c.plan!==null&&!c.movementClosed))fail('INVALID_COMBAT_LAB_STATE');
     if(c.plan!==null){
       const checked=(c.plan.kind==='CLOSE_PREVIEW'?screenClosePlan:screenRangedPlan)(s,c.plan.attackerId,c.plan.targetId,c.plan.evadePath,c.plan.battleBack===true,c.plan.bonusClose===true);
@@ -544,6 +564,15 @@ export function assertSectionHistoryLab(s){
     }
   }
   if(s.diceLab?.last?.momentum?.bonusPending&&!bonusCloseCandidates(s).length)fail('INVALID_COMBAT_LAB_PLAN');
+  if(s.diceLab?.version>=30){
+    const c=s.diceLab.counter,validEffect=id=>id===null||(id!=='COUNTER_ATTACK'&&id!=='FIRST_STRIKE'&&isCards([{instanceId:'effect',definitionId:id}],29));
+    if(!isRecord(c)||Object.keys(c).length!==4||!validEffect(c.previous)||!validEffect(c.effect)||
+      ![null,'LEFT','CENTER','RIGHT'].includes(c.previousSection)||![null,'LEFT','CENTER','RIGHT'].includes(c.section)||
+      (c.effect!==null)!==(s.activeCard?.definitionId==='COUNTER_ATTACK')||
+      (c.effect!==null&&c.effect!==counteredDefinition(c.previous))||
+      (c.previousSection!==null&&c.previous!=='LEADERSHIP_ANY_SECTION')||
+      (c.section!==null&&effectiveSectionCard(s)!=='LEADERSHIP_ANY_SECTION'))fail('INVALID_COUNTER_ATTACK_STATE');
+  }
   if(Object.hasOwn(s,'diceLab'))assertSectionDiceLab(s);
   if((s.phase==='AWAIT_CARD')!== (s.activeCard===null)||
      (s.phase==='AWAIT_CARD'&&(s.cardPlay!==null||s.handAtPlay!==null||s.orderSnapshot!==null))||
@@ -568,7 +597,7 @@ export function applySectionHistoryLabCommand(state,command={}){
   if(command.actor!==actingSide&&!['REVIEW_SECTION_RANGED_PHYSICAL_LAB',
     'EVADE_SECTION_LEADER_LAB','CHOOSE_SECTION_ELEPHANT_RED_LAB','CHOOSE_SECTION_MORALE_LAB','RETREAT_SECTION_UNIT_LAB','EVADE_SECTION_RAMPAGE_LEADER_LAB','DECLINE_SECTION_BATTLE_BACK_LAB','ACCEPT_SECTION_BATTLE_BACK_LAB','CHOOSE_SECTION_UNIT_EVADE_LAB'].includes(command.type))
     return reject('NOT_YOUR_TURN');
-  if(state.diceLab?.version>=24&&state.activeCard?.definitionId==='CLASH_OF_SHIELDS'&&['MOVE_SECTION_FOOT_PATH_V2','MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1'].includes(command.type))return reject('CLASH_MOVEMENT_FORBIDDEN');
+  if(state.diceLab?.version>=24&&effectiveSectionCard(state)==='CLASH_OF_SHIELDS'&&['MOVE_SECTION_FOOT_PATH_V2','MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1'].includes(command.type))return reject('CLASH_MOVEMENT_FORBIDDEN');
   if(state.diceLab?.darken&&['MOVE_SECTION_FOOT_PATH_V2','MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1'].includes(command.type))return reject('DARKEN_MOVEMENT_FORBIDDEN');
   if(state.combatLab?.movementClosed&&state.diceLab?.moveFireMove!=='SECOND'&&['MOVE_SECTION_FOOT_PATH_V2',
     'MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1'].includes(command.type))
@@ -585,25 +614,33 @@ export function applySectionHistoryLabCommand(state,command={}){
     if(state.phase!=='AWAIT_CARD'||!validId(command.cardInstanceId))return reject('WRONG_PHASE_OR_CARD');
     const index=next.hands[side].findIndex(c=>c.instanceId===command.cardInstanceId);
     if(index<0)return reject('CARD_NOT_IN_OWN_HAND');
+    if(next.hands[side][index].definitionId==='COUNTER_ATTACK'&&!next.diceLab?.counter?.previous)return reject('COUNTER_ATTACK_NO_PREVIOUS_CARD');
     next.handAtPlay={side,revision:state.revision,cards:copy(next.hands[side])};
     const card=next.hands[side].splice(index,1)[0];
     next.activeCard=card;
+    if(card.definitionId==='COUNTER_ATTACK'){
+      const c=next.diceLab.counter;
+      c.effect=counteredDefinition(c.previous);
+      c.section=c.effect==='LEADERSHIP_ANY_SECTION'&&c.previousSection
+        ?(state.sectorPerspective==='PLAYER_RELATIVE'?reversedSection(c.previousSection):c.previousSection):null;
+    }
+    const effect=effectiveSectionCard(next);
     next.cardPlay={side,revision:state.revision+1,instanceId:card.instanceId,definitionId:card.definitionId};
     next.phase='ASSIGN_ORDERS';
-    publicEvent={kind:'SECTION_CARD_PLAYED_LAB',side,definitionId:card.definitionId};
-    if(next.diceLab?.version>=28&&card.definitionId==='RALLY'&&next.board.leaders.some(l=>l.side===side)){
+    publicEvent={kind:'SECTION_CARD_PLAYED_LAB',side,definitionId:card.definitionId,...(card.definitionId==='COUNTER_ATTACK'?{effectiveDefinitionId:effect}: {})};
+    if(next.diceLab?.version>=28&&effect==='RALLY'&&next.board.leaders.some(l=>l.side===side)){
       const draw=sectionRollIndex(next.diceLab.key,'section_rally_'+(state.revision+1));
       next.diceLab.rallyFaces=Array.from({length:next.handAtPlay.cards.length},()=>ANCIENTS_BATTLE_DIE_FACES[draw(6)]);
       publicEvent.rallyFaces=copy(next.diceLab.rallyFaces);
     }
-    if(next.diceLab?.version>=29&&card.definitionId==='I_AM_SPARTACUS'){
+    if(next.diceLab?.version>=29&&effect==='I_AM_SPARTACUS'){
       const draw=sectionRollIndex(next.diceLab.key,'section_spartacus_'+(state.revision+1));
       next.diceLab.spartacusFaces=Array.from({length:next.handAtPlay.cards.length},()=>ANCIENTS_BATTLE_DIE_FACES[draw(6)]);
       publicEvent.spartacusFaces=copy(next.diceLab.spartacusFaces);
     }
   }else if(['ASSIGN_SECTION_ORDERS','ASSIGN_SECTION_RALLY_LAB'].includes(command.type)){
     if(state.phase!=='ASSIGN_ORDERS')return reject('WRONG_PHASE');
-    const rally=state.diceLab?.version>=28&&state.activeCard?.definitionId==='RALLY'?rallySelection(state,side):null;
+    const rally=state.diceLab?.version>=28&&effectiveSectionCard(state)==='RALLY'?rallySelection(state,side):null;
     const special=command.type==='ASSIGN_SECTION_RALLY_LAB';
     if(special!==!!rally?.rallyOptions)return reject('RALLY_ASSIGNMENT_REQUIRED');
     const recovered=special?allocateRally(state,rally,command.allocations):null;
@@ -633,10 +670,12 @@ export function applySectionHistoryLabCommand(state,command={}){
         phase:'COMBAT',turn:side,revision:state.revision+1,
         orderedUnitIds:[...unitIds],orderedLeaderIds:[...leaderIds]},
       sessionSide:side,expectedRevision:state.revision+1,
-      handAtPlay:state.handAtPlay,cardPlay:state.cardPlay,orderSnapshot:proof
+      handAtPlay:state.handAtPlay,cardPlay:state.cardPlay,orderSnapshot:proof,effectiveDefinitionId:effectiveSectionCard(state)
     });
     if(screened.status!=='CANDIDATE'||selection?.family==='SPARTACUS'&&!spartacusOrdersFit(state,selection,pieces))return reject('ORDERS_NOT_ELIGIBLE');
     next.orderSnapshot=proof;
+    if(next.diceLab?.counter&&effectiveSectionCard(state)==='LEADERSHIP_ANY_SECTION'&&!next.diceLab.counter.section)
+      next.diceLab.counter.section=leadershipSection(selection,pieces,perspective);
     if(selection?.family==='SPARTACUS')next.diceLab.spartacusFaces=null;
     if(recovered){next.diceLab.blocks=recovered.blocks;next.diceLab.rallyFaces=null;}
     if(selection?.family==='DARKEN'&&!selection.fallback)next.diceLab.darken={twice:[]};
@@ -788,7 +827,7 @@ export function applySectionHistoryLabCommand(state,command={}){
       return reject('LEADER_ALREADY_MOVED');
     const host=state.board.units.find(u=>u.side===side&&u.col===leader.col&&
        u.row===leader.row);
-    if(host&&state.diceLab?.version>=25&&Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,state.activeCard?.definitionId))
+    if(host&&state.diceLab?.version>=25&&Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,effectiveSectionCard(state)))
       return reject('LEADERSHIP_DETACH_FORBIDDEN');
     if(host&&state.footLab.movedUnitIds.includes(host.id))
       return reject('ATTACHED_UNIT_ALREADY_MOVED');
@@ -922,6 +961,9 @@ export function applySectionHistoryLabCommand(state,command={}){
     if(state.combatLab?.plan)return reject('COMBAT_PLAN_PENDING');
     if(state.phase!=='LAB_RESOLUTION_PENDING')return reject('WRONG_PHASE');
     if(pendingWarriorCharges(state).length)return reject('WARRIOR_CHARGE_COMBAT_REQUIRED');
+    if(next.diceLab?.counter){
+      const c=next.diceLab.counter;c.previous=effectiveSectionCard(state);c.previousSection=c.previous==='LEADERSHIP_ANY_SECTION'?c.section:null;c.effect=null;c.section=null;
+    }
     next.discardPile.push(next.activeCard);
     next.activeCard=null;
     // An initially empty deck must be replenished before drawing. Otherwise
@@ -977,6 +1019,7 @@ export function projectSectionHistoryLab(state,side){
     drawPileCount:state.drawPile.length,
     discardPile:state.discardPile.map(c=>c.definitionId),
     cardInPlay:state.activeCard?.definitionId??null,
+    ...(state.diceLab?.version>=30?{effectiveCardInPlay:effectiveSectionCard(state),previousCardEffect:state.diceLab.counter.previous}:{}),
     ordersStaged:state.orderSnapshot!==null,
     ...(state.turn===side&&state.phase==='ASSIGN_ORDERS'&&currentSelectionCard(state,side)?{selectionCard:currentSelectionCard(state,side)}:{}),
     ...(state.footLab?{

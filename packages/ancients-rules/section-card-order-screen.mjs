@@ -7,6 +7,8 @@ import {distance} from '../hex-grid/hex.mjs';
 import {BASE_RANGED_REACH} from './ranged-profile.mjs';
 
 export const SECTION_CARD_ORDER_SCREEN_VERSION = 1;
+// A copied effect is separate from the conserved physical card instance.
+export const effectiveSectionCard=state=>state.diceLab?.counter?.effect??state.activeCard?.definitionId??null;
 export const BASE_SECTION_CARD_LIMITS = Object.freeze(Object.fromEntries(
   ['LEFT','CENTER','RIGHT'].flatMap(section => [2,3,4].map(count => [
     'ORDER_'+count+'_'+section, Object.freeze({section, maxOrders:count})
@@ -35,7 +37,7 @@ const blocked=reason=>Object.freeze({status:'BLOCKED',reason,
  * post-movement board; sector labels are relative to the active player's side.
  */
 export function screenBaseAncientsSectionCardOrders({turnState,sessionSide,
-  expectedRevision,handAtPlay,cardPlay,orderSnapshot}={}) {
+  expectedRevision,handAtPlay,cardPlay,orderSnapshot,effectiveDefinitionId=undefined}={}) {
   if (!record(turnState)||turnState.schemaVersion!==1||
       turnState.ruleset!=='ancients-base-3e-2009'||
       turnState.status!=='ACTIVE'||turnState.phase!=='COMBAT'||
@@ -66,8 +68,10 @@ export function screenBaseAncientsSectionCardOrders({turnState,sessionSide,
   const card=handAtPlay.cards.find(x=>x.instanceId===cardPlay.instanceId);
   if (!card || card.definitionId!==cardPlay.definitionId)
     return blocked('CARD_NOT_IN_ACTOR_HAND_AT_PLAY');
-  const rule=BASE_SECTION_CARD_LIMITS[cardPlay.definitionId];
-  if (!Object.hasOwn(BASE_SECTION_CARD_LIMITS,cardPlay.definitionId)||!rule)
+  // The journal supplies the replay-derived effect, never the request.
+  const definition=cardPlay.definitionId==='COUNTER_ATTACK'?effectiveDefinitionId:cardPlay.definitionId;
+  const rule=BASE_SECTION_CARD_LIMITS[definition];
+  if (!Object.hasOwn(BASE_SECTION_CARD_LIMITS,definition)||!rule)
     return blocked('UNSUPPORTED_CARD_FAMILY');
   const pieces=orderSnapshot.pieces;
   if (!Array.isArray(pieces)||pieces.length>117||pieces.some(x=>
