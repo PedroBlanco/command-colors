@@ -189,7 +189,7 @@ function renderAncients() {
   const scope=[cached.matchId,cached.you,cached.revision,cached.phase].join(':');
   if(ancientsDraftScope!==scope){
     ancientsDraft=null;ancientsRetry=null;ancientsDraftScope=scope;
-    for(let i=1;i<=5;i++)el('ancients-physical-die-'+i).value='';
+    for(let i=1;i<=7;i++)el('ancients-physical-die-'+i).value='';
   }
   el('ancients-status').textContent=
     finished?`Partida terminada · ${victory.winner==='DRAW'?'Empate':victory.winner===cached.you?'Victoria':'Derrota'} · revisión ${cached.revision}`:
@@ -202,7 +202,8 @@ function renderAncients() {
       ?cached.terrain.map(x=>`${terrainNames[x.kind]??'desconocido'} (${x.col+1},${x.row+1})`).join('; ')
       :'solo hexágonos despejados')+'.';
   const selection=cached.selectionCard;
-  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado'};
+  const clash=cached.cardInPlay==='CLASH_OF_SHIELDS';
+  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos'};
   if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':selection.connected?' (grupo de unidades contiguas)':'');
   const cardSelect=el('ancients-card');
   const chosen=cardSelect.value;
@@ -223,7 +224,7 @@ function renderAncients() {
     const option=document.createElement('option');
     option.value=unit.id;
     option.textContent=`${unit.id} (${unit.unitType}, ${unit.col+1},${unit.row+1})`;
-    option.selected=selected.has(unit.id);
+    option.selected=!!selection?.allRequired||selected.has(unit.id);
     unitSelect.appendChild(option);
   }
   const leaderOrderSelect=el('ancients-leader-orders');
@@ -261,7 +262,7 @@ function renderAncients() {
   const ordered=new Set(Array.isArray(cached.orderedUnitIds)?cached.orderedUnitIds:[]);
   const moved=new Set(Array.isArray(cached.movedUnitIds)?cached.movedUnitIds:[]);
   const locked=new Set(Array.isArray(cached.unitsLockedByLeader)?cached.unitsLockedByLeader:[]);
-  const selectable=movementClosed||!isTurn?[]:(cached.board??[]).filter(u=>u.side===cached.you&&
+  const selectable=movementClosed||!isTurn||clash?[]:(cached.board??[]).filter(u=>u.side===cached.you&&
     ordered.has(u.id)&&!moved.has(u.id)&&!locked.has(u.id)).map(u=>u.id);
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
@@ -270,11 +271,11 @@ function renderAncients() {
   el('ancients-finish-movement').hidden=!combat;
   el('ancients-finish-movement').disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed;
   el('ancients-clear-path').disabled=!ancientsDraft;
-  el('ancients-move').disabled=!isTurn||movementClosed||cached.phase!=='LAB_RESOLUTION_PENDING'||
+  el('ancients-move').disabled=!isTurn||movementClosed||clash||cached.phase!=='LAB_RESOLUTION_PENDING'||
     !ancientsDraft?.path.length||!!(ancientsDraft?.kind!=='LEADER'&&ancientsDraft?.path.length&&(cached.board??[]).some(u=>u.col===ancientsDraft.path.at(-1).col&&u.row===ancientsDraft.path.at(-1).row));
   el('ancients-route-status').textContent=ancientsDraft
     ? `${ancientsDraft.kind==='LEADER'?'Líder':'Unidad'} ${ancientsDraft.unitId}: ${ancientsDraft.path.length} hexágonos. Confirma para validar en el servidor.`
-    : movementClosed?'Movimiento cerrado. Prepara un ataque si está disponible.':`${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
+    : clash&&!movementClosed?'Choque de escudos: las unidades no se mueven antes del combate. Cierra la fase de movimiento.':movementClosed?'Movimiento cerrado. Prepara un ataque si está disponible.':`${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
   el('ancients-combat').hidden=!combat||!movementClosed;
   const choice=el('ancients-ranged-choice'),oldChoice=choice.value;
   choice.replaceChildren();
@@ -291,7 +292,7 @@ function renderAncients() {
   el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan||!!pending||!!combat?.plan?.evadeOptions?.length||!!combat?.plan?.battleBack||!!combat?.plan?.bonusClose;
   const plan=combat?.plan;
   el('ancients-combat-status').textContent=plan
-    ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}).`
+    ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}${plan.cardBonusDice?' · carta +'+plan.cardBonusDice:''}).`
     :!isTurn?'El adversario prepara su combate.':candidates.length
       ?`${candidates.length} ataques disponibles.`:'No hay ataques disponibles en esta posición.';
   el('ancients-banners').textContent=dice?.banners?`Medallas: A ${dice.banners.A}${victory?'/'+victory.targets.A:''} · B ${dice.banners.B}${victory?'/'+victory.targets.B:''}`+(finished?` · ${victory.winner==='DRAW'?'Empate':'Vencedor: '+victory.winner}`:''):'';
@@ -324,7 +325,7 @@ function renderAncients() {
   el('ancients-elephant-red-controls').hidden=!dice?.elephantRedPending;
   el('ancients-elephant-red-ignore').disabled=stopped||!dice?.canChooseElephantRed;
   el('ancients-elephant-red-accept').disabled=stopped||!dice?.canChooseElephantRed;
-  for(let i=1;i<=5;i++){
+  for(let i=1;i<=7;i++){
     el('ancients-physical-die-'+i).disabled=!mayRoll||i>(plan?.diceCount??0);
     if(i>1)el('ancients-physical-die-'+i+'-label').hidden=i>(plan?.diceCount??0);
   }
@@ -486,7 +487,7 @@ function renderAncients() {
 }
 function selectAncientsHex(cell){
   if(cached?.status!=='LAB_ONLY'||cached.diceLab?.victory?.winner||cached.historyLimitReached||cached.turn!==cached.you||
-     cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed)return;
+     cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed||cached.cardInPlay==='CLASH_OF_SHIELDS')return;
   const units=cached.board??[];
   const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
   const ordered=new Set(cached.orderedUnitIds??[]);
@@ -950,7 +951,7 @@ action('ancients-play',()=>sendAncients('PLAY_SECTION_CARD',{
   cardInstanceId:el('ancients-card').value
 }));
 action('ancients-order',()=>sendAncients('ASSIGN_SECTION_ORDERS',{
-  unitIds:Array.from(el('ancients-units').selectedOptions??[],x=>x.value),
+  unitIds:cached?.selectionCard?.allRequired?[...cached.selectionCard.unitIds]:Array.from(el('ancients-units').selectedOptions??[],x=>x.value),
   leaderIds:Array.from(el('ancients-leader-orders').selectedOptions??[],x=>x.value)
 }));
 action('ancients-select-leader',async()=>{
@@ -996,8 +997,8 @@ action('ancients-cancel-ranged',()=>sendAncients('CANCEL_SECTION_RANGED_LAB'));
 action('ancients-roll-digital',()=>sendAncients('ROLL_SECTION_RANGED_DIGITAL_LAB'));
 action('ancients-declare-physical',()=>{
   const n=cached?.combatLab?.plan?.diceCount;
-  const faces=Array.from({length:Number.isInteger(n)&&n>=1&&n<=5?n:0},(_,i)=>el('ancients-physical-die-'+(i+1)).value);
-  if(![1,2,3,4,5].includes(n)||faces.some(x=>!['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS'].includes(x)))
+  const faces=Array.from({length:Number.isInteger(n)&&n>=1&&n<=7?n:0},(_,i)=>el('ancients-physical-die-'+(i+1)).value);
+  if(![1,2,3,4,5,6,7].includes(n)||faces.some(x=>!['LIGHT','MEDIUM','HEAVY','LEADER','FLAG','SWORDS'].includes(x)))
     throw Error('INVALID_PHYSICAL_DECLARATION');
   const plan=cached.combatLab.plan;
   if(plan.elephantAttack&&plan.swordsHit&&!plan.evadePath?.length){

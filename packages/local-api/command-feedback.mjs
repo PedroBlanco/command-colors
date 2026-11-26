@@ -38,6 +38,8 @@ const explanations=Object.freeze({
   WARRIOR_CHARGE_TERRAIN_BLOCKED:'El terreno impide combatir después de esa carga.',
   WARRIOR_CHARGE_COMBAT_REQUIRED:'Resuelve el combate obligatorio de los guerreros antes de terminar el turno.',
   STANDARD_FOOT_MOVEMENT_EXCEEDED:'La ruta supera la distancia de movimiento de esta unidad.',
+  CLASH_MOVEMENT_FORBIDDEN:'Choque de escudos no permite movimiento antes del combate.',
+  ATTACK_CARD_RANGED_FORBIDDEN:'Esta carta de ataque no permite combatir a distancia.',
   LINE_COMMAND_MOVEMENT_EXCEEDED:'Con Orden en línea, las unidades de a pie solo pueden mover un hexágono.',
   DOUBLE_TIME_MOVEMENT_EXCEEDED:'La ruta supera el movimiento permitido por Paso acelerado.',
   DOUBLE_TIME_RANGED_FORBIDDEN:'Las unidades de a pie ordenadas por Paso acelerado no pueden combatir a distancia.',

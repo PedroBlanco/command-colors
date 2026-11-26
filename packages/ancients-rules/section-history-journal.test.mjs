@@ -1585,3 +1585,85 @@ test('V23 group cards: connected foot orders, line movement, double time charge 
   run('END_EXPERIMENTAL_TURN');assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('V24 attack cards: mandatory adjacency orders, mounted charge, terrain dice, bonus and battle back',()=>{
+ for(const mode of ['CLASH','CLASH_TERRAIN','CLASH_ALL','CLASH_EMPTY','CLASH_BONUS','CLASH_BACK','MOUNTED_HEAVY','MOUNTED_CHARIOT','MOUNTED_ELEPHANT','MOUNTED_LIGHT','MOUNTED_MEDIUM','MOUNTED_TERRAIN','MOUNTED_BROKEN','MOUNTED_BONUS','MOUNTED_BACK','MOUNTED_RANGED','FALLBACK','LEGACY']){
+  const clash=mode.startsWith('CLASH'),def=clash?'CLASH_OF_SHIELDS':'MOUNTED_CHARGE';
+  const moved=['MOUNTED_HEAVY','MOUNTED_CHARIOT','MOUNTED_ELEPHANT','MOUNTED_MEDIUM','MOUNTED_BROKEN'].includes(mode);
+  const c=rangedLabSetup({targetCol:mode==='CLASH_EMPTY'?10:moved?6:['MOUNTED_RANGED','FALLBACK'].includes(mode)?4:3,
+    terrain:mode==='CLASH_TERRAIN'||mode==='MOUNTED_TERRAIN'?[{col:3,row:4,kind:'FOREST'}]:mode==='MOUNTED_BROKEN'?[{col:4,row:4,kind:'BROKEN_GROUND'}]:[]});
+  Object.assign(c,{enableLeaderLab:true,enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,
+    enableSpecialFootLab:true,enableLoneLeaderCombatLab:true,enableDeckRecycleLab:true,enableLongHistoryLab:true,enableSelectionCardsLab:true,
+    enableGroupCardsLab:true,enableAttackCardsLab:mode!=='LEGACY',victoryTargets:{A:3,B:3}});
+  c.cardInstances[0].definitionId=def;
+  c.movementUnitTypes.a1=clash?(mode==='CLASH_BONUS'?'HEAVY_CAVALRY':'HEAVY_INFANTRY'):
+    ({MOUNTED_CHARIOT:'HEAVY_CHARIOT',MOUNTED_ELEPHANT:'ELEPHANT',MOUNTED_LIGHT:'LIGHT_CAVALRY',MOUNTED_MEDIUM:'MEDIUM_CAVALRY',MOUNTED_RANGED:'LIGHT_CAVALRY',FALLBACK:'LIGHT_INFANTRY'})[mode]??'HEAVY_CAVALRY';
+  if(mode==='CLASH_ALL'){
+    c.board.units.push({id:'a2',side:'A',col:3,row:3},{id:'a3',side:'A',col:0,row:0});
+    Object.assign(c.movementUnitTypes,{a2:'MEDIUM_INFANTRY',a3:'HEAVY_INFANTRY'});
+  }
+  if(mode.endsWith('_BONUS')){c.board.units.push({id:'b2',side:'B',col:4,row:4});c.movementUnitTypes.b2='HEAVY_INFANTRY';}
+  if(mode.endsWith('_BACK'))c.movementUnitTypes.b1='ELEPHANT';
+  if(mode==='LEGACY'){assert.throws(()=>init(c),/INVALID_SECTION_HISTORY_SETUP/);continue;}
+  const initial=init(c);let s=initial;const log=[];
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;return result;};
+  const card=s.hands.A.find(x=>x.definitionId===def);assert.ok(card);
+  run('PLAY_SECTION_CARD',{cardInstanceId:card.instanceId});
+  const options=project(s,'A').selectionCard;assert.ok(options);
+  let ids=mode==='CLASH_ALL'?['a1','a2']:mode==='CLASH_EMPTY'?[]:['a1'];
+  if(clash){assert.equal(options.allRequired,true);assert.deepEqual(options.unitIds,ids);}
+  if(mode==='CLASH_ALL')assert.equal(apply(s,cmd('ASSIGN_SECTION_ORDERS',s.revision,{unitIds:['a1'],leaderIds:[]})).code,'ORDERS_NOT_ELIGIBLE');
+  if(mode==='FALLBACK'){assert.equal(options.fallback,true);assert.equal(options.maximumOrders,1);}
+  run('ASSIGN_SECTION_ORDERS',{unitIds:ids,leaderIds:[]});
+  const path=[{col:3,row:4},{col:4,row:4},{col:5,row:4}];
+  if(clash&&ids.length)assert.equal(apply(s,cmd('MOVE_SECTION_FOOT_PATH_V2',s.revision,{unitId:'a1',path:path.slice(0,1)})).code,'CLASH_MOVEMENT_FORBIDDEN');
+  if(moved){
+    if(mode==='MOUNTED_BROKEN'){
+      assert.equal(apply(s,cmd('MOVE_SECTION_MOUNTED_PATH_V1',s.revision,{unitId:'a1',path})).code,'MOUNTED_MUST_STOP_ON_BROKEN_GROUND');
+      run('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'a1',path:path.slice(0,2)});
+      assert.equal(s.combatLab.movement.a1.battle,'UNAVAILABLE');
+    }else{
+      run('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'a1',path});
+      assert.equal(s.combatLab.movement.a1.battle,'POSSIBLE');
+    }
+  }
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  if(mode==='MOUNTED_RANGED')assert.equal(apply(s,cmd('PREPARE_SECTION_RANGED_LAB',s.revision,{attackerId:'a1',targetId:'b1'})).code,'ATTACK_CARD_RANGED_FORBIDDEN');
+  else if(mode==='FALLBACK')assert.ok(project(s,'A').combatLab.candidates.some(o=>o.attackerId==='a1'&&o.kind!=='CLOSE_PREVIEW'));
+  else if(mode==='CLASH_EMPTY'||mode==='MOUNTED_BROKEN')assert.equal(project(s,'A').combatLab.candidates.length,0);
+  else{
+    run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+    const plan=s.combatLab.plan,expected=({CLASH:7,CLASH_TERRAIN:4,CLASH_ALL:7,CLASH_BONUS:6,CLASH_BACK:7,MOUNTED_HEAVY:5,MOUNTED_CHARIOT:5,MOUNTED_ELEPHANT:6,MOUNTED_LIGHT:3,MOUNTED_MEDIUM:4,MOUNTED_TERRAIN:3,MOUNTED_BONUS:5,MOUNTED_BACK:5})[mode];
+    assert.equal(plan.diceCount,expected,mode);
+    assert.equal(plan.cardBonusDice,clash?2:1);
+    if(plan.evadeOptions?.length)run('CHOOSE_SECTION_UNIT_EVADE_LAB',{actor:'B',path:[]});
+    if(mode.endsWith('_BONUS')||mode.endsWith('_BACK')||mode==='CLASH'){
+      const faces=Array(plan.diceCount).fill(mode.endsWith('_BACK')?'LIGHT':'HEAVY');
+      run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
+      run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+      run('FINALIZE_SECTION_RANGED_LAB');
+      if(mode.endsWith('_BACK')){
+        run('ACCEPT_SECTION_BATTLE_BACK_LAB',{actor:'B'});
+        assert.equal(s.combatLab.plan.diceCount,clash?5:4);
+        assert.equal(s.combatLab.plan.cardBonusDice,undefined);
+        run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',faces:Array(s.combatLab.plan.diceCount).fill('LIGHT')});
+        run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true});
+        run('FINALIZE_SECTION_RANGED_LAB',{actor:'B'});
+      }else if(mode.endsWith('_BONUS')){
+        run('CHOOSE_SECTION_MOMENTUM_LAB',{path:[{col:3,row:4}]});
+        run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b2'});
+        assert.equal(s.combatLab.plan.diceCount,clash?4:5);
+        assert.equal(s.combatLab.plan.cardBonusDice,clash?undefined:1);
+        run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:Array(s.combatLab.plan.diceCount).fill('HEAVY')});
+        run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+        run('FINALIZE_SECTION_RANGED_LAB');
+        if(s.diceLab.last.momentum?.pending)run('CHOOSE_SECTION_MOMENTUM_LAB',{path:[]});
+      }else if(s.diceLab.last.momentum?.pending)run('CHOOSE_SECTION_MOMENTUM_LAB',{path:[]});
+    }else run('CANCEL_SECTION_RANGED_LAB');
+  }
+  run('END_EXPERIMENTAL_TURN');assert.deepEqual(replay(initial,log),s);
+ }
+});

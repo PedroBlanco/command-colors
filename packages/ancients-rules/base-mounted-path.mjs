@@ -49,7 +49,7 @@ function pathCells(path){
   }
   return result;
 }
-export function previewBaseMountedPath(input={}){
+export function previewBaseMountedPath(input={},{mountedCharge=false}={}){
   try{
     if(!plain(input)||Reflect.ownKeys(input).length!==5||
        !['unitType','from','path','occupiedCells','terrain'].every(k=>{
@@ -64,7 +64,8 @@ export function previewBaseMountedPath(input={}){
     const path=pathCells(value(input,'path'));
     if(!from||!path)return deny('INVALID_MOUNTED_PATH');
     const profile=BASE_MOVEMENT_PROFILES[unitType];
-    if(path.length>profile.maxSteps)return deny('STANDARD_MOUNTED_MOVEMENT_EXCEEDED');
+    const charge=mountedCharge===true&&['HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT'].includes(unitType);
+    if(path.length>(charge?3:profile.maxSteps))return deny('STANDARD_MOUNTED_MOVEMENT_EXCEEDED');
     const geometry=assessOpenHexPathGeometry({
       from,path,occupiedCells:value(input,'occupiedCells')
     });
@@ -75,7 +76,7 @@ export function previewBaseMountedPath(input={}){
     });
     if(terrainResult.status!=='CANDIDATE')
       return deny(terrainResult.reason,terrainResult.step);
-    const normal=assessBaseMovement({unitType,steps:path.length});
+    const normal=charge&&path.length===3?{status:'WITHIN_PROFILE',battle:'POSSIBLE'}:assessBaseMovement({unitType,steps:path.length});
     if(normal.status!=='WITHIN_PROFILE')
       return deny('STANDARD_MOUNTED_MOVEMENT_EXCEEDED');
     return Object.freeze({

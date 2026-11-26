@@ -116,6 +116,7 @@ export const SELECTION_CARD_DEFINITIONS=Object.freeze({
   ORDER_MOUNTED_TROOPS:'MOUNTED',COORDINATED_ATTACK:'COORDINATED',OUT_FLANKED:'FLANKS'
 });
 export const GROUP_CARD_DEFINITIONS=Object.freeze({LINE_COMMAND:'LINE',DOUBLE_TIME:'DOUBLE_TIME'});
+export const ATTACK_CARD_DEFINITIONS=Object.freeze({MOUNTED_CHARGE:'MOUNTED_CHARGE',CLASH_OF_SHIELDS:'CLASH'});
 const mountedTypes=new Set(['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT']);
 const troopClasses={
   LIGHT:new Set(['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY','LIGHT_CAVALRY']),
@@ -124,9 +125,19 @@ const troopClasses={
   MOUNTED:mountedTypes
 };
 export function selectionCardOptions({definitionId,side,command,board,unitTypes,sectorCells}){
-  if(!Object.hasOwn(SELECTION_CARD_DEFINITIONS,definitionId)&&!Object.hasOwn(GROUP_CARD_DEFINITIONS,definitionId))return null;
-  const family=SELECTION_CARD_DEFINITIONS[definitionId]??GROUP_CARD_DEFINITIONS[definitionId];
+  if(!Object.hasOwn(SELECTION_CARD_DEFINITIONS,definitionId)&&!Object.hasOwn(GROUP_CARD_DEFINITIONS,definitionId)&&!Object.hasOwn(ATTACK_CARD_DEFINITIONS,definitionId))return null;
+  const family=SELECTION_CARD_DEFINITIONS[definitionId]??GROUP_CARD_DEFINITIONS[definitionId]??ATTACK_CARD_DEFINITIONS[definitionId];
   const units=board.units.filter(u=>u.side===side),leaders=board.leaders.filter(l=>l.side===side);
+  if(family==='CLASH'){
+    const enemy=board.units.filter(u=>u.side!==side);
+    const eligible=units.filter(u=>enemy.some(v=>distance(u,v)===1));
+    return {family,maximumOrders:eligible.length,unitIds:eligible.map(u=>u.id),leaderIds:[],allRequired:true};
+  }
+  if(family==='MOUNTED_CHARGE'){
+    const eligible=units.filter(u=>mountedTypes.has(unitTypes[u.id]));
+    return {family,maximumOrders:eligible.length?command:1,
+      unitIds:(eligible.length?eligible:units).map(u=>u.id),leaderIds:[],fallback:eligible.length===0};
+  }
   if(family==='LINE'||family==='DOUBLE_TIME'){
     const foot=units.filter(u=>!mountedTypes.has(unitTypes[u.id]));
     const fallback=foot.length===0;
@@ -148,6 +159,7 @@ export function selectionCardOptions({definitionId,side,command,board,unitTypes,
 }
 export function screenSelectionCardOrders(options,pieces,sectorCells){
   if(!options||pieces.length>options.maximumOrders||pieces.some(p=>!(p.kind==='UNIT'?options.unitIds:options.leaderIds).includes(p.id)))return false;
+  if(options.allRequired&&(pieces.length!==options.unitIds.length||!options.unitIds.every(id=>pieces.some(p=>p.kind==='UNIT'&&p.id===id))))return false;
   if(options.fallback){
     const units=pieces.filter(p=>p.kind==='UNIT');
     // Mounted card can order leaders; a substitute foot order is instead a
