@@ -963,7 +963,8 @@ test('V12 unit evade: decision precedes dice, only color hits, survives and move
 });
 
 test('V13 battle back: reversed combat roles, no extra orders or recursion, replay and victory',()=>{
- for(const winning of [false,true]){
+ for(const outcome of ['HIT','WIN','RETREAT']){
+  const winning=outcome==='WIN';
   const c=rangedLabSetup({targetCol:3});
   Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,
     enableRetreatLab:true,enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,
@@ -988,11 +989,19 @@ test('V13 battle back: reversed combat roles, no extra orders or recursion, repl
   assert.equal(apply(s,cmd('ROLL_SECTION_RANGED_DIGITAL_LAB',s.revision)).code,'NOT_YOUR_TURN');
   assert.equal(apply(s,cmd('CANCEL_SECTION_RANGED_LAB',s.revision)).code,'CLOSE_ATTACK_DECLARED');
   assert.equal(apply(s,cmd('END_EXPERIMENTAL_TURN',s.revision)).code,'COMBAT_PLAN_PENDING');
-  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',faces:winning?['HEAVY','HEAVY','HEAVY','HEAVY','LIGHT']:['HEAVY','LIGHT','LIGHT','LIGHT','LIGHT']});
+  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',faces:winning?['HEAVY','HEAVY','HEAVY','HEAVY','LIGHT']:outcome==='RETREAT'?['HEAVY','FLAG','LIGHT','LIGHT','LIGHT']:['HEAVY','LIGHT','LIGHT','LIGHT','LIGHT']});
   assert.equal(project(s,'A').diceLab.canReview,true);
   assert.equal(project(s,'B').diceLab.canReview,false);
   run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true});
-  if(!winning)run('FINALIZE_SECTION_RANGED_LAB',{actor:'B'});
+  if(outcome==='RETREAT'){
+    assert.equal(project(s,'A').diceLab.canRetreat,true);
+    assert.equal(project(s,'B').diceLab.canRetreat,false);
+    const option=project(s,'A').diceLab.retreat.options.find(o=>o.blocksLost===0);
+    assert.ok(option);
+    assert.equal(apply(s,cmd('RETREAT_SECTION_UNIT_LAB',s.revision,{actor:'B',path:option.path})).code,'RETREAT_NOT_AVAILABLE');
+    run('RETREAT_SECTION_UNIT_LAB',{path:option.path});
+    assert.deepEqual(s.board.units.find(u=>u.id==='a1'),{id:'a1',side:'A',...option.path.at(-1)});
+  }else if(!winning)run('FINALIZE_SECTION_RANGED_LAB',{actor:'B'});
   assert.equal(s.diceLab.blocks.a1,winning?undefined:3);
   assert.deepEqual(s.diceLab.resolvedUnitIds,['a1']);
   assert.equal(s.diceLab.last.attackKind,'BATTLE_BACK');
