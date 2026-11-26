@@ -44,7 +44,7 @@ const isCards=a=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validI
  * with three verified terrain types. No leaders, special cards, charge,
  * battles or scenario exceptions. Full sector lookup survives later turns.
  */
-function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false,allowEmpty=false){
+function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false,allowEmpty=false,allowWarriors=false){
   if(!isRecord(board)||Object.keys(board).length!==2||
      !Array.isArray(board.units)||!Array.isArray(board.leaders)||
      (!allowEmpty&&board.units.length<1)||board.units.length>117||
@@ -72,7 +72,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
       unitType:types[unit.id],steps:1
     });
     if(regime.status!=='SUBSET_ELIGIBLE'&&
-       !BASE_MOUNTED_TYPES.includes(types[unit.id]))return false;
+       !BASE_MOUNTED_TYPES.includes(types[unit.id])&&!(allowWarriors&&types[unit.id]==='WARRIOR_INFANTRY'))return false;
     ids.add(unit.id);positions.add(loc(unit));
   }
   const leaderCells=new Set();
@@ -148,7 +148,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     board:copy(board),sectorCells:copy(sectorCells),
     ...(sectorPerspective==='PLAYER_RELATIVE'?{sectorPerspective}: {})};
   if(movementUnitTypes!==undefined){
-    if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain,enableLeaderLab))
+    if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain,enableLeaderLab,false,enableElephantCloseLab))
       fail('INVALID_FOOT_LAB_SETUP');
     state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[],
       terrain:copy(movementTerrain)};
@@ -319,7 +319,7 @@ export function assertSectionHistoryLab(s){
          (Object.keys(info).length===3&&Object.hasOwn(info,'terrain')))||
        !isRecord(info.unitTypes)||!Array.isArray(info.movedUnitIds)||
        !validFootLabSetup(s.board,s.sectorCells,info.unitTypes,
-         Object.hasOwn(info,'terrain')?info.terrain:[],Object.hasOwn(s,'leaderLab'),s.diceLab?.version>=10&&s.revision>0)||
+         Object.hasOwn(info,'terrain')?info.terrain:[],Object.hasOwn(s,'leaderLab'),s.diceLab?.version>=10&&s.revision>0,s.diceLab?.version>=16)||
        info.movedUnitIds.length>117||
        !info.movedUnitIds.every(validId)||!same(info.movedUnitIds)||
        (s.phase!=='LAB_RESOLUTION_PENDING'&&info.movedUnitIds.length>0)||
