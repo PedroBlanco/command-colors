@@ -30,6 +30,7 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-archive-ranged':'ancients-combat-feedback',
   'ancients-decline-battle-back':'ancients-combat-feedback',
   'ancients-accept-battle-back':'ancients-combat-feedback',
+  'ancients-confirm-momentum':'ancients-combat-feedback',
   'ancients-confirm-unit-evade':'ancients-combat-feedback',
   'ancients-roll-leader':'ancients-combat-feedback',
   'ancients-evade-leader':'ancients-combat-feedback',
@@ -259,7 +260,7 @@ function renderAncients() {
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
-  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending;
+  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending;
   el('ancients-finish-movement').hidden=!combat;
   el('ancients-finish-movement').disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed;
   el('ancients-clear-path').disabled=!ancientsDraft;
@@ -319,6 +320,21 @@ function renderAncients() {
   el('ancients-accept-battle-back').disabled=stopped||!dice?.canAcceptBattleBack;
   if(dice?.battleBackPending)el('ancients-combat-status').textContent=
     'Respuesta al combate pendiente. El defensor debe decidir si responde o renuncia.';
+  const momentumChoice=el('ancients-momentum-choice'),oldMomentum=momentumChoice.value;
+  momentumChoice.replaceChildren();
+  const momentumOptions=dice?.momentumOptions??[];
+  if(dice?.canChooseMomentum){
+    for(const path of [[],...momentumOptions.map(o=>o.path)]){
+      const option=document.createElement('option');option.value=JSON.stringify(path);
+      option.textContent=path.length?'Avanzar: '+path.map(c=>'('+(c.col+1)+','+(c.row+1)+')').join(' → '):'Renunciar al avance';
+      momentumChoice.appendChild(option);
+    }
+    if([[],...momentumOptions.map(o=>o.path)].some(p=>JSON.stringify(p)===oldMomentum))momentumChoice.value=oldMomentum;
+  }
+  el('ancients-momentum-controls').hidden=!dice?.momentumPending;
+  el('ancients-confirm-momentum').disabled=stopped||!dice?.canChooseMomentum;
+  momentumChoice.disabled=stopped||!dice?.canChooseMomentum;
+  el('ancients-momentum-status').textContent=dice?.canChooseMomentum?'Puedes avanzar al hexágono liberado o renunciar.':'El atacante debe decidir si avanza.';
   if(plan?.battleBack)el('ancients-combat-status').textContent=`Respuesta al combate: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
   el('ancients-accept-physical').disabled=stopped||!dice?.canReview;
   el('ancients-dispute-physical').disabled=stopped||!dice?.canReview;
@@ -999,6 +1015,12 @@ action('ancients-confirm-unit-evade',()=>{
 });
 action('ancients-accept-battle-back',()=>sendAncients('ACCEPT_SECTION_BATTLE_BACK_LAB'));
 action('ancients-decline-battle-back',()=>sendAncients('DECLINE_SECTION_BATTLE_BACK_LAB'));
+action('ancients-confirm-momentum',()=>{
+  if(!cached?.diceLab?.canChooseMomentum)throw Error('MOMENTUM_NOT_AVAILABLE');
+  const path=[[],...(cached.diceLab.momentumOptions??[]).map(o=>o.path)].find(p=>JSON.stringify(p)===el('ancients-momentum-choice').value);
+  if(!path)throw Error('INVALID_MOMENTUM_PATH');
+  return sendAncients('CHOOSE_SECTION_MOMENTUM_LAB',{path});
+});
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));
 action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));
 el('deck-units').addEventListener('change',()=>{

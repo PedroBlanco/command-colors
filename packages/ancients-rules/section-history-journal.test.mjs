@@ -1012,3 +1012,45 @@ test('V13 battle back: reversed combat roles, no extra orders or recursion, repl
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('V14 momentum: advance, decline, cavalry extra step, terrain stop, evade and replay',()=>{
+ for(const mode of ['FOOT','DECLINE','CAVALRY','FOREST','EVADE','WIN']){
+  const c=rangedLabSetup({targetCol:3,terrain:mode==='FOREST'?[{col:3,row:4,kind:'FOREST'}]:[]});
+  Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,victoryTargets:{A:mode==='WIN'?1:3,B:3}});
+  c.movementUnitTypes.a1=['CAVALRY','FOREST'].includes(mode)?'HEAVY_CAVALRY':'HEAVY_INFANTRY';
+  if(mode==='EVADE')c.movementUnitTypes.b1='LIGHT_INFANTRY';
+  const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);
+    assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};
+  run('FINISH_SECTION_MOVEMENT_LAB');run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+  if(mode==='EVADE')run('CHOOSE_SECTION_UNIT_EVADE_LAB',{actor:'B',path:s.combatLab.plan.evadeOptions[0]});
+  const n=s.combatLab.plan.diceCount;
+  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:Array(n).fill(mode==='EVADE'?'LIGHT':mode==='FOREST'?'FLAG':'HEAVY')});
+  run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+  if(mode==='FOREST'){
+    const opt=project(s,'B').diceLab.retreat.options.find(o=>o.blocksLost===0);
+    assert.ok(opt);run('RETREAT_SECTION_UNIT_LAB',{actor:'B',path:opt.path});
+  }else if(mode!=='WIN')run('FINALIZE_SECTION_RANGED_LAB');
+  if(['EVADE','WIN'].includes(mode)){
+    assert.equal(project(s,'A').diceLab.momentumPending,false);
+  }else{
+    const p=project(s,'A').diceLab;
+    assert.equal(p.canChooseMomentum,true);assert.deepEqual(project(s,'B').diceLab.momentumOptions,[]);
+    assert.equal(apply(s,cmd('END_EXPERIMENTAL_TURN',s.revision)).code,'MOMENTUM_DECISION_PENDING');
+    assert.equal(apply(s,cmd('CHOOSE_SECTION_MOMENTUM_LAB',s.revision,{path:[{col:12,row:8}]})).code,'INVALID_MOMENTUM_PATH');
+    assert.equal(apply(s,cmd('CHOOSE_SECTION_MOMENTUM_LAB',s.revision,{actor:'B',path:[]})).code,'NOT_YOUR_TURN');
+    assert.equal(p.momentumOptions.some(o=>o.path.length===2),mode==='CAVALRY');
+    const chosen=mode==='DECLINE'?[]:mode==='CAVALRY'?p.momentumOptions.find(o=>o.path.length===2&&o.path[1].col===2&&o.path[1].row===4).path:p.momentumOptions[0].path;
+    if(mode==='FOREST')assert.equal(p.momentumOptions[0].bonusEligible,false);
+    run('CHOOSE_SECTION_MOMENTUM_LAB',{path:chosen});
+    assert.equal(project(s,'A').diceLab.momentumPending,false);
+    const end=chosen.at(-1)??{col:2,row:4};assert.deepEqual(s.board.units.find(u=>u.id==='a1'),{id:'a1',side:'A',...end});
+    assert.deepEqual(s.diceLab.resolvedUnitIds,['a1']);
+    assert.equal(apply(s,cmd('CHOOSE_SECTION_MOMENTUM_LAB',s.revision,{path:chosen})).code,'MOMENTUM_NOT_AVAILABLE');
+  }
+  assert.deepEqual(replay(initial,log),s);
+ }
+});
