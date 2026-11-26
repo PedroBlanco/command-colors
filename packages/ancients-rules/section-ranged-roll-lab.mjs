@@ -37,7 +37,7 @@ export function sectionRollIndex(key,rollId){
   };
 }
 
-export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null,closeCombat=false,unitEvade=false,battleBack=false,momentum=false,bonusClose=false,elephantClose=false}={}){
+export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null,closeCombat=false,unitEvade=false,battleBack=false,momentum=false,bonusClose=false,elephantClose=false,specialClose=false}={}){
   if((morale&&!casualties)||(retreat&&!morale)||(retreatLeaders&&!retreat)||(leaderEscape&&!retreatLeaders)||(rampage&&!leaderEscape)||(rampageLeaders&&!rampage)||(elephantRetreatLeaders&&!rampageLeaders))fail();
   if(victoryTargets!==null&&(!elephantRetreatLeaders||!validVictoryTargets(victoryTargets)))fail();
   if(typeof closeCombat!=='boolean'||(closeCombat&&victoryTargets===null))fail();
@@ -46,7 +46,8 @@ export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=fals
   if(typeof momentum!=='boolean'||(momentum&&!battleBack))fail();
   if(typeof bonusClose!=='boolean'||(bonusClose&&!momentum))fail();
   if(typeof elephantClose!=='boolean'||(elephantClose&&!bonusClose))fail();
-  return {version:elephantClose?16:bonusClose?15:momentum?14:battleBack?13:unitEvade?12:closeCombat?11:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
+  if(typeof specialClose!=='boolean'||(specialClose&&!elephantClose))fail();
+  return {version:specialClose?17:elephantClose?16:bonusClose?15:momentum?14:battleBack?13:unitEvade?12:closeCombat?11:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
     blocks:Object.fromEntries(Object.entries(unitTypes).map(([id,type])=>[
       id,BASE_UNIT_STARTING_BLOCKS[type]
     ])),
@@ -93,7 +94,7 @@ export function sectionMomentumOptions(state){
     if(check.status!=='CANDIDATE')return;
     const joined=state.board.leaders.some(l=>l.side===unit.side&&l.id!==attached?.id&&hex(l)===hex(path.at(-1)));
     const bonusEligible=last.attackKind!=='BONUS_CLOSE'&&check.battleOnEntry!=='UNAVAILABLE'&&
-      (momentumCavalry.has(unitType)||d.version>=16&&unitType==='ELEPHANT'||unitType==='WARRIOR_INFANTRY'||!!attached||joined);
+      (momentumCavalry.has(unitType)||d.version>=16&&unitType==='ELEPHANT'||d.version>=17&&unitType==='HEAVY_CHARIOT'||unitType==='WARRIOR_INFANTRY'||!!attached||joined);
     options.push({path,bonusEligible});
   };
   add([first],unit);
@@ -119,6 +120,15 @@ function derivePending(state,{revision,mode,faces,review,redIgnored=undefined}){
   }):interpretBaseAncientsRangedDice({
     roll,targetUnitType:plan.targetUnitType,expectedDiceCount:plan.diceCount
   });
+  // A chariot cancels its first sword hit, before any elephant repetitions.
+  if(plan.chariotDefense&&interpretation.swordHits>0){
+    let ignored=false;
+    interpretation={...interpretation,swordHits:interpretation.swordHits-1,hits:interpretation.hits-1,
+      misses:interpretation.misses+1,dieEffects:interpretation.dieEffects.map(e=>{
+        if(!ignored&&e.outcome==='SWORD_HIT'){ignored=true;return {...e,outcome:'CHARIOT_SWORD_IGNORED'};}
+        return e;
+      }),chariotSwordIgnored:true};
+  }
   // Each effective sword creates exactly one further die. A flat, ordered
   // transcript makes physical review and deterministic replay unambiguous.
   let rerolls=[];
@@ -661,7 +671,7 @@ export function settleSectionVictory(next,event){
 
 export function assertSectionDiceLab(state){
   const d=state.diceLab;
-  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16].includes(d.version)||!keyOK(d.key)||
+  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17].includes(d.version)||!keyOK(d.key)||
      Object.keys(d).length!==(d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
      Object.keys(d.blocks).length!==state.board.units.length||
      state.board.units.some(u=>!Object.hasOwn(d.blocks,u.id)||
@@ -919,6 +929,11 @@ export function applySectionDiceCommand(state,next,command){
         const destination=plan.evadePath.at(-1);
         if(leader)Object.assign(leader,destination);
         Object.assign(target,destination);
+        // The crew escapes after a legal evade; no victory banner is awarded.
+        if(d.version>=17&&plan.targetUnitType==='HEAVY_WAR_MACHINE'){
+          next.board.units=next.board.units.filter(u=>u.id!==target.id);
+          delete next.footLab.unitTypes[target.id];delete next.diceLab.blocks[target.id];
+        }
       }
       if(retreatChoice?.blockingLosses){
         for(const roll of d.rampage){
@@ -984,7 +999,10 @@ export function applySectionDiceCommand(state,next,command){
       // The response ends the exchange: no recursive Battle Back or evasion.
       result.battleBackPending=!!(!plan.battleBack&&finalize&&!plan.evadePath?.length&&defender&&hex(defender)===hex(original)&&
         (d.version<16||next.board.units.some(u=>u.id===plan.attackerId&&distance(u,defender)===1)));
-      if(d.version>=12&&plan.evadePath?.length)result.unitEvasion={path:structuredClone(plan.evadePath),applied:finalize&&!!defender};
+      if(d.version>=12&&plan.evadePath?.length){
+        const escaped=d.version>=17&&plan.targetUnitType==='HEAVY_WAR_MACHINE'&&finalize&&!p.loss.unitWouldBeEliminated;
+        result.unitEvasion={path:structuredClone(plan.evadePath),applied:finalize&&(!!defender||escaped),...(escaped?{crewEscaped:true}:{})};
+      }
     }
     next.diceLab.last=structuredClone(result);
     next.diceLab.pending=null;

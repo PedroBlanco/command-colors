@@ -44,7 +44,7 @@ const isCards=a=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validI
  * with three verified terrain types. No leaders, special cards, charge,
  * battles or scenario exceptions. Full sector lookup survives later turns.
  */
-function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false,allowEmpty=false,allowWarriors=false){
+function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false,allowEmpty=false,allowWarriors=false,allowMachines=false){
   if(!isRecord(board)||Object.keys(board).length!==2||
      !Array.isArray(board.units)||!Array.isArray(board.leaders)||
      (!allowEmpty&&board.units.length<1)||board.units.length>117||
@@ -72,7 +72,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
       unitType:types[unit.id],steps:1
     });
     if(regime.status!=='SUBSET_ELIGIBLE'&&
-       !BASE_MOUNTED_TYPES.includes(types[unit.id])&&!(allowWarriors&&types[unit.id]==='WARRIOR_INFANTRY'))return false;
+       !BASE_MOUNTED_TYPES.includes(types[unit.id])&&!(allowWarriors&&types[unit.id]==='WARRIOR_INFANTRY')&&!(allowMachines&&types[unit.id]==='HEAVY_WAR_MACHINE'))return false;
     ids.add(unit.id);positions.add(loc(unit));
   }
   const leaderCells=new Set();
@@ -101,7 +101,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false}={}) {
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -125,7 +125,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       typeof enableBattleBackLab!=='boolean'||(enableBattleBackLab&&!enableUnitEvadeLab)||
       typeof enableMomentumLab!=='boolean'||(enableMomentumLab&&!enableBattleBackLab)||
       typeof enableBonusCloseLab!=='boolean'||(enableBonusCloseLab&&!enableMomentumLab)||
-      typeof enableElephantCloseLab!=='boolean'||(enableElephantCloseLab&&!enableBonusCloseLab)))fail('INVALID_SECTION_HISTORY_SETUP');
+      typeof enableElephantCloseLab!=='boolean'||(enableElephantCloseLab&&!enableBonusCloseLab)||
+      typeof enableSpecialCloseLab!=='boolean'||(enableSpecialCloseLab&&!enableElephantCloseLab)))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -148,13 +149,13 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     board:copy(board),sectorCells:copy(sectorCells),
     ...(sectorPerspective==='PLAYER_RELATIVE'?{sectorPerspective}: {})};
   if(movementUnitTypes!==undefined){
-    if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain,enableLeaderLab,false,enableElephantCloseLab))
+    if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain,enableLeaderLab,false,enableElephantCloseLab,enableSpecialCloseLab))
       fail('INVALID_FOOT_LAB_SETUP');
     state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[],
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
     if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
-    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab});
+    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab});
   }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
@@ -208,7 +209,8 @@ function unitEvadePaths(state,attacker,target){
   const at=state.footLab.unitTypes[attacker.id],tt=state.footLab.unitTypes[target.id];
   if(!lightEvaders.includes(tt)&&!(tt==='MEDIUM_CAVALRY'&&
     (footAttackers.includes(at)||['HEAVY_CAVALRY','HEAVY_CHARIOT','ELEPHANT'].includes(at)))&&
-    !(tt==='HEAVY_CAVALRY'&&(footAttackers.includes(at)||at==='ELEPHANT')))return [];
+    !(tt==='HEAVY_CAVALRY'&&(footAttackers.includes(at)||at==='ELEPHANT'))&&
+    !(state.diceLab.version>=17&&(tt==='HEAVY_WAR_MACHINE'||tt==='HEAVY_CHARIOT'&&(footAttackers.includes(at)||at==='ELEPHANT'))))return [];
   const depth=c=>2*c.row+(c.col&1),sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
   const attached=state.board.leaders.some(l=>l.side===target.side&&loc(l)===loc(target));
   const leaderAt=c=>state.board.leaders.find(l=>loc(l)===loc(c));
@@ -257,17 +259,19 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
   if(!battleBack&&!bonusClose&&state.combatLab.movement[attackerId]?.battle==='UNAVAILABLE')
     return reject('BATTLE_AFTER_MOVEMENT_UNAVAILABLE');
   const attackerType=state.footLab.unitTypes[attackerId],targetUnitType=state.footLab.unitTypes[targetId];
-  if((state.diceLab.version<16&&attackerType==='ELEPHANT')||(state.diceLab.version>=13&&attackerType==='HEAVY_CHARIOT'))return reject('CLOSE_COMBAT_SPECIAL_UNIT_PENDING');
+  if((state.diceLab.version<16&&attackerType==='ELEPHANT')||(state.diceLab.version>=13&&state.diceLab.version<17&&attackerType==='HEAVY_CHARIOT'))return reject('CLOSE_COMBAT_SPECIAL_UNIT_PENDING');
   if(!['AUXILIA_INFANTRY','MEDIUM_INFANTRY','HEAVY_INFANTRY','WARRIOR_INFANTRY',
     ...(state.diceLab.version>=12?[...lightEvaders,'MEDIUM_CAVALRY','HEAVY_CAVALRY']:[]),
-    ...(battleBack?['HEAVY_WAR_MACHINE']:[]),...(state.diceLab.version>=16?['ELEPHANT']:[])].includes(targetUnitType))
+    ...(battleBack?['HEAVY_WAR_MACHINE']:[]),...(state.diceLab.version>=16?['ELEPHANT']:[]),...(state.diceLab.version>=17?['HEAVY_CHARIOT','HEAVY_WAR_MACHINE']:[])].includes(targetUnitType))
     return reject('CLOSE_COMBAT_SPECIAL_TARGET_PENDING');
   const terrainAt=p=>(state.footLab.terrain??[]).find(t=>loc(t)===loc(p))?.kind??'CLEAR';
   // Warriors retain their full-strength dice for the response to this attack.
   const elephantAttack=state.diceLab.version>=16&&attackerType==='ELEPHANT';
   const elephantTarget=state.diceLab.version>=16&&targetUnitType==='ELEPHANT';
-  const elephantMountedDefense=elephantTarget&&['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY'].includes(attackerType);
+  const elephantMountedDefense=elephantTarget&&['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY',...(state.diceLab.version>=17?['HEAVY_CHARIOT']:[])].includes(attackerType);
+  const chariotDefense=state.diceLab.version>=17&&targetUnitType==='HEAVY_CHARIOT';
   const baseDice=elephantAttack?(['ELEPHANT','WARRIOR_INFANTRY','HEAVY_CHARIOT'].includes(targetUnitType)?3:baseCloseAttackDice(targetUnitType,state.diceLab.blocks[targetId])):
+    state.diceLab.version>=17&&battleBack&&attackerType==='HEAVY_CHARIOT'?3:
     baseCloseAttackDice(attackerType,battleBack?prior.loss.originalBlocks:state.diceLab.blocks[attackerId]);
   const {maxDice}=assessAncientsTerrainDiceCap({attackerType,attackerTerrain:terrainAt(attacker),
     targetTerrain:terrainAt(target),attackKind:'CLOSE'});
@@ -284,7 +288,7 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
     targetUnitType,dieFaces:[...ANCIENTS_BATTLE_DIE_FACES],swordsHit,leaderHit,
     ...(state.diceLab.version>=12?{evadeOptions,evadePath:choice}:{}),
     ...(battleBack?{battleBack:true}:{}),...(bonusClose?{bonusClose:true}:{}),
-    ...(elephantAttack?{elephantAttack:true}:{}),...(elephantMountedDefense?{elephantMountedDefense:true}:{})}};
+    ...(elephantAttack?{elephantAttack:true}:{}),...(elephantMountedDefense?{elephantMountedDefense:true}:{}),...(chariotDefense?{chariotDefense:true}:{})}};
 }
 
 function bonusCloseCandidates(state){
@@ -319,7 +323,7 @@ export function assertSectionHistoryLab(s){
          (Object.keys(info).length===3&&Object.hasOwn(info,'terrain')))||
        !isRecord(info.unitTypes)||!Array.isArray(info.movedUnitIds)||
        !validFootLabSetup(s.board,s.sectorCells,info.unitTypes,
-         Object.hasOwn(info,'terrain')?info.terrain:[],Object.hasOwn(s,'leaderLab'),s.diceLab?.version>=10&&s.revision>0,s.diceLab?.version>=16)||
+         Object.hasOwn(info,'terrain')?info.terrain:[],Object.hasOwn(s,'leaderLab'),s.diceLab?.version>=10&&s.revision>0,s.diceLab?.version>=16,s.diceLab?.version>=17)||
        info.movedUnitIds.length>117||
        !info.movedUnitIds.every(validId)||!same(info.movedUnitIds)||
        (s.phase!=='LAB_RESOLUTION_PENDING'&&info.movedUnitIds.length>0)||
