@@ -46,7 +46,9 @@ const TERRAIN_LABELS=Object.freeze({
   RIVER:['R','río infranqueable','terrain-river'],
   FORDABLE_RIVER:['V','río vadeable','terrain-ford'],
   SEACOAST:['M','costa','terrain-coast'],
-  BRIDGE:['P','puente','terrain-bridge']
+  BRIDGE:['P','puente','terrain-bridge'],
+  FORTIFIED_CAMP:['F','campamento fortificado','terrain-camp'],
+  RAMPART:['E','empalizada','terrain-rampart']
 });
 
 function svgNode(doc, name, attrs = {}) {
@@ -97,13 +99,14 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   // never infer the legality of an action from a color, label or SVG class.
   if(!Array.isArray(terrain)||terrain.length>117||
      terrain.some(t=>!t||typeof t!=='object'||Array.isArray(t)||
-       Object.keys(t).length!==3||
+       Object.keys(t).length!==(t.kind==='RAMPART'?4:3)||
+       (t.kind==='RAMPART'&&(!Array.isArray(t.sides)||![2,3].includes(t.sides.length)||new Set(t.sides).size!==t.sides.length||t.sides.some(i=>!Number.isInteger(i)||i<0||i>5)))||
        !Number.isSafeInteger(t.col)||!Number.isSafeInteger(t.row)||
        t.col<0||t.col>=13||t.row<0||t.row>=9||
        !Object.hasOwn(TERRAIN_LABELS,t.kind))||
      new Set(terrain.map(key)).size!==terrain.length)
     throw new TypeError('INVALID_MOVEMENT_TERRAIN_VIEW');
-  const terrainByCell=new Map(terrain.map(t=>[key(t),TERRAIN_LABELS[t.kind]]));
+  const terrainByCell=new Map(terrain.map(t=>[key(t),t]));
   // Presentational hints cannot grant permission; validate their bounded shape.
   if (!Array.isArray(nextCells) || nextCells.length>6 ||
       nextCells.some(cell => !cell || !Number.isSafeInteger(cell.col) ||
@@ -134,7 +137,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const unitType=unit&&Object.hasOwn(TYPE_LABELS,unit.unitType)
       ? TYPE_LABELS[unit.unitType]:null;
     const blocks=Number.isSafeInteger(unit?.blocksRemaining)&&unit.blocksRemaining>=1&&unit.blocksRemaining<=4?unit.blocksRemaining:null;
-    const terrainLabel=terrainByCell.get(key(cell));
+    const terrainTile=terrainByCell.get(key(cell)),terrainLabel=TERRAIN_LABELS[terrainTile?.kind];
     const origin = draft && key(draft.origin) === key(cell);
     const step = marked.get(key(cell));
     const next = nextKeys.has(key(cell));
@@ -160,6 +163,10 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       .map(p=>displayPoint(p,viewer))
       .map(p=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
     hex.append(svgNode(doc,'polygon',{points,class:'hex-shape'}));
+    if(terrainTile?.kind==='RAMPART'){
+      const vertices=polygonPoints(cell,RADIUS,OX,OY).map(p=>displayPoint(p,viewer));
+      for(const i of terrainTile.sides){const a=vertices[i],b=vertices[(i+1)%6];hex.append(svgNode(doc,'line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'rampart-edge','pointer-events':'none'}));}
+    }
     if(terrainLabel){
       const marker=svgNode(doc,'text',{
         x:position.x-15,y:position.y-11,class:'terrain-marker',

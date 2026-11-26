@@ -3,10 +3,10 @@
  * It never authorizes movement, combat, a command card or a leader action.
  * The terrain board MUST be supplied by trusted, server-owned scenario data.
  */
-import {distance, inBounds} from '../hex-grid/hex.mjs';
+import {distance, inBounds, pixelCenter} from '../hex-grid/hex.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 
-export const BASE_TERRAIN_TYPES = Object.freeze(['FOREST', 'HILL', 'BROKEN_GROUND', 'RIVER', 'FORDABLE_RIVER', 'SEACOAST', 'BRIDGE']);
+export const BASE_TERRAIN_TYPES = Object.freeze(['FOREST', 'HILL', 'BROKEN_GROUND', 'RIVER', 'FORDABLE_RIVER', 'SEACOAST', 'BRIDGE', 'FORTIFIED_CAMP', 'RAMPART']);
 export const isImpassableTerrain=kind=>kind==='RIVER'||kind==='SEACOAST';
 export const isImpassableHex=(terrain,cell)=>terrain.some(t=>t.col===cell.col&&t.row===cell.row&&isImpassableTerrain(t.kind));
 
@@ -15,6 +15,28 @@ const forestBattleExceptions = new Set([
   'LIGHT_INFANTRY', 'LIGHT_SLING_INFANTRY', 'LIGHT_BOW_INFANTRY',
   'AUXILIA_INFANTRY', 'WARRIOR_INFANTRY'
 ]);
+// Side i joins polygon vertices i and (i+1)%6; indices never rotate with viewers.
+export function validRampartSides(sides){
+  return Array.isArray(sides)&&[2,3].includes(sides.length)&&sides.every(i=>Number.isInteger(i)&&i>=0&&i<6)&&
+    new Set(sides).size===sides.length&&sides.some(start=>Array.from({length:sides.length},(_,i)=>(start+i)%6).every(i=>sides.includes(i)));
+}
+export function terrainTileShapeOK(tile){
+  return !!tile&&typeof tile==='object'&&!Array.isArray(tile)&&BASE_TERRAIN_TYPES.includes(tile.kind)&&
+    Object.keys(tile).length===(tile.kind==='RAMPART'?4:3)&&['col','row','kind'].every(k=>Object.hasOwn(tile,k))&&
+    (tile.kind!=='RAMPART'||validRampartSides(tile.sides));
+}
+export function fortificationProtects(terrain,attacker,target,targetType){
+  if(!targetType||targetType==='LEADER'||mounted.has(targetType))return false;
+  const tile=terrain.find(t=>t.col===target.col&&t.row===target.row);
+  if(tile?.kind==='FORTIFIED_CAMP')return true;
+  if(tile?.kind!=='RAMPART')return false;
+  const a=pixelCenter(attacker,1),b=pixelCenter(target,1);
+  // A center ray crosses the edge whose outward normal has maximal dot product.
+  // On an exact vertex, either adjacent protected side grants protection.
+  const dots=Array.from({length:6},(_,i)=>(a.x-b.x)*Math.cos((i+.5)*Math.PI/3)+(a.y-b.y)*Math.sin((i+.5)*Math.PI/3));
+  const max=Math.max(...dots);
+  return tile.sides.some(i=>Math.abs(dots[i]-max)<1e-8);
+}
 const key = cell => `${cell.col},${cell.row}`;
 const cell = value => value && typeof value === 'object' && !Array.isArray(value)
   && Number.isSafeInteger(value.col) && Number.isSafeInteger(value.row) && inBounds(value);
@@ -27,7 +49,7 @@ function terrainIndex(terrain) {
   const index = new Map();
   for (const tile of terrain) {
     if (!tile || typeof tile !== 'object' || Array.isArray(tile)
-      || !cell(tile) || !BASE_TERRAIN_TYPES.includes(tile.kind)
+      || !cell(tile) || !terrainTileShapeOK(tile)
       || index.has(key(tile))) throw new TypeError('INVALID_BASE_TERRAIN_MAP');
     index.set(key(tile), tile.kind);
   }

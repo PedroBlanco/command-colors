@@ -1932,3 +1932,28 @@ test('water terrain in journal: ford fire cap, bridge morale, impassable retreat
  const options=project(s,'B').diceLab.retreat.options;assert.ok(options.length);assert.ok(options.every(o=>o.path.every(p=>p.col!==4||p.row!==3)));
  run('RETREAT_SECTION_UNIT_LAB',{path:options[0].path},'B');assert.deepEqual(replay(initial,log),s);
 });
+
+test('fortifications: camp outgoing penalty, directional rampart protection and replay',()=>{
+ for(const kind of ['FORTIFIED_CAMP','FRONT','REAR','MOUNTED','ELEPHANT']){
+  const c=tacticalCardSetup('ORDER_2_LEFT',true,3);
+  c.movementUnitTypes.a1=kind==='ELEPHANT'?'ELEPHANT':'HEAVY_INFANTRY';
+  if(kind==='MOUNTED')c.movementUnitTypes.b1='HEAVY_CAVALRY';
+  c.movementTerrain=[kind==='FORTIFIED_CAMP'?{col:3,row:4,kind}:{col:3,row:4,kind:'RAMPART',sides:kind==='REAR'?[0,1]:[3,4]}];
+  const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
+  const run=(type,fields={},actor='A')=>{const command=cmd(type,s.revision,{actor,...fields}),result=apply(s,command);assert.equal(result.accepted,true,kind+': '+result.code);log.push(command);s=result.nextState;};
+  run('FINISH_SECTION_MOVEMENT_LAB');run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+  if(s.combatLab.plan.evadePath===null)run('CHOOSE_SECTION_UNIT_EVADE_LAB',{path:[]},'B');
+  const protectedTarget=!['REAR','MOUNTED'].includes(kind);
+  assert.equal(!!s.combatLab.plan.fortificationDefense,protectedTarget);
+  const faces=Array(s.combatLab.plan.diceCount).fill('FLAG');faces[0]='SWORDS';
+  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true},'B');
+  assert.equal(!!s.diceLab.pending.interpretation.fortificationSwordIgnored,protectedTarget);
+  assert.equal(s.diceLab.pending.interpretation.hits,protectedTarget?0:1);
+  assert.equal(!!project(s,'B').diceLab.moralePreview.fortificationDefense,protectedTarget);
+  if(kind==='ELEPHANT')assert.deepEqual(s.diceLab.pending.interpretation.rerolls,[]);
+  assert.deepEqual(replay(initial,log),s);
+ }
+ const c=rangedLabSetup({terrain:[{col:2,row:4,kind:'FORTIFIED_CAMP'}]});
+ c.enableDiceLab=true;const {ordered}=rangedLabReady(c);const closed=apply(ordered,cmd('FINISH_SECTION_MOVEMENT_LAB',2)).nextState;
+ assert.equal(apply(closed,cmd('PREPARE_SECTION_RANGED_LAB',3,{attackerId:'a1',targetId:'b1'})).nextState.combatLab.plan.diceCount,1);
+});

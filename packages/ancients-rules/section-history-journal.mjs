@@ -11,7 +11,7 @@ import {BASE_UNIT_STARTING_BLOCKS} from './block-loss-preview.mjs';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS, SELECTION_CARD_DEFINITIONS, GROUP_CARD_DEFINITIONS, ATTACK_CARD_DEFINITIONS, LEADERSHIP_CARD_DEFINITIONS, FIRE_CARD_DEFINITIONS, effectiveSectionCard, selectionCardOptions, screenSelectionCardOrders} from './section-card-order-screen.mjs';
 import {ANCIENTS_RULESET,assessBaseMovement} from './movement-profile.mjs';
 import {assessAncientsMovementRegime,assessOpenHexPathGeometry} from './movement-regimes.mjs';
-import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex} from './terrain-movement.mjs';
+import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex,terrainTileShapeOK,fortificationProtects} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
 import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {screenAncientsCombatTurn} from './combat-turn-guard.mjs';
@@ -60,8 +60,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
      !Array.isArray(terrain)||terrain.length>117)return false;
   const hexes=new Set();
   for(const tile of terrain){
-    if(!isRecord(tile)||Object.keys(tile).length!==3||
-       !['col','row','kind'].every(k=>Object.hasOwn(tile,k))||
+    if(!isRecord(tile)||!terrainTileShapeOK(tile)||
        !goodLoc(tile)||!BASE_TERRAIN_TYPES.includes(tile.kind)||
        hexes.has(loc(tile)))return false;
     hexes.add(loc(tile));
@@ -377,17 +376,19 @@ function screenRangedPlan(state,attackerId,targetId){
     allowLoneLeader:state.diceLab?.version>=19});
   if(checked.status!=='CANDIDATE')return reject(checked.reason);
   const cardBonusDice=spartacusBonus(state);
+  const diceCount=checked.diceAfterTerrain+cardBonusDice;
+  if(diceCount<=0)return reject('NO_COMBAT_DICE');
   if(state.diceLab?.version>=19&&loneLeaderTargets(state).some(l=>l.id===targetId)){
     return {accepted:true,plan:{kind:'RANGED_PREVIEW',attackerId,targetId,distance:checked.distance,
-      movedSteps:gate.movedSteps,baseDice:checked.baseDice,diceCount:checked.diceAfterTerrain+cardBonusDice,
+      movedSteps:gate.movedSteps,baseDice:checked.baseDice,diceCount,
       ...(cardBonusDice?{cardBonusDice}:{}),targetUnitType:'LEADER',dieFaces:[...ANCIENTS_BATTLE_DIE_FACES],loneLeader:true}};
   }
-  const dice=createRangedDicePlan({mode:'OFFICIAL_PREVIEW',screening:{ranged:checked},
+  const dice=createRangedDicePlan({mode:'OFFICIAL_PREVIEW',screening:{ranged:{...checked,diceAfterTerrain:diceCount}},
     board:{units},targetId});
   if(!dice)return reject('RANGED_DICE_PLAN_UNAVAILABLE');
   return {accepted:true,plan:{kind:'RANGED_PREVIEW',attackerId,targetId,
     distance:checked.distance,movedSteps:gate.movedSteps,baseDice:checked.baseDice,
-    diceCount:dice.diceCount+cardBonusDice,...(cardBonusDice?{cardBonusDice}:{}),targetUnitType:dice.targetUnitType,dieFaces:[...dice.dieFaces]}};
+    diceCount:dice.diceCount,...(cardBonusDice?{cardBonusDice}:{}),targetUnitType:dice.targetUnitType,dieFaces:[...dice.dieFaces]}};
 }
 
 // V11: ordinary close combat. V12 adds ordinary unit evasion.
@@ -469,12 +470,15 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
   const baseDice=elephantAttack?(loneLeader?1:['ELEPHANT','WARRIOR_INFANTRY','HEAVY_CHARIOT'].includes(targetUnitType)?3:baseCloseAttackDice(targetUnitType,state.diceLab.blocks[targetId])):
     state.diceLab.version>=17&&battleBack&&attackerType==='HEAVY_CHARIOT'?3:
     baseCloseAttackDice(attackerType,battleBack&&!firstStrike?prior.loss.originalBlocks:state.diceLab.blocks[attackerId]);
-  const {maxDice}=assessAncientsTerrainDiceCap({attackerType,attackerTerrain:terrainAt(attacker),
+  const {maxDice,dicePenalty=0}=assessAncientsTerrainDiceCap({attackerType,attackerTerrain:terrainAt(attacker),
     targetTerrain:terrainAt(target),attackKind:'CLOSE'});
   // Card dice modify the terrain-limited total, never the base profile used
   // by an elephant mirroring its opponent. No bonus on defensive Battle Back.
   const attackCard=battleBack?null:attackCardEffect(state,attackerId);
   const cardBonusDice=attackCard==='MOUNTED_CHARGE'?1:attackCard==='CLASH_OF_SHIELDS'&&!bonusClose?2:battleBack?0:spartacusBonus(state);
+  const diceCount=Math.max(0,Math.min(baseDice-dicePenalty,maxDice??baseDice))+cardBonusDice;
+  if(diceCount<=0)return reject('NO_COMBAT_DICE');
+  const fortificationDefense=fortificationProtects(state.footLab.terrain??[],attacker,target,targetUnitType);
   const swordsHit=!loneLeader&&!elephantTarget&&!['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY',
     'LIGHT_CAVALRY','HEAVY_WAR_MACHINE'].includes(attackerType);
   const leaderHit=loneLeader||!elephantAttack&&state.board.leaders.some(l=>l.side===attacker.side&&distance(l,attacker)<=1);
@@ -484,7 +488,8 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
      Array.isArray(choice)&&(!choice.length||evadeOptions.some(p=>JSON.stringify(p)===JSON.stringify(choice)))))
     return reject('INVALID_UNIT_EVADE_PATH');
   return {accepted:true,plan:{kind:'CLOSE_PREVIEW',attackerId,targetId,distance:1,
-    movedSteps:gate.movedSteps,baseDice,diceCount:Math.min(baseDice,maxDice??baseDice)+cardBonusDice,
+    movedSteps:gate.movedSteps,baseDice,diceCount,
+    ...(fortificationDefense?{fortificationDefense:true}:{}),
     ...(cardBonusDice?{cardBonusDice}:{}),
     targetUnitType,dieFaces:[...ANCIENTS_BATTLE_DIE_FACES],swordsHit,leaderHit,
     ...(state.diceLab.version>=12?{evadeOptions,evadePath:choice}:{}),

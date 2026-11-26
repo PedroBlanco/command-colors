@@ -10,7 +10,7 @@ import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
 
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES = new Set(['A', 'B']);
-import {BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
+import {BASE_TERRAIN_TYPES,terrainTileShapeOK} from './terrain-movement.mjs';
 const TERRAIN_TYPES = new Set(BASE_TERRAIN_TYPES);
 const key = ({col,row}) => `${col},${row}`;
 const validCell = c => c && typeof c === 'object' && !Array.isArray(c) &&
@@ -42,7 +42,7 @@ function trustedBoard(units, leaders, terrain,allowLoneLeader=false) {
   }
   for (const tile of terrain) {
     if (!tile || typeof tile !== 'object' || Array.isArray(tile) ||
-        !validCell(tile) || !TERRAIN_TYPES.has(tile.kind) || terrainIndex.has(key(tile)))
+        !validCell(tile) || (!TERRAIN_TYPES.has(tile.kind)||!terrainTileShapeOK(tile)) || terrainIndex.has(key(tile)))
       throw new TypeError('INVALID_RANGED_BOARD');
     terrainIndex.set(key(tile), tile.kind);
   }
@@ -90,8 +90,7 @@ export function precheckAncientsRangedAttack({units, leaders = [], terrain = [],
   const cap = assessAncientsTerrainDiceCap({attackerType:attacker.type,
     attackerTerrain: terrainIndex.get(key(attacker)) ?? 'CLEAR',
     targetTerrain: terrainIndex.get(key(target)) ?? 'CLEAR', attackKind:'RANGED'});
-  const diceAfterTerrain = cap.maxDice === null ? profile.baseDice
-    : Math.min(profile.baseDice, cap.maxDice);
+  const diceAfterTerrain = Math.max(0,Math.min(profile.baseDice-(cap.dicePenalty??0),cap.maxDice??profile.baseDice));
   return result('CANDIDATE', null, {
     profile, los, terrainDice: cap,
     distance:profile.distance, range:profile.range,

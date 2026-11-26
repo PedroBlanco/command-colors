@@ -29,6 +29,6 @@ export function assessAncientsTerrainDiceCap({attackerType, attackerTerrain,
       maxDice = maxDice === null ? hillLimit : Math.min(maxDice, hillLimit);
     }
   }
-  return Object.freeze({maxDice, needsFullLegalityCheck: true,
+  return Object.freeze({maxDice,...(attackerTerrain==='FORTIFIED_CAMP'?{dicePenalty:1}:{}), needsFullLegalityCheck: true,
     lineOfSightChecked: false, cardModifiersApplied: false});
 }

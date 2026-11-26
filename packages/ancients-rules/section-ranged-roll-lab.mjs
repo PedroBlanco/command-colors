@@ -7,7 +7,7 @@
 import {randomBytes,createHmac} from 'node:crypto';
 import {effectiveSectionCard} from './section-card-order-screen.mjs';
 import {neighbors,distance,inBounds} from '../hex-grid/hex.mjs';
-import {assessAncientsTerrainMovement,isImpassableHex} from './terrain-movement.mjs';
+import {assessAncientsTerrainMovement,isImpassableHex,fortificationProtects} from './terrain-movement.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS,captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice,interpretBaseAncientsCloseDice} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS,previewBaseAncientsRangedBlockLoss} from './block-loss-preview.mjs';
@@ -158,6 +158,13 @@ function derivePending(state,{revision,mode,faces,review,redIgnored=undefined}){
         return e;
       }),chariotSwordIgnored:true};
   }
+  if(plan.fortificationDefense&&interpretation.swordHits>0){
+    let ignored=false;
+    interpretation={...interpretation,swordHits:interpretation.swordHits-1,hits:interpretation.hits-1,
+      misses:interpretation.misses+1,dieEffects:interpretation.dieEffects.map(e=>{
+        if(!ignored&&e.outcome==='SWORD_HIT'){ignored=true;return {...e,outcome:'FORTIFICATION_SWORD_IGNORED'};}return e;
+      }),fortificationSwordIgnored:true};
+  }
   // Each effective sword creates exactly one further die. A flat, ordered
   // transcript makes physical review and deterministic replay unambiguous.
   let rerolls=[];
@@ -226,9 +233,10 @@ function moralePreview(state){
   // Full strength at the beginning of this combat, not after its direct hits.
   const fullWarrior=type==='WARRIOR_INFANTRY'&&p.loss.originalBlocks===BASE_UNIT_STARTING_BLOCKS[type];
   const bridgeDefense=!['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT'].includes(type)&&state.footLab.terrain?.some(t=>t.kind==='BRIDGE'&&hex(t)===hex(target));
-  const capacity=Number(attachedLeader)+Number(supported)+Number(fullWarrior)+Number(!!state.combatLab.plan.elephantMountedDefense)+Number(!!bridgeDefense);
+  const fortificationDefense=fortificationProtects(state.footLab.terrain??[],state.board.units.find(u=>u.id===state.combatLab.plan.attackerId),target,type);
+  const capacity=Number(attachedLeader)+Number(supported)+Number(fullWarrior)+Number(!!state.combatLab.plan.elephantMountedDefense)+Number(!!bridgeDefense)+Number(fortificationDefense);
   const flags=p.loss.effectiveFlagsPending;
-  return {flags,attachedLeader,supported,fullWarrior,supportHexes,...(bridgeDefense?{bridgeDefense:true}:{}),
+  return {flags,attachedLeader,supported,fullWarrior,supportHexes,...(bridgeDefense?{bridgeDefense:true}:{}),...(fortificationDefense?{fortificationDefense:true}:{}),
     maxIgnored:Math.min(flags,capacity)};
 }
 

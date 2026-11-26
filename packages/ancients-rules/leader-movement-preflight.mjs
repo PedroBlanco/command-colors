@@ -8,7 +8,7 @@ import {distance, inBounds} from '../hex-grid/hex.mjs';
 
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES = new Set(['A','B']);
-import {BASE_TERRAIN_TYPES,isImpassableTerrain} from './terrain-movement.mjs';
+import {BASE_TERRAIN_TYPES,isImpassableTerrain,terrainTileShapeOK} from './terrain-movement.mjs';
 const TERRAINS = new Set(BASE_TERRAIN_TYPES);
 const key = ({col,row}) => col+','+row;
 const validCell = x => x !== null && typeof x === 'object' && !Array.isArray(x) &&
@@ -40,7 +40,7 @@ function terrainIndex(terrain) {
   if (!Array.isArray(terrain)||terrain.length>117)throw new TypeError('INVALID_LEADER_TERRAIN_MAP');
   const index=new Map();
   for(const tile of terrain) {
-    if(!tile||!validCell(tile)||!TERRAINS.has(tile.kind)||index.has(key(tile)))
+    if(!tile||!validCell(tile)||(!TERRAINS.has(tile.kind)||!terrainTileShapeOK(tile))||index.has(key(tile)))
       throw new TypeError('INVALID_LEADER_TERRAIN_MAP');
     index.set(key(tile),tile.kind);
   }

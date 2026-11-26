@@ -6,7 +6,7 @@
  */
 import {allCells, distance, inBounds, pixelCenter, polygonPoints} from '../hex-grid/hex.mjs';
 
-import {BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
+import {BASE_TERRAIN_TYPES,terrainTileShapeOK} from './terrain-movement.mjs';
 const KINDS = new Set(BASE_TERRAIN_TYPES);
 const EPS = 1e-8;
 const key = ({col, row}) => `${col},${row}`;
@@ -19,7 +19,7 @@ function indexCells(items, kind) {
   if (!Array.isArray(items) || items.length > 117) throw new TypeError('INVALID_LOS_' + kind);
   const found = new Map();
   for (const value of items) {
-    if (!cell(value) || found.has(key(value)) || (kind === 'TERRAIN' && !KINDS.has(value.kind)))
+    if (!cell(value) || found.has(key(value)) || (kind === 'TERRAIN' && (!KINDS.has(value.kind)||!terrainTileShapeOK(value))))
       throw new TypeError('INVALID_LOS_' + kind);
     found.set(key(value), value);
   }
@@ -109,7 +109,7 @@ export function assessAncientsLineOfSight({from, to, units = [], leaders = [], t
     }
     return reachable.has(key(to));
   })();
-  const opaque = h => h.occupant || h.kind === 'FOREST' || (h.kind === 'HILL' && !plateau);
+  const opaque = h => h.occupant || ['FOREST','FORTIFIED_CAMP'].includes(h.kind) || (h.kind === 'HILL' && !plateau);
 
   const insideBlockers = hit.filter(h => h.interior && opaque(h));
   if (insideBlockers.length) {

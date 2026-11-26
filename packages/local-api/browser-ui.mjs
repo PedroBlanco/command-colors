@@ -197,7 +197,7 @@ function renderAncients() {
     cached.historyLimitReached?'Límite de comandos del laboratorio alcanzado. Consulta disponible; partida sin resolución.':
     `Ancients experimental · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
   const terrainNames={FOREST:'bosque',HILL:'colina',
-    BROKEN_GROUND:'terreno accidentado',RIVER:'río infranqueable',FORDABLE_RIVER:'río vadeable',SEACOAST:'costa',BRIDGE:'puente'};
+    BROKEN_GROUND:'terreno accidentado',RIVER:'río infranqueable',FORDABLE_RIVER:'río vadeable',SEACOAST:'costa',BRIDGE:'puente',FORTIFIED_CAMP:'campamento fortificado',RAMPART:'empalizada'};
   el('ancients-terrain-info').textContent='Terreno del escenario: '+
     (cached.terrain?.length
       ?cached.terrain.map(x=>`${terrainNames[x.kind]??'desconocido'} (${x.col+1},${x.row+1})`).join('; ')
@@ -416,7 +416,7 @@ function renderAncients() {
   el('ancients-morale-controls').hidden=!morale&&!decision;
   el('ancients-confirm-morale').disabled=stopped||!dice?.canChooseMorale;
   el('ancients-morale-status').textContent=morale
-    ?`Banderas: ${morale.flags}; máximo ignorable: ${morale.maxIgnored}. Líder: ${morale.attachedLeader?'sí':'no'}; apoyo: ${morale.supported?'sí':'no'}; guerreros al completo: ${morale.fullWarrior?'sí':'no'}.`+(morale.bridgeDefense?' Protección del puente: una bandera adicional.':'')+(decision?` Ignoradas: ${decision.ignored}; pendientes de retirada: ${decision.remaining}.`:'')
+    ?`Banderas: ${morale.flags}; máximo ignorable: ${morale.maxIgnored}. Líder: ${morale.attachedLeader?'sí':'no'}; apoyo: ${morale.supported?'sí':'no'}; guerreros al completo: ${morale.fullWarrior?'sí':'no'}.`+(morale.bridgeDefense?' Protección del puente: una bandera adicional.':'')+(morale.fortificationDefense?' Protección de fortificación: una bandera adicional.':'')+(decision?` Ignoradas: ${decision.ignored}; pendientes de retirada: ${decision.remaining}.`:'')
     :decision?`Banderas ignoradas: ${decision.ignored}; aceptadas: ${decision.remaining}.`:'';
   const retreat=dice?.retreat,retreatChoice=el('ancients-retreat-choice'),oldRetreat=retreatChoice.value;
   retreatChoice.replaceChildren();
@@ -482,7 +482,7 @@ function renderAncients() {
     ?`${reviewNames[shown.review]??'Tirada'} contra líder: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}. ${shown.loss.leaderWouldBeEliminated?'Impacto de líder.':'Sin impacto de líder.'}`+
       (pending?(dice.blocker?` Pendiente: ${blockerNames[dice.blocker]??'efecto no disponible'}.`:' Aún no se ha aplicado el resultado.'):'')
     :shown
-    ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}${shown.interpretation.rerolls?.length?' · Repeticiones: '+shown.interpretation.rerolls.map(x=>faceNames[x]??x).join(', '):''}${shown.interpretation.chariotSwordIgnored?' · Primera espada ignorada':''}. Impactos: ${shown.interpretation.hits??shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
+    ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}${shown.interpretation.rerolls?.length?' · Repeticiones: '+shown.interpretation.rerolls.map(x=>faceNames[x]??x).join(', '):''}${shown.interpretation.chariotSwordIgnored?' · Primera espada ignorada':''}${shown.interpretation.fortificationSwordIgnored?' · Espada ignorada por fortificación':''}. Impactos: ${shown.interpretation.hits??shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
       (pending?(dice.blocker?` Pendiente: ${blockerNames[dice.blocker]??'efecto no disponible'}.`:' Aún no se han aplicado bajas.')
         :last.outcome==='DIRECT_HITS_APPLIED'?` Bloques retirados: ${last.blocksApplied}; quedan ${last.blocksRemaining}.`:' Archivado sin aplicar efectos (solo laboratorio).')
     :plan?'Elige tirada digital o registra los dados físicos.':'Sin tirada registrada en este turno.';
