@@ -106,3 +106,57 @@ export function screenBaseAncientsSectionCardOrders({turnState,sessionSide,
     needsFullLegalityCheck:true
   });
 }
+
+// V22: rules for cards that change order selection without a new combat phase.
+// Inputs are supplied only by the authoritative journal before any movement.
+export const SELECTION_CARD_DEFINITIONS=Object.freeze({
+  ORDER_LIGHT_TROOPS:'LIGHT',ORDER_MEDIUM_TROOPS:'MEDIUM',ORDER_HEAVY_TROOPS:'HEAVY',
+  ORDER_MOUNTED_TROOPS:'MOUNTED',COORDINATED_ATTACK:'COORDINATED',OUT_FLANKED:'FLANKS'
+});
+const mountedTypes=new Set(['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT']);
+const troopClasses={
+  LIGHT:new Set(['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY','LIGHT_CAVALRY']),
+  MEDIUM:new Set(['MEDIUM_INFANTRY','WARRIOR_INFANTRY','MEDIUM_CAVALRY']),
+  HEAVY:new Set(['HEAVY_INFANTRY','HEAVY_WAR_MACHINE','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT']),
+  MOUNTED:mountedTypes
+};
+export function selectionCardOptions({definitionId,side,command,board,unitTypes,sectorCells}){
+  if(!Object.hasOwn(SELECTION_CARD_DEFINITIONS,definitionId))return null;
+  const family=SELECTION_CARD_DEFINITIONS[definitionId];
+  const units=board.units.filter(u=>u.side===side),leaders=board.leaders.filter(l=>l.side===side);
+  if(family==='COORDINATED'||family==='FLANKS'){
+    const capacities=family==='COORDINATED'?{LEFT:1,CENTER:1,RIGHT:1}:{LEFT:2,CENTER:0,RIGHT:2};
+    const allowed=p=>sectorCells[cell(p)]?.some(s=>capacities[s]>0);
+    return {family,maximumOrders:Object.values(capacities).reduce((a,b)=>a+b,0),
+      unitIds:units.filter(allowed).map(u=>u.id),leaderIds:leaders.filter(allowed).map(l=>l.id),capacities};
+  }
+  const eligible=units.filter(u=>troopClasses[family].has(unitTypes[u.id]));
+  const fallback=eligible.length===0;
+  return {family,maximumOrders:fallback&&family!=='MOUNTED'?1:command,
+    unitIds:(fallback?units:eligible).map(u=>u.id),
+    leaderIds:family==='MOUNTED'?leaders.map(l=>l.id):[],fallback};
+}
+export function screenSelectionCardOrders(options,pieces,sectorCells){
+  if(!options||pieces.length>options.maximumOrders||pieces.some(p=>!(p.kind==='UNIT'?options.unitIds:options.leaderIds).includes(p.id)))return false;
+  if(options.fallback){
+    const units=pieces.filter(p=>p.kind==='UNIT');
+    // Mounted card can order leaders; a substitute foot order is instead a
+    // single unit, never an extra order added to the leader allowance.
+    if(units.length&&(units.length!==1||pieces.length!==1))return false;
+  }
+  if(!options.capacities)return true;
+  const remaining={...options.capacities};
+  // Each boundary piece consumes exactly one slot. Try all assignments
+  // (at most four pieces) rather than selecting a sector greedily.
+  function assign(i){
+    if(i===pieces.length)return true;
+    for(const sector of sectorCells[cell(pieces[i])]??[]){
+      if(!(remaining[sector]>0))continue;
+      remaining[sector]--;
+      if(assign(i+1))return true;
+      remaining[sector]++;
+    }
+    return false;
+  }
+  return assign(0);
+}

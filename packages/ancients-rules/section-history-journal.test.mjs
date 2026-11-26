@@ -1467,3 +1467,46 @@ test('V21 long history: cross 256 with repeated deck cycles, combat candidates a
   assert.equal(project(max,max.turn).historyLimitReached,true);
   assert.equal(apply(max,cmd('PLAY_SECTION_CARD',max.revision,{actor:max.turn,cardInstanceId:max.hands[max.turn][0].instanceId})).code,'SECTION_HISTORY_LIMIT_REACHED');
 });
+
+test('V22 selection cards: troop classes, Command, fallback, mounted leaders, sector boundaries, transit and replay',()=>{
+ for(const mode of ['LIGHT','MEDIUM','HEAVY','MOUNTED','FALLBACK','COORDINATED','FLANKS','TRANSIT','BLOCKED_TRANSIT','FOREST_TRANSIT','LEGACY']){
+  const def={LIGHT:'ORDER_LIGHT_TROOPS',MEDIUM:'ORDER_MEDIUM_TROOPS',HEAVY:'ORDER_HEAVY_TROOPS',MOUNTED:'ORDER_MOUNTED_TROOPS',FALLBACK:'ORDER_HEAVY_TROOPS',COORDINATED:'COORDINATED_ATTACK',FLANKS:'OUT_FLANKED',TRANSIT:'ORDER_LIGHT_TROOPS',BLOCKED_TRANSIT:'ORDER_LIGHT_TROOPS',FOREST_TRANSIT:'ORDER_LIGHT_TROOPS',LEGACY:'ORDER_LIGHT_TROOPS'}[mode];
+  const c=rangedLabSetup({targetCol:10,terrain:mode==='FOREST_TRANSIT'?[{col:3,row:4,kind:'FOREST'}]:[]});
+  Object.assign(c,{enableLeaderLab:true,enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,
+    enableSpecialFootLab:true,enableLoneLeaderCombatLab:true,enableDeckRecycleLab:true,enableLongHistoryLab:true,enableSelectionCardsLab:mode!=='LEGACY',victoryTargets:{A:3,B:3}});
+  c.cardInstances[0].definitionId=def;
+  c.board.units.push({id:'a2',side:'A',col:3,row:4},{id:'a3',side:'A',col:8,row:4},{id:'a4',side:'A',col:9,row:4});
+  c.board.leaders=[{id:'a_leader',side:'A',col:8,row:4}];
+  Object.assign(c.movementUnitTypes,{a1:'LIGHT_INFANTRY',a2:'AUXILIA_INFANTRY',a3:'MEDIUM_CAVALRY',a4:mode==='FALLBACK'?'WARRIOR_INFANTRY':'HEAVY_WAR_MACHINE'});
+  c.sectorCells['3,4']=['LEFT','CENTER'];c.sectorCells['8,4']=['CENTER','RIGHT'];
+  if(mode==='BLOCKED_TRANSIT')c.board.units[2].side='B';
+  if(mode==='LEGACY'){assert.throws(()=>init(c),/INVALID_SECTION_HISTORY_SETUP/);continue;}
+  const initial=init(c);let s=initial;const log=[];
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);
+    assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;};
+  const card=s.hands.A.find(x=>x.definitionId===def);assert.ok(card,mode);
+  run('PLAY_SECTION_CARD',{cardInstanceId:card.instanceId});
+  const options=project(s,'A').selectionCard;assert.ok(options);assert.equal(project(s,'B').selectionCard,undefined);
+  const check=(unitIds,leaderIds=[])=>apply(s,cmd('ASSIGN_SECTION_ORDERS',s.revision,{unitIds,leaderIds})).code;
+  let ids,leaders=[];
+  if(mode==='MEDIUM'){assert.equal(check(['a1']),'ORDERS_NOT_ELIGIBLE');ids=['a3'];}
+  else if(mode==='HEAVY'){assert.equal(check(['a3']),'ORDERS_NOT_ELIGIBLE');ids=['a4'];}
+  else if(mode==='MOUNTED'){assert.equal(check(['a4']),'ORDERS_NOT_ELIGIBLE');ids=['a3'];leaders=['a_leader'];}
+  else if(mode==='FALLBACK'){assert.equal(options.fallback,true);assert.equal(check(['a1','a2']),'ORDERS_NOT_ELIGIBLE');ids=['a1'];}
+  else if(mode==='COORDINATED'){ids=['a1','a2','a3'];assert.equal(check(['a1','a2','a3','a4']),'ORDERS_NOT_ELIGIBLE');}
+  else if(mode==='FLANKS'){ids=['a1','a2','a3','a4'];assert.equal(check(ids,['a_leader']),'ORDERS_NOT_ELIGIBLE');}
+  else {ids=['a1'];assert.equal(check(['a3']),'ORDERS_NOT_ELIGIBLE');assert.equal(check(['a1'],['a_leader']),'ORDERS_NOT_ELIGIBLE');}
+  run('ASSIGN_SECTION_ORDERS',{unitIds:ids,leaderIds:leaders});
+  if(['TRANSIT','BLOCKED_TRANSIT','FOREST_TRANSIT'].includes(mode)){
+    const path=[{col:3,row:4},{col:4,row:4}];
+    assert.equal(apply(s,cmd('MOVE_SECTION_FOOT_PATH_V2',s.revision,{unitId:'a1',path:path.slice(0,1)})).code,'OCCUPIED_DESTINATION');
+    if(mode!=='TRANSIT')assert.equal(apply(s,cmd('MOVE_SECTION_FOOT_PATH_V2',s.revision,{unitId:'a1',path})).code,mode==='BLOCKED_TRANSIT'?'OCCUPIED_DESTINATION':'MUST_STOP_ON_FOREST_ENTRY');
+    else{run('MOVE_SECTION_FOOT_PATH_V2',{unitId:'a1',path});assert.equal(s.board.units.find(u=>u.id==='a1').col,4);}
+  }
+  run('END_EXPERIMENTAL_TURN');
+  assert.deepEqual(replay(initial,log),s);
+ }
+});

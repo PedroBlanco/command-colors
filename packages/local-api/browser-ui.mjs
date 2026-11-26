@@ -201,13 +201,16 @@ function renderAncients() {
     (cached.terrain?.length
       ?cached.terrain.map(x=>`${terrainNames[x.kind]??'desconocido'} (${x.col+1},${x.row+1})`).join('; ')
       :'solo hexágonos despejados')+'.';
+  const selection=cached.selectionCard;
+  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos'};
+  if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':'');
   const cardSelect=el('ancients-card');
   const chosen=cardSelect.value;
   cardSelect.replaceChildren();
   for(const card of cached.yourHand??[]){
     const option=document.createElement('option');
     option.value=card.instanceId;
-    option.textContent=card.definitionId;
+    option.textContent=cardNames[card.definitionId]??card.definitionId;
     cardSelect.appendChild(option);
   }
   if((cached.yourHand??[]).some(c=>c.instanceId===chosen))
@@ -216,7 +219,7 @@ function renderAncients() {
   const selected=new Set(Array.from(unitSelect.selectedOptions??[],x=>x.value));
   unitSelect.replaceChildren();
   for(const unit of cached.board??[]){
-    if(unit.side!==cached.you)continue;
+    if(unit.side!==cached.you||selection&&!selection.unitIds.includes(unit.id))continue;
     const option=document.createElement('option');
     option.value=unit.id;
     option.textContent=`${unit.id} (${unit.unitType}, ${unit.col+1},${unit.row+1})`;
@@ -228,7 +231,7 @@ function renderAncients() {
     leaderOrderSelect.selectedOptions??[],o=>o.value));
   leaderOrderSelect.replaceChildren();
   for(const leader of cached.leaders??[]){
-    if(leader.side!==cached.you)continue;
+    if(leader.side!==cached.you||selection&&!selection.leaderIds.includes(leader.id))continue;
     const option=document.createElement('option');
     option.value=leader.id;
     option.textContent=`${leader.id} (${leader.col+1},${leader.row+1})`;
@@ -268,7 +271,7 @@ function renderAncients() {
   el('ancients-finish-movement').disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed;
   el('ancients-clear-path').disabled=!ancientsDraft;
   el('ancients-move').disabled=!isTurn||movementClosed||cached.phase!=='LAB_RESOLUTION_PENDING'||
-    !ancientsDraft?.path.length;
+    !ancientsDraft?.path.length||!!(ancientsDraft?.kind!=='LEADER'&&ancientsDraft?.path.length&&(cached.board??[]).some(u=>u.col===ancientsDraft.path.at(-1).col&&u.row===ancientsDraft.path.at(-1).row));
   el('ancients-route-status').textContent=ancientsDraft
     ? `${ancientsDraft.kind==='LEADER'?'Líder':'Unidad'} ${ancientsDraft.unitId}: ${ancientsDraft.path.length} hexágonos. Confirma para validar en el servidor.`
     : movementClosed?'Movimiento cerrado. Prepara un ataque si está disponible.':`${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
@@ -489,7 +492,8 @@ function selectAncientsHex(cell){
   const ordered=new Set(cached.orderedUnitIds??[]);
   const moved=new Set(cached.movedUnitIds??[]);
   const locked=new Set(cached.unitsLockedByLeader??[]);
-  if(ancientsDraft?.kind!=='LEADER'&&at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)&&!locked.has(at.id)){
+  const transit=!!ancientsDraft&&ancientsDraft.kind!=='LEADER'&&cached.cardInPlay==='ORDER_LIGHT_TROOPS'&&ancientsDraft.path.length===0&&at?.side===cached.you&&at.id!==ancientsDraft.unitId&&['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY'].includes(units.find(u=>u.id===ancientsDraft.unitId)?.unitType)&&distance(ancientsDraft.origin,cell)===1;
+  if(!transit&&ancientsDraft?.kind!=='LEADER'&&at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)&&!locked.has(at.id)){
     ancientsDraft={unitId:at.id,origin:{col:at.col,row:at.row},
       path:[],revision:cached.revision};
   }else if(ancientsDraft){
@@ -503,7 +507,7 @@ function selectAncientsHex(cell){
     }else if(distance(previous,cell)!==1){
       el('ancients-route-status').textContent='El siguiente hexágono debe ser contiguo.';
       return;
-    }else if(at && !(ancientsDraft.kind==='LEADER'&&at.side===cached.you)){
+    }else if(at && !transit && !(ancientsDraft.kind==='LEADER'&&at.side===cached.you)){
       el('ancients-route-status').textContent='El hexágono está ocupado.';
       return;
     }else if(ancientsDraft.path.length >= (ancientsDraft.kind==='LEADER'?3:4)){
