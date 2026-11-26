@@ -202,9 +202,10 @@ function renderAncients() {
       ?cached.terrain.map(x=>`${terrainNames[x.kind]??'desconocido'} (${x.col+1},${x.row+1})`).join('; ')
       :'solo hexágonos despejados')+'.';
   const selection=cached.selectionCard;
-  const clash=cached.cardInPlay==='CLASH_OF_SHIELDS';
-  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho'};
+  const clash=cached.cardInPlay==='CLASH_OF_SHIELDS',darken=!!cached.diceLab?.darken,noMove=clash||darken;
+  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho',DARKEN_THE_SKY:'Oscurecer el cielo'};
   if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':selection.family==='LEADERSHIP'?' (grupo contiguo desde un líder válido o una sola unidad; sin separar líderes adjuntos)':selection.connected?' (grupo de unidades contiguas)':'');
+  if(darken)el('ancients-status').textContent+=' · Doble disparo: '+cached.diceLab.resolvedUnitIds.length+' unidades han disparado, '+cached.diceLab.darken.twice.length+' dos veces';
   const cardSelect=el('ancients-card');
   const chosen=cardSelect.value;
   cardSelect.replaceChildren();
@@ -262,7 +263,7 @@ function renderAncients() {
   const ordered=new Set(Array.isArray(cached.orderedUnitIds)?cached.orderedUnitIds:[]);
   const moved=new Set(Array.isArray(cached.movedUnitIds)?cached.movedUnitIds:[]);
   const locked=new Set(Array.isArray(cached.unitsLockedByLeader)?cached.unitsLockedByLeader:[]);
-  const selectable=movementClosed||!isTurn||clash?[]:(cached.board??[]).filter(u=>u.side===cached.you&&
+  const selectable=movementClosed||!isTurn||noMove?[]:(cached.board??[]).filter(u=>u.side===cached.you&&
     ordered.has(u.id)&&!moved.has(u.id)&&!locked.has(u.id)).map(u=>u.id);
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
@@ -271,11 +272,11 @@ function renderAncients() {
   el('ancients-finish-movement').hidden=!combat;
   el('ancients-finish-movement').disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed;
   el('ancients-clear-path').disabled=!ancientsDraft;
-  el('ancients-move').disabled=!isTurn||movementClosed||clash||cached.phase!=='LAB_RESOLUTION_PENDING'||
+  el('ancients-move').disabled=!isTurn||movementClosed||noMove||cached.phase!=='LAB_RESOLUTION_PENDING'||
     !ancientsDraft?.path.length||!!(ancientsDraft?.kind!=='LEADER'&&ancientsDraft?.path.length&&(cached.board??[]).some(u=>u.col===ancientsDraft.path.at(-1).col&&u.row===ancientsDraft.path.at(-1).row));
   el('ancients-route-status').textContent=ancientsDraft
     ? `${ancientsDraft.kind==='LEADER'?'Líder':'Unidad'} ${ancientsDraft.unitId}: ${ancientsDraft.path.length} hexágonos. Confirma para validar en el servidor.`
-    : clash&&!movementClosed?'Choque de escudos: las unidades no se mueven antes del combate. Cierra la fase de movimiento.':movementClosed?'Movimiento cerrado. Prepara un ataque si está disponible.':`${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
+    : darken&&!movementClosed?'Oscurecer el cielo: solo disparos; cierra la fase de movimiento.':clash&&!movementClosed?'Choque de escudos: las unidades no se mueven antes del combate. Cierra la fase de movimiento.':movementClosed?'Movimiento cerrado. Prepara un ataque si está disponible.':`${selectable.length} unidades ordenadas disponibles; selecciona una sobre el tablero.`;
   el('ancients-combat').hidden=!combat||!movementClosed;
   const choice=el('ancients-ranged-choice'),oldChoice=choice.value;
   choice.replaceChildren();
@@ -487,7 +488,7 @@ function renderAncients() {
 }
 function selectAncientsHex(cell){
   if(cached?.status!=='LAB_ONLY'||cached.diceLab?.victory?.winner||cached.historyLimitReached||cached.turn!==cached.you||
-     cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed||cached.cardInPlay==='CLASH_OF_SHIELDS')return;
+     cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed||cached.cardInPlay==='CLASH_OF_SHIELDS'||cached.diceLab?.darken)return;
   const units=cached.board??[];
   const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
   const ordered=new Set(cached.orderedUnitIds??[]);

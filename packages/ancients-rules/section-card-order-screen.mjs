@@ -4,6 +4,7 @@
  * never a command-card or combat authorization. No card text is reproduced.
  */
 import {distance} from '../hex-grid/hex.mjs';
+import {BASE_RANGED_REACH} from './ranged-profile.mjs';
 
 export const SECTION_CARD_ORDER_SCREEN_VERSION = 1;
 export const BASE_SECTION_CARD_LIMITS = Object.freeze(Object.fromEntries(
@@ -121,6 +122,7 @@ export const LEADERSHIP_CARD_DEFINITIONS=Object.freeze({
   LEADERSHIP_ANY_SECTION:null,INSPIRED_LEFT_LEADERSHIP:'LEFT',
   INSPIRED_CENTER_LEADERSHIP:'CENTER',INSPIRED_RIGHT_LEADERSHIP:'RIGHT'
 });
+export const FIRE_CARD_DEFINITIONS=Object.freeze({DARKEN_THE_SKY:'DARKEN'});
 const mountedTypes=new Set(['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT']);
 const troopClasses={
   LIGHT:new Set(['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY','LIGHT_CAVALRY']),
@@ -129,6 +131,13 @@ const troopClasses={
   MOUNTED:mountedTypes
 };
 export function selectionCardOptions({definitionId,side,command,board,unitTypes,sectorCells}){
+  if(Object.hasOwn(FIRE_CARD_DEFINITIONS,definitionId)){
+    const units=board.units.filter(u=>u.side===side);
+    const eligible=units.filter(u=>Object.hasOwn(BASE_RANGED_REACH,unitTypes[u.id]));
+    return {family:'DARKEN',maximumOrders:eligible.length||1,
+      unitIds:(eligible.length?eligible:units).map(u=>u.id),leaderIds:[],
+      fallback:eligible.length===0,allRequired:eligible.length>0};
+  }
   if(Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,definitionId)){
     const section=LEADERSHIP_CARD_DEFINITIONS[definitionId];
     const units=board.units.filter(u=>u.side===side),leaders=board.leaders.filter(l=>l.side===side);

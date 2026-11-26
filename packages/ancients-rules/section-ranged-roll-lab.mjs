@@ -37,7 +37,7 @@ export function sectionRollIndex(key,rollId){
   };
 }
 
-export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null,closeCombat=false,unitEvade=false,battleBack=false,momentum=false,bonusClose=false,elephantClose=false,specialClose=false,specialFoot=false,loneLeaderCombat=false,deckRecycle=false,longHistory=false,selectionCards=false,groupCards=false,attackCards=false,leadershipCards=false}={}){
+export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null,closeCombat=false,unitEvade=false,battleBack=false,momentum=false,bonusClose=false,elephantClose=false,specialClose=false,specialFoot=false,loneLeaderCombat=false,deckRecycle=false,longHistory=false,selectionCards=false,groupCards=false,attackCards=false,leadershipCards=false,fireCards=false}={}){
   if((morale&&!casualties)||(retreat&&!morale)||(retreatLeaders&&!retreat)||(leaderEscape&&!retreatLeaders)||(rampage&&!leaderEscape)||(rampageLeaders&&!rampage)||(elephantRetreatLeaders&&!rampageLeaders))fail();
   if(victoryTargets!==null&&(!elephantRetreatLeaders||!validVictoryTargets(victoryTargets)))fail();
   if(typeof closeCombat!=='boolean'||(closeCombat&&victoryTargets===null))fail();
@@ -55,11 +55,13 @@ export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=fals
   if(typeof groupCards!=='boolean'||(groupCards&&!selectionCards))fail();
   if(typeof attackCards!=='boolean'||(attackCards&&!groupCards))fail();
   if(typeof leadershipCards!=='boolean'||(leadershipCards&&!attackCards))fail();
-  return {version:leadershipCards?25:attackCards?24:groupCards?23:selectionCards?22:longHistory?21:deckRecycle?20:loneLeaderCombat?19:specialFoot?18:specialClose?17:elephantClose?16:bonusClose?15:momentum?14:battleBack?13:unitEvade?12:closeCombat?11:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
+  if(typeof fireCards!=='boolean'||(fireCards&&!leadershipCards))fail();
+  return {version:fireCards?26:leadershipCards?25:attackCards?24:groupCards?23:selectionCards?22:longHistory?21:deckRecycle?20:loneLeaderCombat?19:specialFoot?18:specialClose?17:elephantClose?16:bonusClose?15:momentum?14:battleBack?13:unitEvade?12:closeCombat?11:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
     blocks:Object.fromEntries(Object.entries(unitTypes).map(([id,type])=>[
       id,BASE_UNIT_STARTING_BLOCKS[type]
     ])),
     resolvedUnitIds:[],pending:null,last:null,
+    ...(fireCards?{darken:null}:{}),
     ...(casualties?{casualties:[],leaderCheck:null}:{}),
     ...(morale?{morale:null}:{}),
     ...(retreatLeaders?{retreatPending:null}:{}),
@@ -669,7 +671,7 @@ export function settleSectionVictory(next,event){
     if(source!==next){
       next.board=source.board;next.footLab.unitTypes=source.footLab.unitTypes;
       d.blocks=source.diceLab.blocks;d.casualties=source.diceLab.casualties;
-      if(!plan.battleBack&&!plan.bonusClose)d.resolvedUnitIds.push(plan.attackerId);
+      markSectionBattle(d,plan);
       d.last={attackerId:plan.attackerId,targetId:plan.targetId,roll:p.roll,review:p.review,
         interpretation:p.interpretation,loss:p.loss,outcome:'DIRECT_HITS_APPLIED',reason:null,
         blocksApplied:p.loss.originalBlocks-(d.blocks[plan.targetId]??0),blocksRemaining:d.blocks[plan.targetId]??0,
@@ -695,10 +697,19 @@ export function settleSectionVictory(next,event){
   return result.winner?{...event,victory:result}:event;
 }
 
+// Preserve the unique resolved-unit ledger; record the extra fire separately.
+function markSectionBattle(d,plan){
+  if(plan.battleBack||plan.bonusClose)return;
+  if(d.darken&&d.resolvedUnitIds.includes(plan.attackerId)){
+    if(d.darken.twice.includes(plan.attackerId))fail();
+    d.darken.twice.push(plan.attackerId);
+  }else d.resolvedUnitIds.push(plan.attackerId);
+}
+
 export function assertSectionDiceLab(state){
   const d=state.diceLab;
-  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25].includes(d.version)||!keyOK(d.key)||
-     Object.keys(d).length!==(d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
+  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26].includes(d.version)||!keyOK(d.key)||
+     Object.keys(d).length!==(d.version>=26?14:d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
      Object.keys(d.blocks).length!==state.board.units.length||
      state.board.units.some(u=>!Object.hasOwn(d.blocks,u.id)||
        !Number.isSafeInteger(d.blocks[u.id])||d.blocks[u.id]<1||
@@ -710,6 +721,10 @@ export function assertSectionDiceLab(state){
      !(d.last===null||(record(d.last)&&['DIRECT_HITS_APPLIED','ARCHIVED_WITHOUT_EFFECTS'].includes(d.last.outcome)&&
        (d.version>=13&&d.last.attackKind==='BATTLE_BACK'?d.resolvedUnitIds.includes(d.last.targetId):d.resolvedUnitIds.includes(d.last.attackerId))))||
      !(d.pending===null||record(d.pending)))fail();
+  if(d.version>=26&&!(d.darken===null||(record(d.darken)&&Object.keys(d.darken).length===1&&
+    state.activeCard?.definitionId==='DARKEN_THE_SKY'&&state.phase==='LAB_RESOLUTION_PENDING'&&
+    Array.isArray(d.darken.twice)&&new Set(d.darken.twice).size===d.darken.twice.length&&
+    d.darken.twice.every(id=>d.resolvedUnitIds.includes(id)))))fail();
   if(d.last?.momentum?.pending&&!sectionMomentumOptions(state).length)fail();
   if(d.last?.battleBackPending&&(d.version<11||!['CLOSE',...(d.version>=15?['BONUS_CLOSE']:[])].includes(d.last.attackKind)||state.combatLab.plan||
       !state.board.units.some(u=>u.id===d.last.targetId&&u.side!==state.turn)))fail();
@@ -1004,7 +1019,7 @@ export function applySectionDiceCommand(state,next,command){
         else Object.assign(leader,evasion.path.at(-1));
       }
     }
-    if(!plan.battleBack&&!plan.bonusClose)next.diceLab.resolvedUnitIds.push(plan.attackerId);
+    markSectionBattle(next.diceLab,plan);
     const result={attackerId:plan.attackerId,targetId:plan.targetId,roll:p.roll,
       review:p.review,interpretation:p.interpretation,loss:p.loss,
       outcome:finalize?'DIRECT_HITS_APPLIED':'ARCHIVED_WITHOUT_EFFECTS',
@@ -1069,6 +1084,7 @@ export function projectSectionDiceLab(state,side){
   const rampageReplay=d.elephantRetreatPending?elephantStageShadow(state):d.version>=8&&elephant&&!elephant.leaderPending?rampageShadow(state,elephant):null;
   const remaining=elephant&&!elephant.leaderPending&&!rampageReplay?.pending?elephant.units.filter(u=>!d.rampage.some(r=>r.unitId===u.id)):[];
   return {blocks:{...d.blocks},resolvedUnitIds:[...d.resolvedUnitIds],
+    ...(d.version>=26?{darken:structuredClone(d.darken)}:{}),
     pending:p?structuredClone(p):null,last:d.last?structuredClone(d.last):null,
     canReview:side!==sectionCombatSide(state)&&p?.review==='AWAITING_OPPONENT',
     canFinalize:side===sectionCombatSide(state)&&!!p&&!blocker&&p.review!=='AWAITING_OPPONENT',
@@ -1110,6 +1126,7 @@ export function projectSectionDiceLab(state,side){
 
 export function resetSectionDiceTurn(next){
   next.diceLab.resolvedUnitIds=[];
+  if(next.diceLab.version>=26)next.diceLab.darken=null;
   next.diceLab.pending=null;
   next.diceLab.last=null;
   if(next.diceLab.version>=2)next.diceLab.leaderCheck=null;

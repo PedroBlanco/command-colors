@@ -1667,3 +1667,58 @@ test('V24 attack cards: mandatory adjacency orders, mounted charge, terrain dice
   run('END_EXPERIMENTAL_TURN');assert.deepEqual(replay(initial,log),s);
  }
 });
+
+function tacticalCardSetup(definitionId,fire=false,targetCol=4){
+ const c=rangedLabSetup({targetCol});
+ Object.assign(c,{enableLeaderLab:true,enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,enableSpecialFootLab:true,enableLoneLeaderCombatLab:true,enableDeckRecycleLab:true,enableLongHistoryLab:true,enableSelectionCardsLab:true,enableGroupCardsLab:true,enableAttackCardsLab:true,enableLeadershipCardsLab:true,enableFireCardsLab:fire,victoryTargets:{A:3,B:3}});
+ c.cardInstances[0].definitionId=definitionId;return c;
+}
+test('V25 leadership: connected orders across sections, alternative and replay',()=>{
+ const c=tacticalCardSetup('INSPIRED_LEFT_LEADERSHIP',false,10);
+ c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
+ for(const [id,col] of [['a2',3],['a3',4]]){c.board.units.push({id,side:'A',col,row:4});c.movementUnitTypes[id]='MEDIUM_INFANTRY';}
+ const initial=init(c),card=initial.hands.A.find(x=>x.definitionId==='INSPIRED_LEFT_LEADERSHIP');
+ const p=cmd('PLAY_SECTION_CARD',0,{cardInstanceId:card.instanceId}),played=apply(initial,p).nextState;
+ const orders=ids=>cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:ids,leaderIds:[]});
+ assert.equal(apply(played,orders(['a1','a3'])).code,'ORDERS_NOT_ELIGIBLE');
+ assert.equal(apply(played,orders(['a3'])).accepted,true);
+ const order=orders(['a1','a2','a3']),result=apply(played,order);
+ assert.equal(result.accepted,true,result.code);
+ assert.deepEqual(replay(initial,[p,order]),result.nextState);
+});
+
+test('V26 Darken the Sky: two separately resolved shots, mandatory eligible orders and ordinary fallback',()=>{
+ for(const fallback of [false,true]){
+  const c=tacticalCardSetup('DARKEN_THE_SKY',true);
+  if(fallback)c.movementUnitTypes.a1='MEDIUM_INFANTRY';
+  else {c.board.units.push({id:'a2',side:'A',col:0,row:0});c.movementUnitTypes.a2='LIGHT_BOW_INFANTRY';}
+  const initial=init(c);let s=initial;const log=[];
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};
+  const reject=(type,fields,code)=>assert.equal(apply(s,cmd(type,s.revision,fields)).code,code);
+  run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A.find(x=>x.definitionId==='DARKEN_THE_SKY').instanceId});
+  assert.equal(project(s,'A').selectionCard.fallback,fallback);
+  if(!fallback)reject('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]},'ORDERS_NOT_ELIGIBLE');
+  run('ASSIGN_SECTION_ORDERS',{unitIds:fallback?['a1']:['a1','a2'],leaderIds:[]});
+  const move={unitId:'a1',path:[{col:3,row:4}]};
+  if(fallback)run('MOVE_SECTION_FOOT_PATH_V2',move);
+  else reject('MOVE_SECTION_FOOT_PATH_V2',move,'DARKEN_MOVEMENT_FORBIDDEN');
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  const target={attackerId:'a1',targetId:'b1'};
+  if(fallback)run('PREPARE_SECTION_CLOSE_LAB',target);
+  else {
+   reject('PREPARE_SECTION_CLOSE_LAB',target,'DARKEN_CLOSE_FORBIDDEN');
+   for(let i=0;i<2;i++){
+    assert.ok(project(s,'A').combatLab.candidates.some(x=>x.attackerId==='a1'&&x.targetId==='b1'));
+    run('PREPARE_SECTION_RANGED_LAB',target);
+    run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:['HEAVY','LIGHT']});
+    run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+    run('FINALIZE_SECTION_RANGED_LAB');
+    assert.equal(s.diceLab.blocks.b1,3-i);
+   }
+   reject('PREPARE_SECTION_RANGED_LAB',target,'UNIT_ALREADY_BATTLED');
+   assert.deepEqual(s.diceLab.resolvedUnitIds,['a1']);assert.deepEqual(s.diceLab.darken.twice,['a1']);
+   run('END_EXPERIMENTAL_TURN');assert.equal(s.diceLab.darken,null);
+  }
+  assert.deepEqual(replay(initial,log),s);
+ }
+});

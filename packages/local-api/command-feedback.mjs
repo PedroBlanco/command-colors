@@ -39,6 +39,8 @@ const explanations=Object.freeze({
   WARRIOR_CHARGE_COMBAT_REQUIRED:'Resuelve el combate obligatorio de los guerreros antes de terminar el turno.',
   STANDARD_FOOT_MOVEMENT_EXCEEDED:'La ruta supera la distancia de movimiento de esta unidad.',
   CLASH_MOVEMENT_FORBIDDEN:'Choque de escudos no permite movimiento antes del combate.',
+  DARKEN_CLOSE_FORBIDDEN:'Oscurecer el cielo solo permite disparos a distancia.',
+  DARKEN_MOVEMENT_FORBIDDEN:'Oscurecer el cielo no permite movimiento.',
   LEADERSHIP_DETACH_FORBIDDEN:'Una carta de liderazgo no permite separar un líder de su unidad.',
   ATTACK_CARD_RANGED_FORBIDDEN:'Esta carta de ataque no permite combatir a distancia.',
   LINE_COMMAND_MOVEMENT_EXCEEDED:'Con Orden en línea, las unidades de a pie solo pueden mover un hexágono.',
