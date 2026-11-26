@@ -1981,7 +1981,7 @@ test('marsh terrain: ordered mounted move, deterministic loss and leader checks,
   const check=result.publicEvent.marshChecks[0];s=result.nextState;
   assert.equal(mode==='LEADER'?check.leaderEliminated:check.blocksLost===1,true);
   const log=[play,order,move];
-  if(mode==='UNIT')assert.equal(s.diceLab.blocks.a1,3);
+  if(mode==='UNIT')assert.equal(s.diceLab.blocks.a1,2);
   if(mode==='ATTACHED'){
     assert.equal(s.diceLab.blocks.a1,undefined);assert.equal(s.diceLab.marshPending.leaderId,'a_leader');
     assert.equal(apply(s,cmd('FINISH_SECTION_MOVEMENT_LAB',s.revision)).code,'MARSH_LEADER_EVASION_PENDING');

@@ -167,7 +167,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     board:copy(board),sectorCells:copy(sectorCells),
     ...(sectorPerspective==='PLAYER_RELATIVE'?{sectorPerspective}: {})};
   if(movementUnitTypes!==undefined){
-    if(movementTerrain.some(t=>t.kind==='MARSH')&&!enableFirstStrikeLab)fail('MARSH_REQUIRES_FULL_COMBAT_LAB');
+    if(Array.isArray(movementTerrain)&&movementTerrain.some(t=>t?.kind==='MARSH')&&(!enableFirstStrikeLab||!enableDiceLab))fail('MARSH_REQUIRES_FULL_COMBAT_LAB');
     if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain,enableLeaderLab,false,enableElephantCloseLab,enableSpecialCloseLab))
       fail('INVALID_FOOT_LAB_SETUP');
     state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[],
@@ -627,11 +627,11 @@ export function applySectionHistoryLabCommand(state,command={}){
     'MOVE_SECTION_MOUNTED_PATH_V1','MOVE_SECTION_LEADER_PATH_V1'].includes(command.type))
     return reject('MOVEMENT_PHASE_CLOSED');
   if(state.diceLab?.firstStrike?.window&&!['ACCEPT_SECTION_FIRST_STRIKE_LAB','DECLINE_SECTION_FIRST_STRIKE_LAB'].includes(command.type))return reject('FIRST_STRIKE_DECISION_PENDING');
-  if(state.diceLab?.last?.battleBackPending&&!['DECLINE_SECTION_BATTLE_BACK_LAB','ACCEPT_SECTION_BATTLE_BACK_LAB'].includes(command.type))
+  if(!state.diceLab?.marshPending&&state.diceLab?.last?.battleBackPending&&!['DECLINE_SECTION_BATTLE_BACK_LAB','ACCEPT_SECTION_BATTLE_BACK_LAB'].includes(command.type))
     return reject('BATTLE_BACK_PENDING');
-  if(state.diceLab?.last?.momentum?.pending&&command.type!=='CHOOSE_SECTION_MOMENTUM_LAB')
+  if(!state.diceLab?.marshPending&&state.diceLab?.last?.momentum?.pending&&command.type!=='CHOOSE_SECTION_MOMENTUM_LAB')
     return reject('MOMENTUM_DECISION_PENDING');
-  if(state.diceLab?.last?.momentum?.bonusPending&&!['PREPARE_SECTION_CLOSE_LAB','DECLINE_SECTION_BONUS_CLOSE_LAB'].includes(command.type))
+  if(!state.diceLab?.marshPending&&state.diceLab?.last?.momentum?.bonusPending&&!['PREPARE_SECTION_CLOSE_LAB','DECLINE_SECTION_BONUS_CLOSE_LAB'].includes(command.type))
     return reject('BONUS_CLOSE_DECISION_PENDING');
   const next=copy(state),side=command.actor;
   let publicEvent;

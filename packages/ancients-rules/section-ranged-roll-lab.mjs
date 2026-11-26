@@ -1103,7 +1103,7 @@ export function applySectionDiceCommand(state,next,command){
         if(target&&!sectionVictory(next)?.winner){
         const leader=next.board.leaders.find(l=>l.side===target.side&&hex(l)===hex(target));
         const destination=retreatChoice.path.at(-1);
-        const remaining=next.diceLab.blocks[target.id]-retreatChoice.blocksLost;
+        const remaining=Math.max(0,next.diceLab.blocks[target.id]-retreatChoice.blocksLost);
         if(d.retreatPending?.leaderCheck?.outcome.leaderWouldBeEliminated){
           next.board.leaders=next.board.leaders.filter(l=>l.id!==leader.id);
           awardCasualty(next,leader,'LEADER',sectionCombatSide(state),state.revision+1);
