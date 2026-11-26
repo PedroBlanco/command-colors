@@ -1425,3 +1425,37 @@ test('V20 deck recycling: replenish immediately, initially empty, conservation, 
   if(mode!=='LEGACY')assert.ok(recycles>1);
  }
 });
+
+test('V21 long history: cross 256 with repeated deck cycles, combat candidates and replay',()=>{
+  const c=rangedLabSetup({targetCol:4});
+  Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,
+    enableSpecialFootLab:true,enableLoneLeaderCombatLab:true,enableDeckRecycleLab:true,enableLongHistoryLab:true,victoryTargets:{A:3,B:3}});
+  // Exactly one card per hand, initially empty draw pile: recycle each turn.
+  c.cardInstances=c.cardInstances.slice(0,2);c.handSizes={A:1,B:1};
+  const initial=init(c);let s=initial;const log=[];
+  const run=(type,fields={})=>{
+    const command=cmd(type,s.revision,{actor:s.turn,...fields}),result=apply(s,command);
+    assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;
+    return result.publicEvent;
+  };
+  for(let i=0;i<100;i++){
+    run('PLAY_SECTION_CARD',{cardInstanceId:s.hands[s.turn][0].instanceId});
+    run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});
+    const e=run('END_EXPERIMENTAL_TURN');
+    assert.equal(e.deckRecycled,true);assert.equal(e.drewCard,true);
+    assert.equal(project(s,s.turn).historyLimitReached,undefined);
+  }
+  assert.equal(s.revision,300);
+  assert.deepEqual(replay(initial,log),s);
+  assert.equal(apply(s,log.at(-1)).code,'STALE_REVISION');
+  const corrupt=structuredClone(log);corrupt[256].expectedRevision=0;
+  assert.throws(()=>replay(initial,corrupt),/INVALID_SECTION_HISTORY_EVENT_CHAIN/);
+  const legacy=structuredClone(initial);legacy.diceLab.version=20;
+  assert.throws(()=>replay(legacy,log),/INVALID_SECTION_HISTORY_REPLAY/);
+  const max=structuredClone(s);max.revision=Number.MAX_SAFE_INTEGER;
+  assert.equal(project(max,max.turn).historyLimitReached,true);
+  assert.equal(apply(max,cmd('PLAY_SECTION_CARD',max.revision,{actor:max.turn,cardInstanceId:max.hands[max.turn][0].instanceId})).code,'SECTION_HISTORY_LIMIT_REACHED');
+});

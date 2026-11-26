@@ -24,7 +24,11 @@ import {
 } from './core-open-foot-path-v2.mjs';
 
 export const SECTION_HISTORY_LAB_KIND='ANCIENTS_SECTION_HISTORY_LAB_V1';
+// Historical limit retained for V1–V20 and unversioned journals.
 export const SECTION_HISTORY_MAX_COMMANDS=256;
+export function sectionHistoryCommandLimit(state){
+  return state.diceLab?.version>=21?Number.MAX_SAFE_INTEGER:SECTION_HISTORY_MAX_COMMANDS;
+}
 const ID=/^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES=['A','B'];
 const validId=x=>typeof x==='string'&&ID.test(x)&&x!=='__proto__';
@@ -101,7 +105,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false,enableDeckRecycleLab=false}={}) {
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false,enableDeckRecycleLab=false,enableLongHistoryLab=false}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -129,7 +133,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       typeof enableSpecialCloseLab!=='boolean'||(enableSpecialCloseLab&&!enableElephantCloseLab)||
       typeof enableSpecialFootLab!=='boolean'||(enableSpecialFootLab&&!enableSpecialCloseLab)||
       typeof enableLoneLeaderCombatLab!=='boolean'||(enableLoneLeaderCombatLab&&!enableSpecialFootLab)||
-      typeof enableDeckRecycleLab!=='boolean'||(enableDeckRecycleLab&&!enableLoneLeaderCombatLab)))fail('INVALID_SECTION_HISTORY_SETUP');
+      typeof enableDeckRecycleLab!=='boolean'||(enableDeckRecycleLab&&!enableLoneLeaderCombatLab)||
+      typeof enableLongHistoryLab!=='boolean'||(enableLongHistoryLab&&!enableDeckRecycleLab)))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -158,7 +163,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
     if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
-    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab,loneLeaderCombat:enableLoneLeaderCombatLab,deckRecycle:enableDeckRecycleLab});
+    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab,loneLeaderCombat:enableLoneLeaderCombatLab,deckRecycle:enableDeckRecycleLab,longHistory:enableLongHistoryLab});
   }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
@@ -453,7 +458,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     return reject('INVALID_LAB_COMMAND');
   if(command.expectedRevision!==state.revision)return reject('STALE_REVISION');
   if(sectionVictory(state)?.winner)return reject('MATCH_FINISHED');
-  if(state.revision>=SECTION_HISTORY_MAX_COMMANDS)return reject('SECTION_HISTORY_LIMIT_REACHED');
+  if(state.revision>=sectionHistoryCommandLimit(state))return reject('SECTION_HISTORY_LIMIT_REACHED');
   // Defensive review and mandatory leader evasion belong to the opponent.
   // All other commands require the acting side.
   const actingSide=SECTION_DICE_COMMANDS.includes(command.type)?sectionCombatSide(state):state.turn;
@@ -814,7 +819,7 @@ export function applySectionHistoryLabCommand(state,command={}){
 /** Rebuild an entire state from a server-only initial snapshot and private commands. */
 export function replaySectionHistoryLab(initialState,commands){
   assertSectionHistoryLab(initialState);
-  if(initialState.revision!==0||!Array.isArray(commands)||commands.length>SECTION_HISTORY_MAX_COMMANDS)
+  if(initialState.revision!==0||!Array.isArray(commands)||commands.length>sectionHistoryCommandLimit(initialState))
     fail('INVALID_SECTION_HISTORY_REPLAY');
   let state=copy(initialState);
   for(const command of commands){
@@ -831,7 +836,7 @@ export function projectSectionHistoryLab(state,side){
   const other=side==='A'?'B':'A';
   return Object.freeze({revision:state.revision,you:side,turn:state.turn,
     phase:state.phase, yourHand:copy(state.hands[side]),
-    ...(state.revision>=SECTION_HISTORY_MAX_COMMANDS?{historyLimitReached:true}:{}),
+    ...(state.revision>=sectionHistoryCommandLimit(state)?{historyLimitReached:true}:{}),
     opponentCardCount:state.hands[other].length,
     drawPileCount:state.drawPile.length,
     discardPile:state.discardPile.map(c=>c.definitionId),
@@ -849,7 +854,7 @@ export function projectSectionHistoryLab(state,side){
         combatLab:{movementClosed:state.combatLab.movementClosed,
           plan:copy(state.combatLab.plan),
           ...(state.diceLab?.version>=18?{pendingWarriorCharges:pendingWarriorCharges(state)}:{}),
-          candidates:state.revision<SECTION_HISTORY_MAX_COMMANDS&&!sectionVictory(state)?.winner&&state.turn===side&&state.combatLab.movementClosed&&!state.combatLab.plan&&!state.diceLab?.last?.battleBackPending&&!state.diceLab?.last?.momentum?.pending
+          candidates:state.revision<sectionHistoryCommandLimit(state)&&!sectionVictory(state)?.winner&&state.turn===side&&state.combatLab.movementClosed&&!state.combatLab.plan&&!state.diceLab?.last?.battleBackPending&&!state.diceLab?.last?.momentum?.pending
             ?state.diceLab?.last?.momentum?.bonusPending?bonusCloseCandidates(state):state.orderSnapshot.pieces.filter(p=>p.kind==='UNIT'&&p.side===side)
               .flatMap(p=>combatTargets(state).filter(u=>u.side!==side).flatMap(u=>{
                 const ranged=screenRangedPlan(state,p.id,u.id);

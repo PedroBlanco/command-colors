@@ -562,3 +562,41 @@ test('CCWB casualties: elimination and banner survive reopen and do not double a
  assert.deepEqual(other.bridge.view('B').diceLab.banners,{A:1,B:0});
  assert.equal(JSON.parse(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=7').get(MATCH).payload).unitEliminated,true);
 }));
+
+test('CCWB V21: persists beyond revision 256 and verifies replay after reopening',()=>fixture(({root,connect})=>{
+  const c=setup();
+  c.cardInstances=c.cardInstances.slice(0,2);c.handSizes={A:1,B:1};
+  c.sectorCells=Object.fromEntries(Array.from({length:13},(_,col)=>Array.from({length:9},(_,row)=>[
+    col+','+row,[col<4?'LEFT':col>8?'RIGHT':'CENTER']])).flat());
+  Object.assign(c,{movementUnitTypes:{unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'},enableCombatLab:true,
+    enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,
+    enableSpecialFootLab:true,enableLoneLeaderCombatLab:true,enableDeckRecycleLab:true,enableLongHistoryLab:true,victoryTargets:{A:3,B:3}});
+  const boot=root.bridge.initialize('A',c);assert.equal(boot.code,'SECTION_LAB_INITIALIZED');
+  let actor='A',revision=0,last,view=root.bridge.view(actor);
+  const run=(type,fields={})=>{
+    last=req(type,revision,{actor,...fields});
+    const out=root.bridge.dispatch(last);
+    assert.equal(out.code,'SECTION_LAB_APPLIED');
+    revision=out.revision;view=out.view;
+  };
+  for(let i=0;i<87;i++){
+    run('PLAY_SECTION_CARD',{cardInstanceId:view.yourHand[0].instanceId});
+    run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});
+    run('END_EXPERIMENTAL_TURN');
+    actor=actor==='A'?'B':'A';view=root.bridge.view(actor);
+    assert.equal(view.historyLimitReached,undefined);
+  }
+  assert.equal(revision,261);
+  const second=connect();
+  assert.deepEqual(second.bridge.view(actor),view);
+  assert.equal(second.bridge.dispatch(last).code,'ALREADY_APPLIED');
+  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events').get().n,261);
+  assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,261);
+  const event=root.db.prepare('SELECT payload FROM game_events WHERE sequence=257').get();
+  const altered=JSON.parse(event.payload);altered.side=altered.side==='A'?'B':'A';
+  root.db.prepare('UPDATE game_events SET payload=? WHERE sequence=257').run(JSON.stringify(altered));
+  assert.throws(()=>second.bridge.view(actor),/SECTION_CCWB_HISTORY_TAMPERED/);
+}));
