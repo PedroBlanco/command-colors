@@ -81,6 +81,8 @@ export function sectionMomentumOptions(state){
   const available=c=>!state.board.units.some(u=>u.id!==unit.id&&hex(u)===hex(c))&&
     !state.board.leaders.some(l=>l.id!==attached?.id&&hex(l)===hex(c)&&
       (l.side!==unit.side||!!attached));
+  // A normal move that entered forest must end there for this turn.
+  if(state.combatLab.movement[unit.id]?.steps&&terrainAt(unit)==='FOREST')return [];
   const first={col:m.hex.col,row:m.hex.row};
   if(!available(first))return [];
   const options=[];
