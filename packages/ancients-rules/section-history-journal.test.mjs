@@ -1726,6 +1726,7 @@ test('V26 Darken the Sky: two separately resolved shots, mandatory eligible orde
 test('V27 Move-Fire-Move: two independent moves with optional fire, leader and replay',()=>{
  for(const fire of [true,false]){
   const c=tacticalCardSetup('MOVE_FIRE_MOVE',true,5);c.enableMoveFireMoveLab=true;
+  if(fire)c.movementTerrain=[{col:3,row:4,kind:'FORDABLE_RIVER'}];
   c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
   const initial=init(c);let s=initial;const log=[];
   const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};

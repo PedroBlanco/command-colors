@@ -109,3 +109,7 @@ test('opposite edge obstructions may combine different categories',()=>{
     terrain:terrain('FOREST',at(3,3)),leaders:[at(3,4)]
   }).reason,'BOTH_SIDES_OF_EDGE');
 });
+
+test('water terrain and bridges do not obstruct an otherwise clear sightline',()=>{
+  for(const kind of ['RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE'])assert.equal(check(at(2,4),at(6,4),{terrain:terrain(kind,at(4,4))}).status,'VISIBLE');
+});

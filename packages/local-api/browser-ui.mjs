@@ -416,7 +416,7 @@ function renderAncients() {
   el('ancients-morale-controls').hidden=!morale&&!decision;
   el('ancients-confirm-morale').disabled=stopped||!dice?.canChooseMorale;
   el('ancients-morale-status').textContent=morale
-    ?`Banderas: ${morale.flags}; máximo ignorable: ${morale.maxIgnored}. Líder: ${morale.attachedLeader?'sí':'no'}; apoyo: ${morale.supported?'sí':'no'}; guerreros al completo: ${morale.fullWarrior?'sí':'no'}.`+(decision?` Ignoradas: ${decision.ignored}; pendientes de retirada: ${decision.remaining}.`:'')
+    ?`Banderas: ${morale.flags}; máximo ignorable: ${morale.maxIgnored}. Líder: ${morale.attachedLeader?'sí':'no'}; apoyo: ${morale.supported?'sí':'no'}; guerreros al completo: ${morale.fullWarrior?'sí':'no'}.`+(morale.bridgeDefense?' Protección del puente: una bandera adicional.':'')+(decision?` Ignoradas: ${decision.ignored}; pendientes de retirada: ${decision.remaining}.`:'')
     :decision?`Banderas ignoradas: ${decision.ignored}; aceptadas: ${decision.remaining}.`:'';
   const retreat=dice?.retreat,retreatChoice=el('ancients-retreat-choice'),oldRetreat=retreatChoice.value;
   retreatChoice.replaceChildren();

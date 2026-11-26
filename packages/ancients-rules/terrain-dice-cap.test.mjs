@@ -69,3 +69,12 @@ test('reject unsupported or unspecified battle/terrain values',()=>{
     [undefined,'CLEAR','CLOSE'], ['HILL',undefined,'RANGED']])
     assert.throws(()=>cap('HEAVY_INFANTRY',from,to,kind),/INVALID_TERRAIN_BATTLE/);
 });
+
+test('ford and bridge cap close combat and outgoing ranged fire, not incoming fire',()=>{
+  for(const kind of ['FORDABLE_RIVER','BRIDGE']){
+    assert.equal(cap('HEAVY_INFANTRY',kind,'CLEAR').maxDice,2);
+    assert.equal(cap('HEAVY_INFANTRY','CLEAR',kind).maxDice,2);
+    assert.equal(cap('LIGHT_BOW_INFANTRY',kind,'CLEAR','RANGED').maxDice,1);
+    assert.equal(cap('LIGHT_BOW_INFANTRY','CLEAR',kind,'RANGED').maxDice,null);
+  }
+});
