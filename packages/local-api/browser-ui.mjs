@@ -29,6 +29,7 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-finalize-ranged':'ancients-combat-feedback',
   'ancients-archive-ranged':'ancients-combat-feedback',
   'ancients-decline-battle-back':'ancients-combat-feedback',
+  'ancients-accept-battle-back':'ancients-combat-feedback',
   'ancients-confirm-unit-evade':'ancients-combat-feedback',
   'ancients-roll-leader':'ancients-combat-feedback',
   'ancients-evade-leader':'ancients-combat-feedback',
@@ -280,7 +281,7 @@ function renderAncients() {
   if(candidates.length)choice.value=candidates[Number(oldChoice)]?oldChoice||'0':'0';
   el('ancients-prepare-ranged').disabled=!isTurn||!candidates.length||Boolean(combat?.plan);
   const dice=cached.diceLab,pending=dice?.pending,last=dice?.last;
-  el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan||!!pending||!!combat?.plan?.evadeOptions?.length;
+  el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan||!!pending||!!combat?.plan?.evadeOptions?.length||!!combat?.plan?.battleBack;
   const plan=combat?.plan;
   el('ancients-combat-status').textContent=plan
     ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}).`
@@ -305,7 +306,7 @@ function renderAncients() {
   el('ancients-unit-evade-status').textContent=dice?.unitEvadePending
     ?dice.canChooseUnitEvade?'Elige permanecer o evadir antes de la tirada.':'El defensor debe decidir antes de tirar.'
     :'';
-  const mayRoll=!!dice&&isTurn&&!!plan&&!pending&&!dice.unitEvadePending;
+  const mayRoll=!!dice&&!stopped&&(dice.combatSide??cached.turn)===cached.you&&!!plan&&!pending&&!dice.unitEvadePending;
   el('ancients-roll-digital').disabled=!mayRoll;
   el('ancients-declare-physical').disabled=!mayRoll;
   for(let i=1;i<=5;i++){
@@ -314,8 +315,11 @@ function renderAncients() {
   }
   el('ancients-decline-battle-back').hidden=!dice?.battleBackPending;
   el('ancients-decline-battle-back').disabled=stopped||!dice?.canDeclineBattleBack;
+  el('ancients-accept-battle-back').hidden=!dice?.battleBackPending;
+  el('ancients-accept-battle-back').disabled=stopped||!dice?.canAcceptBattleBack;
   if(dice?.battleBackPending)el('ancients-combat-status').textContent=
-    'Respuesta al combate pendiente. Solo el defensor puede renunciar; la ejecución de Battle Back aún no está implementada.';
+    'Respuesta al combate pendiente. El defensor debe decidir si responde o renuncia.';
+  if(plan?.battleBack)el('ancients-combat-status').textContent=`Respuesta al combate: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
   el('ancients-accept-physical').disabled=stopped||!dice?.canReview;
   el('ancients-dispute-physical').disabled=stopped||!dice?.canReview;
   el('ancients-finalize-ranged').disabled=stopped||!dice?.canFinalize;
@@ -993,6 +997,7 @@ action('ancients-confirm-unit-evade',()=>{
   if(!path)throw Error('INVALID_UNIT_EVADE_PATH');
   return sendAncients('CHOOSE_SECTION_UNIT_EVADE_LAB',{path});
 });
+action('ancients-accept-battle-back',()=>sendAncients('ACCEPT_SECTION_BATTLE_BACK_LAB'));
 action('ancients-decline-battle-back',()=>sendAncients('DECLINE_SECTION_BATTLE_BACK_LAB'));
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));
 action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));

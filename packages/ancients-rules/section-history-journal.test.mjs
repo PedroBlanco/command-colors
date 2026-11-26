@@ -961,3 +961,45 @@ test('V12 unit evade: decision precedes dice, only color hits, survives and move
  const stand=apply(prepared,cmd('CHOOSE_SECTION_UNIT_EVADE_LAB',4,{actor:'B',path:[]})).nextState;
  assert.deepEqual(stand.combatLab.plan.evadePath,[]);
 });
+
+test('V13 battle back: reversed combat roles, no extra orders or recursion, replay and victory',()=>{
+ for(const winning of [false,true]){
+  const c=rangedLabSetup({targetCol:3});
+  Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,
+    enableRetreatLab:true,enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,
+    enableRampageLeaderLab:true,enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,
+    enableUnitEvadeLab:true,enableBattleBackLab:true,victoryTargets:{A:3,B:winning?1:3}});
+  c.movementUnitTypes.a1='HEAVY_INFANTRY';
+  const {initial,ordered,commands}=rangedLabReady(c);
+  const log=[...commands];let s=ordered;
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);
+    assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:['LIGHT','LIGHT','LIGHT','LIGHT','LIGHT']});
+  run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+  run('FINALIZE_SECTION_RANGED_LAB');
+  assert.equal(project(s,'B').diceLab.canAcceptBattleBack,true);
+  assert.equal(apply(s,cmd('ACCEPT_SECTION_BATTLE_BACK_LAB',s.revision)).code,'BATTLE_BACK_NOT_AVAILABLE');
+  run('ACCEPT_SECTION_BATTLE_BACK_LAB',{actor:'B'});
+  assert.equal(s.turn,'A');assert.equal(s.combatLab.plan.battleBack,true);
+  assert.equal(s.combatLab.plan.attackerId,'b1');assert.equal(s.combatLab.plan.diceCount,5);
+  assert.equal(project(s,'B').diceLab.combatSide,'B');
+  assert.equal(apply(s,cmd('ROLL_SECTION_RANGED_DIGITAL_LAB',s.revision)).code,'NOT_YOUR_TURN');
+  assert.equal(apply(s,cmd('CANCEL_SECTION_RANGED_LAB',s.revision)).code,'CLOSE_ATTACK_DECLARED');
+  assert.equal(apply(s,cmd('END_EXPERIMENTAL_TURN',s.revision)).code,'COMBAT_PLAN_PENDING');
+  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',faces:winning?['HEAVY','HEAVY','HEAVY','HEAVY','LIGHT']:['HEAVY','LIGHT','LIGHT','LIGHT','LIGHT']});
+  assert.equal(project(s,'A').diceLab.canReview,true);
+  assert.equal(project(s,'B').diceLab.canReview,false);
+  run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true});
+  if(!winning)run('FINALIZE_SECTION_RANGED_LAB',{actor:'B'});
+  assert.equal(s.diceLab.blocks.a1,winning?undefined:3);
+  assert.deepEqual(s.diceLab.resolvedUnitIds,['a1']);
+  assert.equal(s.diceLab.last.attackKind,'BATTLE_BACK');
+  assert.equal(s.diceLab.last.battleBackPending,false);
+  assert.equal(s.combatLab.plan,null);
+  assert.equal(project(s,'A').diceLab.victory.winner,winning?'B':null);
+  assert.equal(s.turn,'A');
+  assert.deepEqual(replay(initial,log),s);
+ }
+});
