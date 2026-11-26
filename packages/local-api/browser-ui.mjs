@@ -204,7 +204,7 @@ function renderAncients() {
       :'solo hexágonos despejados')+'.';
   const selection=cached.selectionCard;
   const clash=(cached.effectiveCardInPlay??cached.cardInPlay)==='CLASH_OF_SHIELDS',darken=!!cached.diceLab?.darken,noMove=clash||darken;
-  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho',DARKEN_THE_SKY:'Oscurecer el cielo',MOVE_FIRE_MOVE:'Mover, disparar y mover',RALLY:'Reagrupar',I_AM_SPARTACUS:'Yo soy Espartaco',COUNTER_ATTACK:'Contraataque'};
+  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho',DARKEN_THE_SKY:'Oscurecer el cielo',MOVE_FIRE_MOVE:'Mover, disparar y mover',RALLY:'Reagrupar',I_AM_SPARTACUS:'Yo soy Espartaco',COUNTER_ATTACK:'Contraataque',FIRST_STRIKE:'Primer golpe'};
   if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':selection.family==='LEADERSHIP'?' (grupo contiguo desde un líder válido o una sola unidad; sin separar líderes adjuntos)':selection.connected?' (grupo de unidades contiguas)':'');
   if(cached.cardInPlay==='COUNTER_ATTACK')el('ancients-status').textContent+=' · Contraataque: '+(cardNames[cached.effectiveCardInPlay]??cached.effectiveCardInPlay);
   if(darken)el('ancients-status').textContent+=' · Doble disparo: '+cached.diceLab.resolvedUnitIds.length+' unidades han disparado, '+cached.diceLab.darken.twice.length+' dos veces';
@@ -307,7 +307,7 @@ function renderAncients() {
   if(candidates.length)choice.value=candidates[Number(oldChoice)]?oldChoice||'0':'0';
   el('ancients-prepare-ranged').disabled=!isTurn||!candidates.length||Boolean(combat?.plan);
   const dice=cached.diceLab,pending=dice?.pending,last=dice?.last;
-  el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan||!!pending||!!combat?.plan?.evadeOptions?.length||!!combat?.plan?.battleBack||!!combat?.plan?.bonusClose;
+  el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan||!!pending||!!combat?.plan?.evadeOptions?.length||!!combat?.plan?.battleBack||!!combat?.plan?.bonusClose||!!dice?.firstStrikePending||!!dice?.firstStrikeResumed;
   const plan=combat?.plan;
   el('ancients-combat-status').textContent=plan
     ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}${plan.cardBonusDice?' · carta +'+plan.cardBonusDice:''}).`
@@ -332,7 +332,7 @@ function renderAncients() {
   el('ancients-unit-evade-status').textContent=dice?.unitEvadePending
     ?dice.canChooseUnitEvade?'Elige permanecer o evadir antes de la tirada.':'El defensor debe decidir antes de tirar.'
     :'';
-  const mayRoll=!!dice&&!stopped&&(dice.combatSide??cached.turn)===cached.you&&!!plan&&!pending&&!dice.unitEvadePending;
+  const mayRoll=!!dice&&!stopped&&(dice.combatSide??cached.turn)===cached.you&&!!plan&&!pending&&!dice.unitEvadePending&&!dice.firstStrikePending;
   el('ancients-roll-digital').disabled=!mayRoll;
   el('ancients-declare-physical').disabled=!mayRoll;
   const rerollField=el('ancients-elephant-rerolls');
@@ -347,11 +347,15 @@ function renderAncients() {
     el('ancients-physical-die-'+i).disabled=!mayRoll||i>(plan?.diceCount??0);
     if(i>1)el('ancients-physical-die-'+i+'-label').hidden=i>(plan?.diceCount??0);
   }
-  el('ancients-decline-battle-back').hidden=!dice?.battleBackPending;
-  el('ancients-decline-battle-back').disabled=stopped||!dice?.canDeclineBattleBack;
-  el('ancients-accept-battle-back').hidden=!dice?.battleBackPending;
-  el('ancients-accept-battle-back').disabled=stopped||!dice?.canAcceptBattleBack;
-  if(dice?.battleBackPending)el('ancients-combat-status').textContent=
+  const first=dice?.firstStrikePending;
+  el('ancients-decline-battle-back').textContent=first?'No jugar Primer golpe':'Renunciar a responder';
+  el('ancients-decline-battle-back').hidden=!first&&!dice?.battleBackPending;
+  el('ancients-decline-battle-back').disabled=stopped||!(first?dice.canDeclineFirstStrike:dice?.canDeclineBattleBack);
+  el('ancients-accept-battle-back').textContent=first?'Jugar Primer golpe':'Responder al combate';
+  el('ancients-accept-battle-back').hidden=!first&&!dice?.battleBackPending;
+  el('ancients-accept-battle-back').disabled=stopped||!(first?dice.canAcceptFirstStrike:dice?.canAcceptBattleBack);
+  if(first)el('ancients-combat-status').textContent='Primer golpe: el defensor debe decidir antes de la tirada.';
+  else if(dice?.battleBackPending)el('ancients-combat-status').textContent=
     'Respuesta al combate pendiente. El defensor debe decidir si responde o renuncia.';
   const momentumChoice=el('ancients-momentum-choice'),oldMomentum=momentumChoice.value;
   momentumChoice.replaceChildren();
@@ -374,7 +378,8 @@ function renderAncients() {
   if(isTurn&&!plan&&!dice?.momentumPending&&!dice?.battleBackPending&&!dice?.bonusClosePending&&combat?.pendingWarriorCharges?.length)
     el('ancients-combat-status').textContent='Carga obligatoria pendiente: '+combat.pendingWarriorCharges.join(', ')+'. Selecciona un combate cuerpo a cuerpo.';
   if(plan?.bonusClose)el('ancients-combat-status').textContent=`Combate adicional: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
-  if(plan?.battleBack)el('ancients-combat-status').textContent=`Respuesta al combate: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
+  if(plan?.firstStrike)el('ancients-combat-status').textContent=`Primer golpe: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
+  else if(plan?.battleBack)el('ancients-combat-status').textContent=`Respuesta al combate: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
   el('ancients-accept-physical').disabled=stopped||!dice?.canReview;
   el('ancients-dispute-physical').disabled=stopped||!dice?.canReview;
   el('ancients-finalize-ranged').disabled=stopped||!dice?.canFinalize;
@@ -1065,8 +1070,8 @@ action('ancients-confirm-unit-evade',()=>{
   if(!path)throw Error('INVALID_UNIT_EVADE_PATH');
   return sendAncients('CHOOSE_SECTION_UNIT_EVADE_LAB',{path});
 });
-action('ancients-accept-battle-back',()=>sendAncients('ACCEPT_SECTION_BATTLE_BACK_LAB'));
-action('ancients-decline-battle-back',()=>sendAncients('DECLINE_SECTION_BATTLE_BACK_LAB'));
+action('ancients-accept-battle-back',()=>sendAncients(cached?.diceLab?.firstStrikePending?'ACCEPT_SECTION_FIRST_STRIKE_LAB':'ACCEPT_SECTION_BATTLE_BACK_LAB'));
+action('ancients-decline-battle-back',()=>sendAncients(cached?.diceLab?.firstStrikePending?'DECLINE_SECTION_FIRST_STRIKE_LAB':'DECLINE_SECTION_BATTLE_BACK_LAB'));
 action('ancients-confirm-momentum',()=>{
   if(!cached?.diceLab?.canChooseMomentum)throw Error('MOMENTUM_NOT_AVAILABLE');
   const path=[[],...(cached.diceLab.momentumOptions??[]).map(o=>o.path)].find(p=>JSON.stringify(p)===el('ancients-momentum-choice').value);

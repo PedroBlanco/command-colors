@@ -1869,3 +1869,46 @@ test('V30 Counter Attack retains Spartacus effect after shuffle and rolls again 
  run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});run('END_EXPERIMENTAL_TURN');
  assert.deepEqual(replay(initial,log),s);
 });
+
+test('V31 First Strike: private decision, defensive roll, resumption or elimination, replacement and replay',()=>{
+ for(const mode of ['DECLINE','HIT','ELIMINATE']){
+  const c=tacticalCardSetup('ORDER_2_LEFT',true,3);
+  Object.assign(c,{enableMoveFireMoveLab:true,enableRallyLab:true,enableSpartacusLab:true,enableCounterAttackLab:true,enableFirstStrikeLab:true});
+  c.cardInstances[4].definitionId='FIRST_STRIKE';
+  const initial=init(c);let s=initial;const log=[];
+  const run=(type,fields={},actor=s.turn)=>{const command=cmd(type,s.revision,{actor,...fields}),result=apply(s,command);assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;return result;};
+  const reject=(type,fields,code,actor=s.turn)=>assert.equal(apply(s,cmd(type,s.revision,{actor,...fields})).code,code);
+  run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A.find(x=>x.definitionId==='ORDER_2_LEFT').instanceId});
+  run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});run('FINISH_SECTION_MOVEMENT_LAB');
+  run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+  assert.equal(project(s,'A').diceLab.firstStrikePending,true);
+  assert.equal(project(s,'A').diceLab.canAcceptFirstStrike,false);
+  assert.equal(project(s,'B').diceLab.canAcceptFirstStrike,true);
+  reject('ROLL_SECTION_RANGED_DIGITAL_LAB',{},'FIRST_STRIKE_DECISION_PENDING');
+  reject('ACCEPT_SECTION_FIRST_STRIKE_LAB',{},'FIRST_STRIKE_NOT_AVAILABLE');
+  if(mode==='DECLINE'){
+   run('DECLINE_SECTION_FIRST_STRIKE_LAB',{},'B');
+   assert.equal(s.combatLab.plan.attackerId,'a1');assert.equal(s.hands.B.length,2);
+  }else{
+   run('ACCEPT_SECTION_FIRST_STRIKE_LAB',{},'B');
+   assert.equal(s.turn,'A');assert.equal(s.combatLab.plan.attackerId,'b1');assert.equal(s.combatLab.plan.firstStrike,true);
+   assert.equal(s.hands.B.length,1);assert.equal(project(s,'B').diceLab.combatSide,'B');
+   const faces=Array(s.combatLab.plan.diceCount).fill('LIGHT');
+   if(mode==='HIT')faces.fill('HEAVY',1);
+   run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces},'B');run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true});
+   run('FINALIZE_SECTION_RANGED_LAB',{},'B');
+   assert.equal(s.diceLab.blocks.a1,mode==='HIT'?3:undefined);
+   if(mode==='HIT'){
+    assert.equal(s.combatLab.plan.attackerId,'a1');assert.equal(s.diceLab.firstStrike.suppress,true);
+    run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:Array(s.combatLab.plan.diceCount).fill('LIGHT')});
+    run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true},'B');run('FINALIZE_SECTION_RANGED_LAB');
+    assert.equal(s.diceLab.last.battleBackPending,false);
+   }else assert.equal(s.combatLab.plan,null);
+   assert.deepEqual(s.diceLab.resolvedUnitIds,['a1']);
+   const expected=s.drawPile.at(-1);
+   run('END_EXPERIMENTAL_TURN');assert.ok(s.hands.B.some(c=>c.instanceId===expected.instanceId));
+   assert.equal(s.hands.B.length,2);
+  }
+  assert.deepEqual(replay(initial,log),s);
+ }
+});
