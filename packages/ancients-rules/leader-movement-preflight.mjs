@@ -8,7 +8,8 @@ import {distance, inBounds} from '../hex-grid/hex.mjs';
 
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES = new Set(['A','B']);
-const TERRAINS = new Set(['FOREST','HILL','BROKEN_GROUND']);
+import {BASE_TERRAIN_TYPES,isImpassableTerrain} from './terrain-movement.mjs';
+const TERRAINS = new Set(BASE_TERRAIN_TYPES);
 const key = ({col,row}) => col+','+row;
 const validCell = x => x !== null && typeof x === 'object' && !Array.isArray(x) &&
   Number.isSafeInteger(x.col) && Number.isSafeInteger(x.row) && inBounds(x);
@@ -72,7 +73,8 @@ export function precheckAncientsLeaderPath({
     // finish in a hex already occupied by another friendly leader.
     if(i===path.length-1&&otherLeader)return blocked('FRIENDLY_LEADER_AT_DESTINATION',i);
     const ground=terrainByCell.get(cellKey);
-    if((ground==='FOREST'||ground==='BROKEN_GROUND')&&i!==path.length-1)
+    if(isImpassableTerrain(ground))return blocked('IMPASSABLE_TERRAIN',i);
+    if((ground==='FOREST'||ground==='BROKEN_GROUND'||ground==='FORDABLE_RIVER')&&i!==path.length-1)
       return blocked('LEADER_MUST_STOP_ON_TERRAIN',i);
     seen.add(cellKey);last=destination;
   }

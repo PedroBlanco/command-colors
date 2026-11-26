@@ -42,7 +42,11 @@ const TYPE_LABELS=Object.freeze({
 const TERRAIN_LABELS=Object.freeze({
   FOREST:['B','bosque','terrain-forest'],
   HILL:['C','colina','terrain-hill'],
-  BROKEN_GROUND:['A','terreno accidentado','terrain-broken']
+  BROKEN_GROUND:['A','terreno accidentado','terrain-broken'],
+  RIVER:['R','río infranqueable','terrain-river'],
+  FORDABLE_RIVER:['V','río vadeable','terrain-ford'],
+  SEACOAST:['M','costa','terrain-coast'],
+  BRIDGE:['P','puente','terrain-bridge']
 });
 
 function svgNode(doc, name, attrs = {}) {

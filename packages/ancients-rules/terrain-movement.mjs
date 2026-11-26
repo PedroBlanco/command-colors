@@ -6,7 +6,9 @@
 import {distance, inBounds} from '../hex-grid/hex.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 
-export const BASE_TERRAIN_TYPES = Object.freeze(['FOREST', 'HILL', 'BROKEN_GROUND']);
+export const BASE_TERRAIN_TYPES = Object.freeze(['FOREST', 'HILL', 'BROKEN_GROUND', 'RIVER', 'FORDABLE_RIVER', 'SEACOAST', 'BRIDGE']);
+export const isImpassableTerrain=kind=>kind==='RIVER'||kind==='SEACOAST';
+export const isImpassableHex=(terrain,cell)=>terrain.some(t=>t.col===cell.col&&t.row===cell.row&&isImpassableTerrain(t.kind));
 
 const mounted = new Set(['LIGHT_CAVALRY', 'MEDIUM_CAVALRY', 'HEAVY_CAVALRY', 'ELEPHANT', 'HEAVY_CHARIOT']);
 const forestBattleExceptions = new Set([
@@ -52,6 +54,8 @@ export function assessAncientsTerrainMovement({unitType, origin, path, terrain =
     if (visited.has(hex))
       return result('BLOCKED', 'REPEATED_HEX', i, null, 'UNAVAILABLE');
     const kind = index.get(hex) ?? 'CLEAR';
+    if(isImpassableTerrain(kind))return result('BLOCKED','IMPASSABLE_TERRAIN',i,kind,'UNAVAILABLE');
+    if(kind==='FORDABLE_RIVER'&&i!==path.length-1)return result('BLOCKED','MUST_STOP_ON_FORD_ENTRY',i,kind,'UNAVAILABLE');
     if (kind === 'BROKEN_GROUND') {
       if (unitType === 'HEAVY_WAR_MACHINE')
         return result('BLOCKED', 'WAR_MACHINE_CANNOT_ENTER_BROKEN_GROUND', i, kind, 'UNAVAILABLE');

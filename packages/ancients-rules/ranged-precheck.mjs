@@ -10,7 +10,8 @@ import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
 
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES = new Set(['A', 'B']);
-const TERRAIN_TYPES = new Set(['FOREST', 'HILL', 'BROKEN_GROUND']);
+import {BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
+const TERRAIN_TYPES = new Set(BASE_TERRAIN_TYPES);
 const key = ({col,row}) => `${col},${row}`;
 const validCell = c => c && typeof c === 'object' && !Array.isArray(c) &&
   Number.isSafeInteger(c.col) && Number.isSafeInteger(c.row) && inBounds(c);

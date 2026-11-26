@@ -7,7 +7,7 @@
 import {randomBytes,createHmac} from 'node:crypto';
 import {effectiveSectionCard} from './section-card-order-screen.mjs';
 import {neighbors,distance,inBounds} from '../hex-grid/hex.mjs';
-import {assessAncientsTerrainMovement} from './terrain-movement.mjs';
+import {assessAncientsTerrainMovement,isImpassableHex} from './terrain-movement.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS,captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice,interpretBaseAncientsCloseDice} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS,previewBaseAncientsRangedBlockLoss} from './block-loss-preview.mjs';
@@ -106,7 +106,7 @@ export function sectionMomentumOptions(state){
     !state.board.leaders.some(l=>l.id!==attached?.id&&hex(l)===hex(c)&&
       (l.side!==unit.side||!!attached));
   // A normal move that entered forest must end there for this turn.
-  if((state.combatLab.movement[unit.id]?.steps||last.attackKind==='BONUS_CLOSE'&&last.forestEntered)&&terrainAt(unit)==='FOREST')return [];
+  if((state.combatLab.movement[unit.id]?.steps||last.attackKind==='BONUS_CLOSE'&&last.forestEntered)&&['FOREST','FORDABLE_RIVER'].includes(terrainAt(unit)))return [];
   const first={col:m.hex.col,row:m.hex.row};
   if(!available(first))return [];
   const options=[];
@@ -119,7 +119,7 @@ export function sectionMomentumOptions(state){
     options.push({path,bonusEligible});
   };
   add([first],unit);
-  if(last.attackKind!=='BONUS_CLOSE'&&options.length&&momentumCavalry.has(unitType)&&!['FOREST','BROKEN_GROUND'].includes(terrainAt(first))&&
+  if(last.attackKind!=='BONUS_CLOSE'&&options.length&&momentumCavalry.has(unitType)&&terrainAt(unit)!=='FORDABLE_RIVER'&&!['FOREST','BROKEN_GROUND','FORDABLE_RIVER'].includes(terrainAt(first))&&
     !state.board.leaders.some(l=>l.id!==attached?.id&&hex(l)===hex(first))){
     for(const cell of neighbors(first))if(available(cell))add([first,{col:cell.col,row:cell.row}],first);
   }
@@ -210,7 +210,7 @@ function derivePending(state,{revision,mode,faces,review,redIgnored=undefined}){
 
 // A flag is optional only up to the server-calculated cumulative capacity.
 // Each adjacent hex counts once, even when it contains an attached leader.
-// The current terrain whitelist has no morale-granting defensive terrain.
+// Terrain protection is cumulative with ordinary morale where applicable.
 function moralePreview(state){
   const d=state.diceLab,p=d.pending;
   if(d.version<3||p?.interpretation.redIgnored===null||!p?.loss.effectiveFlagsPending||
@@ -225,9 +225,10 @@ function moralePreview(state){
   const supported=!elephant&&supportHexes.length>=2;
   // Full strength at the beginning of this combat, not after its direct hits.
   const fullWarrior=type==='WARRIOR_INFANTRY'&&p.loss.originalBlocks===BASE_UNIT_STARTING_BLOCKS[type];
-  const capacity=Number(attachedLeader)+Number(supported)+Number(fullWarrior)+Number(!!state.combatLab.plan.elephantMountedDefense);
+  const bridgeDefense=!['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT'].includes(type)&&state.footLab.terrain?.some(t=>t.kind==='BRIDGE'&&hex(t)===hex(target));
+  const capacity=Number(attachedLeader)+Number(supported)+Number(fullWarrior)+Number(!!state.combatLab.plan.elephantMountedDefense)+Number(!!bridgeDefense);
   const flags=p.loss.effectiveFlagsPending;
-  return {flags,attachedLeader,supported,fullWarrior,supportHexes,
+  return {flags,attachedLeader,supported,fullWarrior,supportHexes,...(bridgeDefense?{bridgeDefense:true}:{}),
     maxIgnored:Math.min(flags,capacity)};
 }
 
@@ -303,7 +304,7 @@ function escapeRoutes(state,leader,origin=leader){
     if(path.length<3&&cell.row===rear)options.push({path,exit:true,...extra});
     if(path.length===3||(d.version>=6&&cell.row===rear))return;
     for(const dest of neighbors(cell)){
-      if(sign*(depth(dest)-depth(cell))<=0)continue;
+      if(sign*(depth(dest)-depth(cell))<=0||isImpassableHex(state.footLab.terrain??[],dest))continue;
       const enemy=state.board.units.find(u=>u.side!==leader.side&&hex(u)===hex(dest));
       const enemyLeader=state.board.leaders.find(l=>l.side!==leader.side&&hex(l)===hex(dest));
       if(d.version<6&&(enemy||enemyLeader))continue;
@@ -346,7 +347,7 @@ function elephantContext(state){
   const units=state.board.units.filter(u=>keys.has(hex(u)));
   if(d.version>=8)units.push(...state.board.leaders.filter(l=>keys.has(hex(l))&&!state.board.units.some(u=>hex(u)===hex(l))).map(l=>({...l,loneLeader:true})));
   const sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0,depth=c=>2*c.row+(c.col&1);
-  const rearward=c=>c.row===rear?[]:neighbors(c).filter(n=>sign*(depth(n)-depth(c))>0);
+  const rearward=c=>c.row===rear?[]:neighbors(c).filter(n=>sign*(depth(n)-depth(c))>0&&!isImpassableHex(state.footLab.terrain??[],n));
   // Include every possible retreat/blocker hex, even if rampage opens a path.
   const affected=new Set([hex(target),...keys]);
   let frontier=[target];
@@ -528,8 +529,7 @@ function elephantStageShadow(state){
   return {shadow,pending};
 }
 
-// Ordinary retreats: no impassable terrain in this
-// server-owned terrain whitelist. The existing board's rearward axis is used.
+// Ordinary retreats respect impassable terrain and the board's rearward axis.
 // A deterministic representative per cell and step count bounds projection size.
 function retreatPreview(state){
   const d=state.diceLab,p=d.pending;
@@ -556,7 +556,7 @@ function retreatPreview(state){
     for(const {cell,path} of frontier.values()){
       const joined=path.length&&!attached?leaders.get(hex(cell)):null;
       const legal=steps===required||joined||cell.row===rear?[]:neighbors(cell).filter(c=>
-        sign*(depth(c)-depth(cell))>0&&!occupied.has(hex(c))&&
+        sign*(depth(c)-depth(cell))>0&&!isImpassableHex(state.footLab.terrain??[],c)&&!occupied.has(hex(c))&&
         (!leaders.has(hex(c))||(!attached&&leaders.get(hex(c)).side===target.side)));
       if(!legal.length){
         const missing=joined?0:required-steps;
@@ -1065,7 +1065,7 @@ export function applySectionDiceCommand(state,next,command){
       if(plan.bonusClose){
         const origin=state.board.units.find(u=>u.id===plan.attackerId);
         result.forestEntered=!!d.last?.momentum?.path?.some(c=>hex(c)===hex(origin)&&
-          state.footLab.terrain?.some(t=>hex(t)===hex(c)&&t.kind==='FOREST'));
+          state.footLab.terrain?.some(t=>hex(t)===hex(c)&&['FOREST','FORDABLE_RIVER'].includes(t.kind)));
       }
       // The response ends the exchange: no recursive Battle Back or evasion.
       result.battleBackPending=!!(!plan.battleBack&&!d.firstStrike?.suppress&&finalize&&!plan.evadePath?.length&&defender&&hex(defender)===hex(original)&&

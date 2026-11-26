@@ -11,7 +11,7 @@ import {BASE_UNIT_STARTING_BLOCKS} from './block-loss-preview.mjs';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS, SELECTION_CARD_DEFINITIONS, GROUP_CARD_DEFINITIONS, ATTACK_CARD_DEFINITIONS, LEADERSHIP_CARD_DEFINITIONS, FIRE_CARD_DEFINITIONS, effectiveSectionCard, selectionCardOptions, screenSelectionCardOrders} from './section-card-order-screen.mjs';
 import {ANCIENTS_RULESET,assessBaseMovement} from './movement-profile.mjs';
 import {assessAncientsMovementRegime,assessOpenHexPathGeometry} from './movement-regimes.mjs';
-import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
+import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
 import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {screenAncientsCombatTurn} from './combat-turn-guard.mjs';
@@ -71,7 +71,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
     if(!isRecord(unit)||Object.keys(unit).length!==4||
        !['id','side','col','row'].every(k=>Object.hasOwn(unit,k))||
        !validId(unit.id)||!SIDES.includes(unit.side)||!goodLoc(unit)||
-       ids.has(unit.id)||positions.has(loc(unit))||
+       ids.has(unit.id)||positions.has(loc(unit))||isImpassableHex(terrain,unit)||
        !Object.hasOwn(types,unit.id))return false;
     const regime=assessAncientsMovementRegime({
       unitType:types[unit.id],steps:1
@@ -85,7 +85,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
     if(!isRecord(leader)||Object.keys(leader).length!==4||
        !['id','side','col','row'].every(k=>Object.hasOwn(leader,k))||
        !validId(leader.id)||!SIDES.includes(leader.side)||!goodLoc(leader)||
-       ids.has(leader.id)||leaderCells.has(loc(leader)))return false;
+       ids.has(leader.id)||leaderCells.has(loc(leader))||isImpassableHex(terrain,leader))return false;
     const occupant=board.units.find(u=>loc(u)===loc(leader));
     if(occupant&&occupant.side!==leader.side)return false;
     ids.add(leader.id);leaderCells.add(loc(leader));
@@ -404,7 +404,7 @@ function unitEvadePaths(state,attacker,target){
   const depth=c=>2*c.row+(c.col&1),sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
   const attached=state.board.leaders.some(l=>l.side===target.side&&loc(l)===loc(target));
   const leaderAt=c=>state.board.leaders.find(l=>loc(l)===loc(c));
-  const available=c=>!state.board.units.some(u=>loc(u)===loc(c))&&
+  const available=c=>!isImpassableHex(state.footLab.terrain??[],c)&&!state.board.units.some(u=>loc(u)===loc(c))&&
     (!leaderAt(c)||(!attached&&leaderAt(c).side===target.side));
   const successors=c=>c.row===rear?[]:neighbors(c).filter(n=>sign*(depth(n)-depth(c))>0&&available(n));
   const full=[],short=[],join=[];

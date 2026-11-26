@@ -1917,3 +1917,17 @@ test('V31 First Strike: private decision, defensive roll, resumption or eliminat
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('water terrain in journal: ford fire cap, bridge morale, impassable retreat and replay',()=>{
+ const c=rangedLabSetup({targetCol:4,terrain:[{col:2,row:4,kind:'FORDABLE_RIVER'},{col:4,row:4,kind:'BRIDGE'},{col:4,row:3,kind:'RIVER'}]});
+ c.enableDiceLab=true;c.enableCasualtyLab=true;c.enableMoraleLab=true;c.enableRetreatLab=true;
+ const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
+ const run=(type,fields={},actor='A')=>{const command=cmd(type,s.revision,{actor,...fields}),result=apply(s,command);assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};
+ run('FINISH_SECTION_MOVEMENT_LAB');run('PREPARE_SECTION_RANGED_LAB',{attackerId:'a1',targetId:'b1'});
+ assert.equal(s.combatLab.plan.diceCount,1);
+ run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:['FLAG']});run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true},'B');
+ assert.equal(project(s,'B').diceLab.blocker,'MORALE_CHOICE_PENDING');
+ run('CHOOSE_SECTION_MORALE_LAB',{ignored:0},'B');
+ const options=project(s,'B').diceLab.retreat.options;assert.ok(options.length);assert.ok(options.every(o=>o.path.every(p=>p.col!==4||p.row!==3)));
+ run('RETREAT_SECTION_UNIT_LAB',{path:options[0].path},'B');assert.deepEqual(replay(initial,log),s);
+});

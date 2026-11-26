@@ -1,12 +1,13 @@
 /**
  * Partial Ancients base-game LOS screen (R-06), not an attack authorization.
- * Only FOREST, HILL and BROKEN_GROUND terrain are supported here. Terrain and
+ * Supported terrain is shared with the movement screen. Terrain and
  * positions MUST come from a trusted server-owned board, never a client claim.
  * Geometry uses the 13x9 odd-q hex centers and true intervening hex interiors.
  */
 import {allCells, distance, inBounds, pixelCenter, polygonPoints} from '../hex-grid/hex.mjs';
 
-const KINDS = new Set(['FOREST', 'HILL', 'BROKEN_GROUND']);
+import {BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
+const KINDS = new Set(BASE_TERRAIN_TYPES);
 const EPS = 1e-8;
 const key = ({col, row}) => `${col},${row}`;
 const cell = v => v && typeof v === 'object' && !Array.isArray(v)

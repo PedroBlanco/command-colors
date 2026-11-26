@@ -122,5 +122,12 @@ test('battle screen is about terrain only; no legal battle or movement implied',
   assert.equal(res.needsFullLegalityCheck,true);
   assert.equal(Object.isFrozen(res),true);
   assert.equal(Object.isFrozen(BASE_TERRAIN_TYPES),true);
-  assert.deepEqual(BASE_TERRAIN_TYPES,['FOREST','HILL','BROKEN_GROUND']);
+  assert.deepEqual(BASE_TERRAIN_TYPES,['FOREST','HILL','BROKEN_GROUND','RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE']);
+});
+
+test('water terrain: impassable river/coast, ford stop and open bridge',()=>{
+  for(const kind of ['RIVER','SEACOAST'])assert.equal(check('LIGHT_INFANTRY',[at(5,4)],[tile(5,4,kind)]).reason,'IMPASSABLE_TERRAIN');
+  assert.equal(check('LIGHT_CAVALRY',[at(5,4),at(6,4)],[tile(5,4,'FORDABLE_RIVER')]).reason,'MUST_STOP_ON_FORD_ENTRY');
+  assert.equal(check('LIGHT_CAVALRY',[at(5,4)],[tile(5,4,'FORDABLE_RIVER')]).battleOnEntry,'NOT_BARRED_BY_TERRAIN');
+  assert.equal(check('LIGHT_CAVALRY',[at(5,4),at(6,4)],[tile(5,4,'BRIDGE')]).status,'CANDIDATE');
 });

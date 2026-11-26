@@ -39,6 +39,8 @@ const explanations=Object.freeze({
   WARRIOR_CHARGE_COMBAT_REQUIRED:'Resuelve el combate obligatorio de los guerreros antes de terminar el turno.',
   STANDARD_FOOT_MOVEMENT_EXCEEDED:'La ruta supera la distancia de movimiento de esta unidad.',
   CLASH_MOVEMENT_FORBIDDEN:'Choque de escudos no permite movimiento antes del combate.',
+  IMPASSABLE_TERRAIN:'No se puede entrar en un río infranqueable ni en la costa.',
+  MUST_STOP_ON_FORD_ENTRY:'Debes detener el movimiento al entrar en un río vadeable.',
   FIRST_STRIKE_DECISION_PENDING:'El defensor debe decidir si juega Primer golpe antes de continuar.',
   FIRST_STRIKE_NOT_AVAILABLE:'Primer golpe no está disponible en este combate.',
   FIRST_STRIKE_CARD_REQUIRED:'No tienes una carta Primer golpe en tu mano.',
