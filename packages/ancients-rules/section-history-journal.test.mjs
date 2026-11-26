@@ -1469,8 +1469,8 @@ test('V21 long history: cross 256 with repeated deck cycles, combat candidates a
 });
 
 test('V22 selection cards: troop classes, Command, fallback, mounted leaders, sector boundaries, transit and replay',()=>{
- for(const mode of ['LIGHT','MEDIUM','HEAVY','MOUNTED','FALLBACK','COORDINATED','FLANKS','TRANSIT','BLOCKED_TRANSIT','FOREST_TRANSIT','LEGACY']){
-  const def={LIGHT:'ORDER_LIGHT_TROOPS',MEDIUM:'ORDER_MEDIUM_TROOPS',HEAVY:'ORDER_HEAVY_TROOPS',MOUNTED:'ORDER_MOUNTED_TROOPS',FALLBACK:'ORDER_HEAVY_TROOPS',COORDINATED:'COORDINATED_ATTACK',FLANKS:'OUT_FLANKED',TRANSIT:'ORDER_LIGHT_TROOPS',BLOCKED_TRANSIT:'ORDER_LIGHT_TROOPS',FOREST_TRANSIT:'ORDER_LIGHT_TROOPS',LEGACY:'ORDER_LIGHT_TROOPS'}[mode];
+ for(const mode of ['LIGHT','MEDIUM','HEAVY','MOUNTED','FALLBACK','COORDINATED','FLANKS','TRANSIT','BLOCKED_TRANSIT','FOREST_TRANSIT','COMMAND_LIMIT','MOUNTED_FALLBACK','FLANKS_BLOCKED','LEGACY']){
+  const def={LIGHT:'ORDER_LIGHT_TROOPS',MEDIUM:'ORDER_MEDIUM_TROOPS',HEAVY:'ORDER_HEAVY_TROOPS',MOUNTED:'ORDER_MOUNTED_TROOPS',FALLBACK:'ORDER_HEAVY_TROOPS',COORDINATED:'COORDINATED_ATTACK',FLANKS:'OUT_FLANKED',TRANSIT:'ORDER_LIGHT_TROOPS',BLOCKED_TRANSIT:'ORDER_LIGHT_TROOPS',FOREST_TRANSIT:'ORDER_LIGHT_TROOPS',COMMAND_LIMIT:'ORDER_LIGHT_TROOPS',MOUNTED_FALLBACK:'ORDER_MOUNTED_TROOPS',FLANKS_BLOCKED:'OUT_FLANKED',LEGACY:'ORDER_LIGHT_TROOPS'}[mode];
   const c=rangedLabSetup({targetCol:10,terrain:mode==='FOREST_TRANSIT'?[{col:3,row:4,kind:'FOREST'}]:[]});
   Object.assign(c,{enableLeaderLab:true,enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
     enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
@@ -1482,6 +1482,9 @@ test('V22 selection cards: troop classes, Command, fallback, mounted leaders, se
   c.board.leaders=[{id:'a_leader',side:'A',col:8,row:4}];
   Object.assign(c.movementUnitTypes,{a1:'LIGHT_INFANTRY',a2:'AUXILIA_INFANTRY',a3:'MEDIUM_CAVALRY',a4:mode==='FALLBACK'?'WARRIOR_INFANTRY':'HEAVY_WAR_MACHINE'});
   c.sectorCells['3,4']=['LEFT','CENTER'];c.sectorCells['8,4']=['CENTER','RIGHT'];
+  if(mode==='COMMAND_LIMIT')c.movementUnitTypes.a3='LIGHT_CAVALRY';
+  if(mode==='MOUNTED_FALLBACK')c.movementUnitTypes.a3='MEDIUM_INFANTRY';
+  if(mode==='FLANKS_BLOCKED')c.sectorCells['8,4']=['LEFT'];
   if(mode==='BLOCKED_TRANSIT')c.board.units[2].side='B';
   if(mode==='LEGACY'){assert.throws(()=>init(c),/INVALID_SECTION_HISTORY_SETUP/);continue;}
   const initial=init(c);let s=initial;const log=[];
@@ -1495,6 +1498,9 @@ test('V22 selection cards: troop classes, Command, fallback, mounted leaders, se
   if(mode==='MEDIUM'){assert.equal(check(['a1']),'ORDERS_NOT_ELIGIBLE');ids=['a3'];}
   else if(mode==='HEAVY'){assert.equal(check(['a3']),'ORDERS_NOT_ELIGIBLE');ids=['a4'];}
   else if(mode==='MOUNTED'){assert.equal(check(['a4']),'ORDERS_NOT_ELIGIBLE');ids=['a3'];leaders=['a_leader'];}
+  else if(mode==='COMMAND_LIMIT'){assert.equal(options.maximumOrders,2);assert.equal(check(['a1','a2','a3']),'ORDERS_NOT_ELIGIBLE');ids=['a1','a3'];}
+  else if(mode==='MOUNTED_FALLBACK'){assert.equal(options.fallback,true);assert.equal(check(['a1','a2']),'ORDERS_NOT_ELIGIBLE');assert.equal(check(['a1'],['a_leader']),'ORDERS_NOT_ELIGIBLE');ids=['a1'];}
+  else if(mode==='FLANKS_BLOCKED'){assert.equal(check(['a1','a2','a3','a4']),'ORDERS_NOT_ELIGIBLE');ids=['a1','a2','a4'];}
   else if(mode==='FALLBACK'){assert.equal(options.fallback,true);assert.equal(check(['a1','a2']),'ORDERS_NOT_ELIGIBLE');ids=['a1'];}
   else if(mode==='COORDINATED'){ids=['a1','a2','a3'];assert.equal(check(['a1','a2','a3','a4']),'ORDERS_NOT_ELIGIBLE');}
   else if(mode==='FLANKS'){ids=['a1','a2','a3','a4'];assert.equal(check(ids,['a_leader']),'ORDERS_NOT_ELIGIBLE');}
