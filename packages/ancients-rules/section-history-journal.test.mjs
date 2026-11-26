@@ -1995,3 +1995,33 @@ test('marsh terrain: ordered mounted move, deterministic loss and leader checks,
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('marsh terrain: ordinary retreat and unit evade roll per entered marsh hex',()=>{
+ for(const mode of ['RETREAT','EVADE']){
+  const c=tacticalCardSetup('ORDER_2_LEFT',true,mode==='RETREAT'?4:3);
+  Object.assign(c,{enableMoveFireMoveLab:true,enableRallyLab:true,enableSpartacusLab:true,enableCounterAttackLab:true,enableFirstStrikeLab:true});
+  c.movementUnitTypes.a1=mode==='RETREAT'?'LIGHT_INFANTRY':'HEAVY_INFANTRY';
+  c.movementUnitTypes.b1=mode==='RETREAT'?'LIGHT_CAVALRY':'LIGHT_INFANTRY';
+  c.movementTerrain=Array.from({length:39},(_,i)=>({col:Math.floor(i/3),row:i%3+1,kind:'MARSH'}));
+  const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
+  const run=(type,fields={},actor='A')=>{const command=cmd(type,s.revision,{actor,...fields}),result=apply(s,command);assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;return result;};
+  run('FINISH_SECTION_MOVEMENT_LAB');run(mode==='RETREAT'?'PREPARE_SECTION_RANGED_LAB':'PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+  let path;
+  if(mode==='EVADE'){
+   run('DECLINE_SECTION_FIRST_STRIKE_LAB',{},'B');
+   path=s.combatLab.plan.evadeOptions.find(p=>p.every(h=>h.row>=1&&h.row<=3));assert.ok(path);
+   run('CHOOSE_SECTION_UNIT_EVADE_LAB',{path},'B');
+  }
+  const original=s.diceLab.blocks.b1,faces=Array(s.combatLab.plan.diceCount).fill('HEAVY');
+  if(mode==='RETREAT')faces[0]='FLAG';
+  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true},'B');
+  if(mode==='RETREAT'){
+   path=project(s,'B').diceLab.retreat.options.find(o=>o.blocksLost===0&&o.path.filter(h=>h.row>=1&&h.row<=3).length>=2)?.path;assert.ok(path);
+   run('RETREAT_SECTION_UNIT_LAB',{path},'B');
+  }else run('FINALIZE_SECTION_RANGED_LAB');
+  const checks=s.diceLab.last.marshChecks;assert.ok(checks.length>=2);
+  assert.equal(s.diceLab.blocks.b1??0,original-checks.reduce((n,x)=>n+x.blocksLost,0));
+  assert.deepEqual(project(s,'B').diceLab.marshLast,checks);
+  assert.deepEqual(replay(initial,log),s);
+ }
+});

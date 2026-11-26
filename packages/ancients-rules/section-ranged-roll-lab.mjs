@@ -74,7 +74,7 @@ export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=fals
     ...(spartacus?{spartacusFaces:null}:{}),
     ...(counterAttack?{counter:{previous:null,previousSection:null,effect:null,section:null}}:{}),
     ...(firstStrike?{firstStrike:{window:false,original:null,prior:null,suppress:false,replacements:0}}:{}),
-    ...(marsh?{marshPending:null}:{}),
+    ...(marsh?{marshPending:null,marshLast:null}:{}),
     ...(casualties?{casualties:[],leaderCheck:null}:{}),
     ...(morale?{morale:null}:{}),
     ...(retreatLeaders?{retreatPending:null}:{}),
@@ -652,6 +652,7 @@ export function applyMarshUnitPath(next,id,attachedId,path,revision){
     }
     if(eliminated||sectionVictory(next)?.winner)break;
   }
+  next.diceLab.marshLast=checks;
   return checks;
 }
 export function applyMarshLeaderPath(next,id,path,revision){
@@ -665,6 +666,7 @@ export function applyMarshLeaderPath(next,id,path,revision){
     checks.push({leaderId:id,cell:{...cell},face,leaderEliminated});
     if(leaderEliminated){rampageLeaderLoss(next,leader,revision);break;}
   }
+  next.diceLab.marshLast=checks;
   return checks;
 }
 export function marshLeaderOptions(state){
@@ -793,7 +795,7 @@ function markSectionBattle(d,plan){
 export function assertSectionDiceLab(state){
   const d=state.diceLab;
   if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32].includes(d.version)||!keyOK(d.key)||
-     Object.keys(d).length!==(d.version>=32?20:d.version>=31?19:d.version>=30?18:d.version>=29?17:d.version>=28?16:d.version>=27?15:d.version>=26?14:d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
+     Object.keys(d).length!==(d.version>=32?21:d.version>=31?19:d.version>=30?18:d.version>=29?17:d.version>=28?16:d.version>=27?15:d.version>=26?14:d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
      Object.keys(d.blocks).length!==state.board.units.length||
      state.board.units.some(u=>!Object.hasOwn(d.blocks,u.id)||
        !Number.isSafeInteger(d.blocks[u.id])||d.blocks[u.id]<1||
@@ -821,6 +823,7 @@ export function assertSectionDiceLab(state){
     const rolling=state.phase==='ASSIGN_ORDERS'&&effectiveSectionCard(state)==='I_AM_SPARTACUS';
     if(rolling?(!Array.isArray(d.spartacusFaces)||d.spartacusFaces.length!==state.handAtPlay.cards.length||d.spartacusFaces.some(f=>!ANCIENTS_BATTLE_DIE_FACES.includes(f))):d.spartacusFaces!==null)fail();
   }
+  if(d.version>=32&&d.marshLast!==null&&(!Array.isArray(d.marshLast)||d.marshLast.length<1||d.marshLast.length>10||d.marshLast.some(c=>!record(c)||!record(c.cell)||!inBounds(c.cell)||!ANCIENTS_BATTLE_DIE_FACES.includes(c.face))))fail();
   if(d.version>=32&&d.marshPending!==null&&(!record(d.marshPending)||Object.keys(d.marshPending).length!==1||
     !state.board.leaders.some(l=>l.id===d.marshPending.leaderId&&!state.board.units.some(u=>hex(u)===hex(l)))||d.pending||state.combatLab.plan||state.phase!=='LAB_RESOLUTION_PENDING'))fail();
   if(d.last?.momentum?.pending&&!sectionMomentumOptions(state).length)fail();
@@ -1135,7 +1138,7 @@ export function applySectionDiceCommand(state,next,command){
       ...(marshChecks.length?{marshChecks}:{}),
       blocksRemaining:next.diceLab.blocks[plan.targetId]??0,
       ...(d.version>=2?{leaderCheck:structuredClone(effectiveLeaderCheck(d)),
-        unitEliminated:finalize&&(p.loss.unitWouldBeEliminated||!!retreatChoice&&retreatChoice.blocksLost===p.loss.remainingBlocks||marshChecks.some(c=>c.unitEliminated)),
+        unitEliminated:finalize&&(p.loss.unitWouldBeEliminated||!!retreatChoice&&retreatChoice.blocksLost===p.loss.remainingBlocks||marshChecks.length>0&&!Object.hasOwn(next.diceLab.blocks,plan.targetId)),
         leaderEliminated:finalize&&(!!p.loss.leaderWouldBeEliminated||!!effectiveLeaderCheck(d)?.outcome.leaderWouldBeEliminated||!!escape?.eliminated||marshChecks.some(c=>c.leaderEliminated)),
         ...(plan.loneLeader?{loneLeader:true}:{}),
         banners:banners(next.diceLab)}:{}),
@@ -1198,7 +1201,7 @@ export function projectSectionDiceLab(state,side){
     ...(d.version>=27?{moveFireMove:d.moveFireMove}:{}),
     ...(d.version>=28?{rallyFaces:structuredClone(d.rallyFaces)}:{}),
     ...(d.version>=29?{spartacusFaces:structuredClone(d.spartacusFaces)}:{}),
-    ...(d.version>=32?{marshPending:structuredClone(d.marshPending)}:{}),
+    ...(d.version>=32?{marshPending:structuredClone(d.marshPending),marshLast:structuredClone(d.marshLast)}:{}),
     ...(d.version>=31?{firstStrikePending:d.firstStrike.window,canDeclineFirstStrike:side!==state.turn&&d.firstStrike.window,canAcceptFirstStrike:side!==state.turn&&d.firstStrike.window&&state.hands[side].some(c=>c.definitionId==='FIRST_STRIKE'),firstStrikeResumed:d.firstStrike.suppress}:{}),
     pending:p?structuredClone(p):null,last:d.last?structuredClone(d.last):null,
     canReview:side!==sectionCombatSide(state)&&p?.review==='AWAITING_OPPONENT',
@@ -1245,7 +1248,7 @@ export function resetSectionDiceTurn(next){
   if(next.diceLab.version>=27)next.diceLab.moveFireMove=null;
   if(next.diceLab.version>=28)next.diceLab.rallyFaces=null;
   if(next.diceLab.version>=29)next.diceLab.spartacusFaces=null;
-  if(next.diceLab.version>=32)next.diceLab.marshPending=null;
+  if(next.diceLab.version>=32){next.diceLab.marshPending=null;next.diceLab.marshLast=null;}
   if(next.diceLab.version>=31)next.diceLab.firstStrike={window:false,original:null,prior:null,suppress:false,replacements:0};
   next.diceLab.pending=null;
   next.diceLab.last=null;
