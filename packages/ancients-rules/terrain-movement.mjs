@@ -20,9 +20,9 @@ export function validRampartSides(sides){
   return Array.isArray(sides)&&[2,3].includes(sides.length)&&sides.every(i=>Number.isInteger(i)&&i>=0&&i<6)&&
     new Set(sides).size===sides.length&&sides.some(start=>Array.from({length:sides.length},(_,i)=>(start+i)%6).every(i=>sides.includes(i)));
 }
-export function terrainTileShapeOK(tile){
+export function terrainTileShapeOK(tile,strict=false){
   return !!tile&&typeof tile==='object'&&!Array.isArray(tile)&&BASE_TERRAIN_TYPES.includes(tile.kind)&&
-    Object.keys(tile).length===(tile.kind==='RAMPART'?4:3)&&['col','row','kind'].every(k=>Object.hasOwn(tile,k))&&
+    (!strict||Object.keys(tile).length===(tile.kind==='RAMPART'?4:3))&&['col','row','kind'].every(k=>Object.hasOwn(tile,k))&&
     (tile.kind!=='RAMPART'||validRampartSides(tile.sides));
 }
 export function fortificationProtects(terrain,attacker,target,targetType){

@@ -60,7 +60,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
      !Array.isArray(terrain)||terrain.length>117)return false;
   const hexes=new Set();
   for(const tile of terrain){
-    if(!isRecord(tile)||!terrainTileShapeOK(tile)||
+    if(!isRecord(tile)||!terrainTileShapeOK(tile,true)||
        !goodLoc(tile)||!BASE_TERRAIN_TYPES.includes(tile.kind)||
        hexes.has(loc(tile)))return false;
     hexes.add(loc(tile));
