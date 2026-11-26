@@ -451,7 +451,10 @@ function renderAncients() {
     LEADER_CHECK_PENDING:'comprobación de líder',RETREAT_PENDING:'retirada',
     LEADER_EVASION_PENDING:'evasión del líder superviviente',MORALE_CHOICE_PENDING:'decisión de moral del defensor',ELEPHANT_RETREAT_EVASION_PENDING:'evasión de líder tras retirada de elefante',
     PHYSICAL_ROLL_DISPUTED:'desacuerdo sobre la tirada física'};
-  el('ancients-dice-status').textContent=shown
+  el('ancients-dice-status').textContent=shown?.loss.kind==='LONE_LEADER_LOSS'
+    ?`${reviewNames[shown.review]??'Tirada'} contra líder: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}. ${shown.loss.leaderWouldBeEliminated?'Impacto de líder.':'Sin impacto de líder.'}`+
+      (pending?(dice.blocker?` Pendiente: ${blockerNames[dice.blocker]??'efecto no disponible'}.`:' Aún no se ha aplicado el resultado.'):'')
+    :shown
     ?`${reviewNames[shown.review]??'Tirada'}: ${shown.roll.results.map(x=>faceNames[x]??x).join(', ')}${shown.interpretation.rerolls?.length?' · Repeticiones: '+shown.interpretation.rerolls.map(x=>faceNames[x]??x).join(', '):''}${shown.interpretation.chariotSwordIgnored?' · Primera espada ignorada':''}. Impactos: ${shown.interpretation.hits??shown.interpretation.matchingColorHits}; banderas: ${shown.interpretation.flagsPending}; bloques previstos tras impactos: ${shown.loss.remainingBlocks}.`+
       (pending?(dice.blocker?` Pendiente: ${blockerNames[dice.blocker]??'efecto no disponible'}.`:' Aún no se han aplicado bajas.')
         :last.outcome==='DIRECT_HITS_APPLIED'?` Bloques retirados: ${last.blocksApplied}; quedan ${last.blocksRemaining}.`:' Archivado sin aplicar efectos (solo laboratorio).')
@@ -461,7 +464,7 @@ function renderAncients() {
     ?`Líder ${leaderCheck.leaderId}: ${leaderCheck.roll.results.map(x=>faceNames[x]??x).join(', ')}. ${leaderCheck.outcome.leaderWouldBeEliminated?'Resultado: baja de líder.':'Resultado: líder superviviente.'}`
     :'';
   el('ancients-casualty-status').textContent=last?.unitEliminated||last?.leaderEliminated
-    ?`Bajas aplicadas: ${last.unitEliminated?'unidad '+last.targetId:''}${last.unitEliminated&&last.leaderEliminated?' y ':''}${last.leaderEliminated?'líder '+last.leaderCheck.leaderId:''}.`
+    ?`Bajas aplicadas: ${last.unitEliminated?'unidad '+last.targetId:''}${last.unitEliminated&&last.leaderEliminated?' y ':''}${last.leaderEliminated?'líder '+(last.loneLeader?last.targetId:last.leaderCheck?.leaderId??last.leaderEvasion?.leaderId??'') :''}.`
     :'';
   if(last?.leaderEvasion?.escape?.eliminated)el('ancients-casualty-status').textContent+=last.leaderEvasion.trapped
     ?' Líder eliminado por imposibilidad de escapar.':' Líder eliminado durante el escape.';
