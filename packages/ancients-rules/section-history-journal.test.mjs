@@ -1871,10 +1871,10 @@ test('V30 Counter Attack retains Spartacus effect after shuffle and rolls again 
 });
 
 test('V31 First Strike: private decision, defensive roll, resumption or elimination, replacement and replay',()=>{
- for(const mode of ['DECLINE','HIT','ELIMINATE']){
+ for(const mode of ['DECLINE','NO_CARD','HIT','ELIMINATE','RETREAT']){
   const c=tacticalCardSetup('ORDER_2_LEFT',true,3);
   Object.assign(c,{enableMoveFireMoveLab:true,enableRallyLab:true,enableSpartacusLab:true,enableCounterAttackLab:true,enableFirstStrikeLab:true});
-  c.cardInstances[4].definitionId='FIRST_STRIKE';
+  if(mode!=='NO_CARD')c.cardInstances[4].definitionId='FIRST_STRIKE';
   const initial=init(c);let s=initial;const log=[];
   const run=(type,fields={},actor=s.turn)=>{const command=cmd(type,s.revision,{actor,...fields}),result=apply(s,command);assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;return result;};
   const reject=(type,fields,code,actor=s.turn)=>assert.equal(apply(s,cmd(type,s.revision,{actor,...fields})).code,code);
@@ -1883,10 +1883,11 @@ test('V31 First Strike: private decision, defensive roll, resumption or eliminat
   run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
   assert.equal(project(s,'A').diceLab.firstStrikePending,true);
   assert.equal(project(s,'A').diceLab.canAcceptFirstStrike,false);
-  assert.equal(project(s,'B').diceLab.canAcceptFirstStrike,true);
+  assert.equal(project(s,'B').diceLab.canAcceptFirstStrike,mode!=='NO_CARD');
   reject('ROLL_SECTION_RANGED_DIGITAL_LAB',{},'FIRST_STRIKE_DECISION_PENDING');
   reject('ACCEPT_SECTION_FIRST_STRIKE_LAB',{},'FIRST_STRIKE_NOT_AVAILABLE');
-  if(mode==='DECLINE'){
+  if(mode==='DECLINE'||mode==='NO_CARD'){
+   if(mode==='NO_CARD')reject('ACCEPT_SECTION_FIRST_STRIKE_LAB',{},'FIRST_STRIKE_CARD_REQUIRED','B');
    run('DECLINE_SECTION_FIRST_STRIKE_LAB',{},'B');
    assert.equal(s.combatLab.plan.attackerId,'a1');assert.equal(s.hands.B.length,2);
   }else{
@@ -1895,9 +1896,13 @@ test('V31 First Strike: private decision, defensive roll, resumption or eliminat
    assert.equal(s.hands.B.length,1);assert.equal(project(s,'B').diceLab.combatSide,'B');
    const faces=Array(s.combatLab.plan.diceCount).fill('LIGHT');
    if(mode==='HIT')faces.fill('HEAVY',1);
+   if(mode==='RETREAT'){faces.fill('HEAVY');faces[0]='FLAG';}
    run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces},'B');run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true});
-   run('FINALIZE_SECTION_RANGED_LAB',{},'B');
-   assert.equal(s.diceLab.blocks.a1,mode==='HIT'?3:undefined);
+   if(mode==='RETREAT'){
+    const route=project(s,'A').diceLab.retreat.options.find(o=>o.path.length>0&&o.blocksLost===0);assert.ok(route);
+    run('RETREAT_SECTION_UNIT_LAB',{path:route.path},'A');
+   }else run('FINALIZE_SECTION_RANGED_LAB',{},'B');
+   assert.equal(s.diceLab.blocks.a1,mode==='HIT'?3:mode==='RETREAT'?4:undefined);
    if(mode==='HIT'){
     assert.equal(s.combatLab.plan.attackerId,'a1');assert.equal(s.diceLab.firstStrike.suppress,true);
     run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:Array(s.combatLab.plan.diceCount).fill('LIGHT')});
