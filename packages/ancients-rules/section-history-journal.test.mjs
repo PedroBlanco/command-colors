@@ -1786,3 +1786,34 @@ test('V28 Rally: deterministic roll, allocation by face, capacity, orders and re
  const fallback=tacticalCardSetup('RALLY',true);fallback.enableMoveFireMoveLab=true;fallback.enableRallyLab=true;
  const {ordered}=rangedLabReady(fallback);assert.equal(ordered.orderSnapshot.pieces[0].id,'a1');
 });
+
+test('V29 Spartacus: restricted and wild orders, extra fire/close die, shuffle and replay',()=>{
+ for(const close of [false,true]){
+  const c=tacticalCardSetup('I_AM_SPARTACUS',true,close?3:4);
+  Object.assign(c,{enableMoveFireMoveLab:true,enableRallyLab:true,enableSpartacusLab:true});
+  c.board.units.push({id:'a2',side:'A',col:0,row:0},{id:'a3',side:'A',col:1,row:0});
+  c.board.leaders=[{id:'a_leader',side:'A',col:0,row:0}];
+  Object.assign(c.movementUnitTypes,{a2:'HEAVY_INFANTRY',a3:'HEAVY_INFANTRY'});
+  const initial=init(c),card=initial.hands.A.find(x=>x.definitionId==='I_AM_SPARTACUS');
+  const play=cmd('PLAY_SECTION_CARD',0,{cardInstanceId:card.instanceId});let s;
+  for(let n=0;n<200;n++){
+   initial.diceLab.key=n.toString(16).padStart(64,'0');
+   const p=apply(initial,play);assert.equal(p.accepted,true,p.code);s=p.nextState;
+   if(s.diceLab.spartacusFaces.includes('LIGHT')&&s.diceLab.spartacusFaces.includes('LEADER'))break;
+  }
+  assert.ok(s.diceLab.spartacusFaces.includes('LIGHT')&&s.diceLab.spartacusFaces.includes('LEADER'));
+  const log=[play],run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;return result;};
+  const order=(unitIds,leaderIds=[])=>cmd('ASSIGN_SECTION_ORDERS',s.revision,{unitIds,leaderIds});
+  assert.equal(apply(s,order(['a2','a3'])).code,'ORDERS_NOT_ELIGIBLE');
+  assert.equal(apply(s,order(['a1'],['a_leader'])).accepted,true);
+  run('ASSIGN_SECTION_ORDERS',{unitIds:['a2','a1'],leaderIds:[]});
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  run(close?'PREPARE_SECTION_CLOSE_LAB':'PREPARE_SECTION_RANGED_LAB',{attackerId:'a1',targetId:'b1'});
+  assert.equal(s.combatLab.plan.cardBonusDice,1);assert.equal(s.combatLab.plan.diceCount,3);
+  run('CANCEL_SECTION_RANGED_LAB');
+  const other=structuredClone(s.hands.B),pool=s.drawPile.length+s.discardPile.length+1;
+  const ended=run('END_EXPERIMENTAL_TURN');assert.equal(ended.publicEvent.recycledCardCount,pool);
+  assert.deepEqual(s.hands.B,other);assert.equal(s.drawPile.length,pool-1);
+  assert.equal(s.discardPile.length,0);assert.deepEqual(replay(initial,log),s);
+ }
+});
