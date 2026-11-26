@@ -1186,21 +1186,23 @@ test('V16 elephant close: dice by target, sword chain, immunities, defense choic
 });
 
 test('V17 chariots and war machines: defense, sword repeat, evade without banner, advance and replay',()=>{
- for(const mode of ['CHARIOT_ATTACK','CHARIOT_BACK','CHARIOT_EVADE','ELEPHANT_CHAIN','CHARIOT_ELEPHANT','MACHINE_ESCAPE','MACHINE_KILLED','MACHINE_ATTACK','MACHINE_STAND']){
+ for(const mode of ['CHARIOT_ATTACK','CHARIOT_BACK','CHARIOT_EVADE','ELEPHANT_CHAIN','CHARIOT_ELEPHANT','MACHINE_ESCAPE','MACHINE_KILLED','MACHINE_ATTACK','MACHINE_STAND','MACHINE_BLOCKED','CAVALRY_CHARIOT']){
   const c=rangedLabSetup({targetCol:3});
   Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
     enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
     enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
     enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,victoryTargets:{A:3,B:3}});
-  c.movementUnitTypes.a1=mode.startsWith('CHARIOT_ATTACK')||mode==='CHARIOT_ELEPHANT'?'HEAVY_CHARIOT':
+  c.movementUnitTypes.a1=mode.startsWith('CHARIOT_ATTACK')||mode==='CHARIOT_ELEPHANT'?'HEAVY_CHARIOT':mode==='CAVALRY_CHARIOT'?'HEAVY_CAVALRY':
     mode==='ELEPHANT_CHAIN'?'ELEPHANT':mode==='MACHINE_ATTACK'?'HEAVY_WAR_MACHINE':'HEAVY_INFANTRY';
-  c.movementUnitTypes.b1=['CHARIOT_BACK','CHARIOT_EVADE','ELEPHANT_CHAIN'].includes(mode)?'HEAVY_CHARIOT':
-    mode==='CHARIOT_ELEPHANT'?'ELEPHANT':['MACHINE_ESCAPE','MACHINE_KILLED','MACHINE_STAND'].includes(mode)?'HEAVY_WAR_MACHINE':'HEAVY_INFANTRY';
+  c.movementUnitTypes.b1=['CHARIOT_BACK','CHARIOT_EVADE','ELEPHANT_CHAIN','CAVALRY_CHARIOT'].includes(mode)?'HEAVY_CHARIOT':
+    mode==='CHARIOT_ELEPHANT'?'ELEPHANT':['MACHINE_ESCAPE','MACHINE_KILLED','MACHINE_STAND','MACHINE_BLOCKED'].includes(mode)?'HEAVY_WAR_MACHINE':'HEAVY_INFANTRY';
+  if(mode==='MACHINE_BLOCKED'){Object.assign(c.board.units[0],{col:3,row:1});Object.assign(c.board.units[1],{col:3,row:0});}
   const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
   const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);
     assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};
   run('FINISH_SECTION_MOVEMENT_LAB');run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
   const plan=s.combatLab.plan;
+  if(['MACHINE_BLOCKED','CAVALRY_CHARIOT'].includes(mode))assert.deepEqual(plan.evadeOptions,[]);
   if(plan.evadeOptions.length)run('CHOOSE_SECTION_UNIT_EVADE_LAB',{actor:'B',path:['CHARIOT_EVADE','MACHINE_ESCAPE','MACHINE_KILLED'].includes(mode)?plan.evadeOptions[0]:[]});
   const faces=mode==='CHARIOT_ATTACK'?['HEAVY','HEAVY','HEAVY','HEAVY']:
     mode==='CHARIOT_BACK'?['SWORDS','LIGHT','LIGHT','LIGHT','LIGHT']:
@@ -1208,7 +1210,8 @@ test('V17 chariots and war machines: defense, sword repeat, evade without banner
     mode==='CHARIOT_ELEPHANT'?['HEAVY','FLAG','LIGHT','LIGHT']:
     mode==='MACHINE_ATTACK'?['SWORDS','HEAVY']:
     mode==='MACHINE_KILLED'?['HEAVY','HEAVY','LIGHT','LIGHT','LIGHT']:
-    mode==='MACHINE_STAND'?['HEAVY','LIGHT','LIGHT','LIGHT','LIGHT']:
+    ['MACHINE_STAND','MACHINE_BLOCKED'].includes(mode)?['HEAVY','LIGHT','LIGHT','LIGHT','LIGHT']:
+    mode==='CAVALRY_CHARIOT'?['SWORDS','LIGHT','LIGHT','LIGHT']:
     ['SWORDS','HEAVY','LIGHT','LIGHT','LIGHT'];
   run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
   if(mode==='ELEPHANT_CHAIN'){
@@ -1228,9 +1231,9 @@ test('V17 chariots and war machines: defense, sword repeat, evade without banner
     const m=project(s,'A').diceLab.momentumOptions;assert.deepEqual(m,[{path:[{col:3,row:4}],bonusEligible:true}]);
     run('CHOOSE_SECTION_MOMENTUM_LAB',{path:m[0].path});
   }
-  if(mode==='CHARIOT_BACK'||mode==='MACHINE_STAND'){
+  if(mode==='CHARIOT_BACK'||mode==='MACHINE_STAND'||mode==='MACHINE_BLOCKED'||mode==='CAVALRY_CHARIOT'){
     run('ACCEPT_SECTION_BATTLE_BACK_LAB',{actor:'B'});
-    assert.equal(s.combatLab.plan.diceCount,mode==='CHARIOT_BACK'?3:2);
+    assert.equal(s.combatLab.plan.diceCount,['CHARIOT_BACK','CAVALRY_CHARIOT'].includes(mode)?3:2);
     run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',faces:Array(s.combatLab.plan.diceCount).fill('LIGHT')});
     run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true});run('FINALIZE_SECTION_RANGED_LAB',{actor:'B'});
   }
