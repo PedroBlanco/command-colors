@@ -185,7 +185,8 @@ function renderAncients() {
   const stopped=finished||cached.historyLimitReached===true;
   const isTurn=!stopped&&cached.turn===cached.you;
   const combat=cached.combatLab;
-  const movementClosed=combat?.movementClosed===true;
+  const mfm=cached.diceLab?.moveFireMove,secondMove=mfm==='SECOND';
+  const movementClosed=combat?.movementClosed===true&&!secondMove;
   const scope=[cached.matchId,cached.you,cached.revision,cached.phase].join(':');
   if(ancientsDraftScope!==scope){
     ancientsDraft=null;ancientsRetry=null;ancientsDraftScope=scope;
@@ -203,9 +204,10 @@ function renderAncients() {
       :'solo hexágonos despejados')+'.';
   const selection=cached.selectionCard;
   const clash=cached.cardInPlay==='CLASH_OF_SHIELDS',darken=!!cached.diceLab?.darken,noMove=clash||darken;
-  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho',DARKEN_THE_SKY:'Oscurecer el cielo'};
+  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho',DARKEN_THE_SKY:'Oscurecer el cielo',MOVE_FIRE_MOVE:'Mover, disparar y mover'};
   if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':selection.family==='LEADERSHIP'?' (grupo contiguo desde un líder válido o una sola unidad; sin separar líderes adjuntos)':selection.connected?' (grupo de unidades contiguas)':'');
   if(darken)el('ancients-status').textContent+=' · Doble disparo: '+cached.diceLab.resolvedUnitIds.length+' unidades han disparado, '+cached.diceLab.darken.twice.length+' dos veces';
+  if(mfm)el('ancients-status').textContent+=' · '+(secondMove?'Segundo movimiento':movementClosed?'Disparos':'Primer movimiento');
   const cardSelect=el('ancients-card');
   const chosen=cardSelect.value;
   cardSelect.replaceChildren();
@@ -270,7 +272,9 @@ function renderAncients() {
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
   el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending||!!cached.diceLab?.bonusClosePending||!!combat?.pendingWarriorCharges?.length;
   el('ancients-finish-movement').hidden=!combat;
-  el('ancients-finish-movement').disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed;
+  const finishMove=el('ancients-finish-movement');
+  finishMove.textContent=mfm==='FIRST'&&movementClosed?'Terminar disparos / segundo movimiento':'Terminar movimiento';
+  finishMove.disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||secondMove||(movementClosed&&(!mfm||!!combat.plan));
   el('ancients-clear-path').disabled=!ancientsDraft;
   el('ancients-move').disabled=!isTurn||movementClosed||noMove||cached.phase!=='LAB_RESOLUTION_PENDING'||
     !ancientsDraft?.path.length||!!(ancientsDraft?.kind!=='LEADER'&&ancientsDraft?.path.length&&(cached.board??[]).some(u=>u.col===ancientsDraft.path.at(-1).col&&u.row===ancientsDraft.path.at(-1).row));
@@ -488,13 +492,13 @@ function renderAncients() {
 }
 function selectAncientsHex(cell){
   if(cached?.status!=='LAB_ONLY'||cached.diceLab?.victory?.winner||cached.historyLimitReached||cached.turn!==cached.you||
-     cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed||cached.cardInPlay==='CLASH_OF_SHIELDS'||cached.diceLab?.darken)return;
+     cached.phase!=='LAB_RESOLUTION_PENDING'||(cached.combatLab?.movementClosed&&cached.diceLab?.moveFireMove!=='SECOND')||cached.cardInPlay==='CLASH_OF_SHIELDS'||cached.diceLab?.darken)return;
   const units=cached.board??[];
   const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
   const ordered=new Set(cached.orderedUnitIds??[]);
   const moved=new Set(cached.movedUnitIds??[]);
   const locked=new Set(cached.unitsLockedByLeader??[]);
-  const transit=!!ancientsDraft&&ancientsDraft.kind!=='LEADER'&&cached.cardInPlay==='ORDER_LIGHT_TROOPS'&&ancientsDraft.path.length===0&&at?.side===cached.you&&at.id!==ancientsDraft.unitId&&['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY'].includes(units.find(u=>u.id===ancientsDraft.unitId)?.unitType)&&distance(ancientsDraft.origin,cell)===1;
+  const transit=!!ancientsDraft&&ancientsDraft.kind!=='LEADER'&&(cached.cardInPlay==='ORDER_LIGHT_TROOPS'||!!cached.diceLab?.moveFireMove)&&ancientsDraft.path.length===0&&at?.side===cached.you&&at.id!==ancientsDraft.unitId&&['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY'].includes(units.find(u=>u.id===ancientsDraft.unitId)?.unitType)&&distance(ancientsDraft.origin,cell)===1;
   if(!transit&&ancientsDraft?.kind!=='LEADER'&&at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)&&!locked.has(at.id)){
     ancientsDraft={unitId:at.id,origin:{col:at.col,row:at.row},
       path:[],revision:cached.revision};

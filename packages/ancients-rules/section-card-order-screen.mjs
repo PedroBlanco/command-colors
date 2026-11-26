@@ -131,6 +131,12 @@ const troopClasses={
   MOUNTED:mountedTypes
 };
 export function selectionCardOptions({definitionId,side,command,board,unitTypes,sectorCells}){
+  if(definitionId==='MOVE_FIRE_MOVE'){
+    const units=board.units.filter(u=>u.side===side);
+    const eligible=units.filter(u=>troopClasses.LIGHT.has(unitTypes[u.id]));
+    return {family:'MOVE_FIRE_MOVE',maximumOrders:eligible.length?command:1,
+      unitIds:(eligible.length?eligible:units).map(u=>u.id),leaderIds:[],fallback:eligible.length===0};
+  }
   if(Object.hasOwn(FIRE_CARD_DEFINITIONS,definitionId)){
     const units=board.units.filter(u=>u.side===side);
     const eligible=units.filter(u=>Object.hasOwn(BASE_RANGED_REACH,unitTypes[u.id]));

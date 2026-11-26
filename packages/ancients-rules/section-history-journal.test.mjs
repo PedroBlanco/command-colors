@@ -1722,3 +1722,38 @@ test('V26 Darken the Sky: two separately resolved shots, mandatory eligible orde
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('V27 Move-Fire-Move: two independent moves with optional fire, leader and replay',()=>{
+ for(const fire of [true,false]){
+  const c=tacticalCardSetup('MOVE_FIRE_MOVE',true,5);c.enableMoveFireMoveLab=true;
+  c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
+  const initial=init(c);let s=initial;const log=[];
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};
+  const reject=(type,fields,code)=>assert.equal(apply(s,cmd(type,s.revision,fields)).code,code);
+  run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A.find(x=>x.definitionId==='MOVE_FIRE_MOVE').instanceId});
+  run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});
+  const move=col=>({unitId:'a1',path:[{col,row:4}]});
+  const target={attackerId:'a1',targetId:'b1'};
+  run('MOVE_SECTION_FOOT_PATH_V2',move(3));
+  reject('MOVE_SECTION_FOOT_PATH_V2',move(2),'UNIT_ALREADY_MOVED');
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  reject('PREPARE_SECTION_CLOSE_LAB',target,'MFM_CLOSE_FORBIDDEN');
+  reject('MOVE_SECTION_FOOT_PATH_V2',move(2),'MOVEMENT_PHASE_CLOSED');
+  if(fire){
+   run('PREPARE_SECTION_RANGED_LAB',target);assert.equal(s.combatLab.plan.diceCount,1);
+   reject('FINISH_SECTION_MOVEMENT_LAB',{},'COMBAT_PLAN_PENDING');
+   run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:['HEAVY']});
+   run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+   run('FINALIZE_SECTION_RANGED_LAB');assert.equal(s.diceLab.blocks.b1,3);
+  }
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  assert.equal(project(s,'A').diceLab.moveFireMove,'SECOND');
+  assert.deepEqual(project(s,'A').combatLab.candidates,[]);
+  run('MOVE_SECTION_FOOT_PATH_V2',move(2));
+  assert.equal(s.board.leaders[0].col,2);
+  reject('MOVE_SECTION_FOOT_PATH_V2',move(3),'UNIT_ALREADY_MOVED');
+  reject('PREPARE_SECTION_RANGED_LAB',target,'MFM_FIRE_CLOSED');
+  run('END_EXPERIMENTAL_TURN');assert.equal(s.diceLab.moveFireMove,null);
+  assert.deepEqual(replay(initial,log),s);
+ }
+});
