@@ -1516,3 +1516,56 @@ test('V22 selection cards: troop classes, Command, fallback, mounted leaders, se
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('V23 group cards: connected foot orders, line movement, double time charge and combat, terrain and fallback',()=>{
+ for(const mode of ['LINE','DISCONNECTED','LINE_RANGED','DOUBLE_MEDIUM','DOUBLE_HEAVY','DOUBLE_AUXILIA','DOUBLE_WARRIOR','NO_CHARGE_TARGET','DOUBLE_RANGED','DOUBLE_MACHINE','DOUBLE_LIMIT','TERRAIN','FALLBACK','LEGACY']){
+  const line=mode.startsWith('LINE')||mode==='DISCONNECTED',def=line?'LINE_COMMAND':'DOUBLE_TIME';
+  const c=rangedLabSetup({targetCol:mode==='NO_CHARGE_TARGET'?7:mode==='DOUBLE_WARRIOR'?6:['LINE_RANGED','DOUBLE_RANGED','FALLBACK'].includes(mode)?4:mode==='LINE'?4:5,terrain:mode==='TERRAIN'?[{col:3,row:4,kind:'FOREST'}]:[]});
+  Object.assign(c,{enableLeaderLab:true,enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,
+    enableSpecialFootLab:true,enableLoneLeaderCombatLab:true,enableDeckRecycleLab:true,enableLongHistoryLab:true,enableSelectionCardsLab:true,enableGroupCardsLab:mode!=='LEGACY',victoryTargets:{A:3,B:3}});
+  c.cardInstances[0].definitionId=def;
+  c.movementUnitTypes.a1=({DOUBLE_MEDIUM:'MEDIUM_INFANTRY',DOUBLE_HEAVY:'HEAVY_INFANTRY',DOUBLE_AUXILIA:'AUXILIA_INFANTRY',DOUBLE_WARRIOR:'WARRIOR_INFANTRY',NO_CHARGE_TARGET:'WARRIOR_INFANTRY',DOUBLE_MACHINE:'HEAVY_WAR_MACHINE',TERRAIN:'MEDIUM_INFANTRY',FALLBACK:'LIGHT_CAVALRY'})[mode]??'LIGHT_INFANTRY';
+  if(['LINE','DISCONNECTED','DOUBLE_LIMIT'].includes(mode)){
+    for(let i=0;i<4;i++){const id='a'+(i+2);c.board.units.push({id,side:'A',col:2,row:i+5>8?3:i+5});c.movementUnitTypes[id]='MEDIUM_INFANTRY';}
+  }
+  if(mode==='LEGACY'){assert.throws(()=>init(c),/INVALID_SECTION_HISTORY_SETUP/);continue;}
+  const initial=init(c);let s=initial;const log=[];
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;};
+  const card=s.hands.A.find(x=>x.definitionId===def);assert.ok(card);
+  run('PLAY_SECTION_CARD',{cardInstanceId:card.instanceId});
+  const options=project(s,'A').selectionCard;assert.ok(options);
+  const check=(unitIds,leaderIds=[])=>apply(s,cmd('ASSIGN_SECTION_ORDERS',s.revision,{unitIds,leaderIds})).code;
+  let ids=['a1'];
+  if(mode==='LINE'){ids=['a1','a2','a3','a4','a5'];assert.equal(options.maximumOrders,5);}
+  if(mode==='DISCONNECTED'){assert.equal(check(['a1','a3']),'ORDERS_NOT_ELIGIBLE');ids=['a1','a2'];}
+  if(mode==='DOUBLE_LIMIT'){assert.equal(check(['a1','a2','a3','a4','a5']),'ORDERS_NOT_ELIGIBLE');ids=['a1','a2','a3','a4'];}
+  if(mode==='FALLBACK'){assert.equal(options.fallback,true);assert.equal(options.maximumOrders,1);}
+  run('ASSIGN_SECTION_ORDERS',{unitIds:ids,leaderIds:[]});
+  const path=[{col:3,row:4},{col:4,row:4}],move=p=>({unitId:'a1',path:p});
+  const deny=(p,code)=>assert.equal(apply(s,cmd('MOVE_SECTION_FOOT_PATH_V2',s.revision,move(p))).code,code,mode);
+  if(mode==='LINE'){deny(path,'LINE_COMMAND_MOVEMENT_EXCEEDED');run('MOVE_SECTION_FOOT_PATH_V2',move(path.slice(0,1)));}
+  if(['DOUBLE_MEDIUM','DOUBLE_HEAVY','DOUBLE_AUXILIA'].includes(mode)){
+    deny([...path,{col:5,row:4}],'DOUBLE_TIME_MOVEMENT_EXCEEDED');run('MOVE_SECTION_FOOT_PATH_V2',move(path));assert.equal(s.combatLab.movement.a1.battle,'POSSIBLE');
+  }
+  if(mode==='DOUBLE_WARRIOR'){run('MOVE_SECTION_FOOT_PATH_V2',move([...path,{col:5,row:4}]));assert.equal(s.combatLab.movement.a1.battle,'MANDATORY_CLOSE_COMBAT');}
+  if(mode==='NO_CHARGE_TARGET')deny([...path,{col:5,row:4}],'WARRIOR_CHARGE_TARGET_REQUIRED');
+  if(mode==='DOUBLE_MACHINE'){deny(path,'STANDARD_FOOT_MOVEMENT_EXCEEDED');run('MOVE_SECTION_FOOT_PATH_V2',move(path.slice(0,1)));assert.equal(s.combatLab.movement.a1.battle,'UNAVAILABLE');}
+  if(mode==='TERRAIN')deny(path,'MUST_STOP_ON_FOREST_ENTRY');
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  if(mode==='LINE_RANGED'||mode==='FALLBACK')assert.ok(project(s,'A').combatLab.candidates.some(o=>o.attackerId==='a1'&&o.kind!=='CLOSE_PREVIEW'));
+  if(mode==='DOUBLE_RANGED')assert.equal(apply(s,cmd('PREPARE_SECTION_RANGED_LAB',s.revision,{attackerId:'a1',targetId:'b1'})).code,'DOUBLE_TIME_RANGED_FORBIDDEN');
+  if(['LINE','DOUBLE_MEDIUM','DOUBLE_HEAVY','DOUBLE_AUXILIA','DOUBLE_WARRIOR'].includes(mode)){
+    run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+    if(mode==='DOUBLE_WARRIOR'){
+      run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:['HEAVY','HEAVY','HEAVY','HEAVY']});
+      run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+      run('FINALIZE_SECTION_RANGED_LAB');
+      if(project(s,'A').diceLab.momentumPending)run('CHOOSE_SECTION_MOMENTUM_LAB',{path:[]});
+    }else run('CANCEL_SECTION_RANGED_LAB');
+  }
+  run('END_EXPERIMENTAL_TURN');assert.deepEqual(replay(initial,log),s);
+ }
+});

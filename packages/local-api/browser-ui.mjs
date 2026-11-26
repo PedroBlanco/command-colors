@@ -202,8 +202,8 @@ function renderAncients() {
       ?cached.terrain.map(x=>`${terrainNames[x.kind]??'desconocido'} (${x.col+1},${x.row+1})`).join('; ')
       :'solo hexágonos despejados')+'.';
   const selection=cached.selectionCard;
-  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos'};
-  if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':'');
+  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado'};
+  if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':selection.connected?' (grupo de unidades contiguas)':'');
   const cardSelect=el('ancients-card');
   const chosen=cardSelect.value;
   cardSelect.replaceChildren();

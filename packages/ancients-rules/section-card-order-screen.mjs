@@ -3,6 +3,8 @@
  * This does not prove the snapshot came from the deck/hand event log, and is
  * never a command-card or combat authorization. No card text is reproduced.
  */
+import {distance} from '../hex-grid/hex.mjs';
+
 export const SECTION_CARD_ORDER_SCREEN_VERSION = 1;
 export const BASE_SECTION_CARD_LIMITS = Object.freeze(Object.fromEntries(
   ['LEFT','CENTER','RIGHT'].flatMap(section => [2,3,4].map(count => [
@@ -113,6 +115,7 @@ export const SELECTION_CARD_DEFINITIONS=Object.freeze({
   ORDER_LIGHT_TROOPS:'LIGHT',ORDER_MEDIUM_TROOPS:'MEDIUM',ORDER_HEAVY_TROOPS:'HEAVY',
   ORDER_MOUNTED_TROOPS:'MOUNTED',COORDINATED_ATTACK:'COORDINATED',OUT_FLANKED:'FLANKS'
 });
+export const GROUP_CARD_DEFINITIONS=Object.freeze({LINE_COMMAND:'LINE',DOUBLE_TIME:'DOUBLE_TIME'});
 const mountedTypes=new Set(['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT']);
 const troopClasses={
   LIGHT:new Set(['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY','LIGHT_CAVALRY']),
@@ -121,9 +124,16 @@ const troopClasses={
   MOUNTED:mountedTypes
 };
 export function selectionCardOptions({definitionId,side,command,board,unitTypes,sectorCells}){
-  if(!Object.hasOwn(SELECTION_CARD_DEFINITIONS,definitionId))return null;
-  const family=SELECTION_CARD_DEFINITIONS[definitionId];
+  if(!Object.hasOwn(SELECTION_CARD_DEFINITIONS,definitionId)&&!Object.hasOwn(GROUP_CARD_DEFINITIONS,definitionId))return null;
+  const family=SELECTION_CARD_DEFINITIONS[definitionId]??GROUP_CARD_DEFINITIONS[definitionId];
   const units=board.units.filter(u=>u.side===side),leaders=board.leaders.filter(l=>l.side===side);
+  if(family==='LINE'||family==='DOUBLE_TIME'){
+    const foot=units.filter(u=>!mountedTypes.has(unitTypes[u.id]));
+    const fallback=foot.length===0;
+    return {family,maximumOrders:fallback?1:family==='LINE'?foot.length:Math.min(4,foot.length),
+      unitIds:(fallback?units:foot).map(u=>u.id),leaderIds:[],fallback,
+      ...(fallback?{}:{connected:true,maximumSections:family==='LINE'?3:2})};
+  }
   if(family==='COORDINATED'||family==='FLANKS'){
     const capacities=family==='COORDINATED'?{LEFT:1,CENTER:1,RIGHT:1}:{LEFT:2,CENTER:0,RIGHT:2};
     const allowed=p=>sectorCells[cell(p)]?.some(s=>capacities[s]>0);
@@ -143,6 +153,20 @@ export function screenSelectionCardOrders(options,pieces,sectorCells){
     // Mounted card can order leaders; a substitute foot order is instead a
     // single unit, never an extra order added to the leader allowance.
     if(units.length&&(units.length!==1||pieces.length!==1))return false;
+  }
+  if(options.connected&&pieces.length){
+    // Selected units themselves must form a connected group at order time.
+    // Movement later in the turn is free to split that group.
+    const reached=new Set([0]),queue=[0];
+    for(let i=0;i<queue.length;i++){
+      for(let k=0;k<pieces.length;k++)if(!reached.has(k)&&distance(pieces[queue[i]],pieces[k])===1){
+        reached.add(k);queue.push(k);
+      }
+    }
+    if(reached.size!==pieces.length)return false;
+    if(options.maximumSections===2&&![
+      ['LEFT','CENTER'],['CENTER','RIGHT']
+    ].some(pair=>pieces.every(p=>sectorCells[cell(p)]?.some(x=>pair.includes(x)))))return false;
   }
   if(!options.capacities)return true;
   const remaining={...options.capacities};
