@@ -1366,3 +1366,62 @@ test('V19 lone leader: ranged and close, hits, compulsory escape, no momentum, v
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('V20 deck recycling: replenish immediately, initially empty, conservation, privacy, deterministic replay and old version',()=>{
+ for(const mode of ['RECYCLE','EMPTY','LEGACY']){
+  const c=rangedLabSetup({targetCol:5});
+  Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,
+    enableSpecialFootLab:true,enableLoneLeaderCombatLab:true,enableDeckRecycleLab:mode!=='LEGACY',victoryTargets:{A:3,B:3}});
+  if(mode==='EMPTY')c.cardInstances=c.cardInstances.slice(0,4);
+  const initial=init(c),ids=c.cardInstances.map(x=>x.instanceId).sort();
+  let s=initial;const log=[];
+  const run=(type,fields={})=>{
+    const command=cmd(type,s.revision,{actor:s.turn,...fields}),result=apply(s,command);
+    assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;
+    assert.deepEqual([...s.hands.A,...s.hands.B,...s.drawPile,...s.discardPile,...(s.activeCard?[s.activeCard]:[])].map(x=>x.instanceId).sort(),ids);
+    return result.publicEvent;
+  };
+  let recycles=0;
+  for(let turn=0;turn<(mode==='LEGACY'?3:12);turn++){
+    const actor=s.turn,other=actor==='A'?'B':'A';
+    const handBefore=s.hands[actor].length,opponent=structuredClone(s.hands[other]);
+    run('PLAY_SECTION_CARD',{cardInstanceId:s.hands[actor][0].instanceId});
+    run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});
+    const before=s,remaining=before.drawPile.length,discarded=before.discardPile.length+1;
+    const event=run('END_EXPERIMENTAL_TURN');
+    assert.deepEqual(s.hands[other],opponent);
+    if(mode!=='LEGACY'){
+      assert.equal(event.drewCard,true);assert.equal(s.hands[actor].length,handBefore);
+      if(remaining<=1){
+        recycles++;
+        assert.equal(event.deckRecycled,true);
+        assert.equal(event.recycledCardCount,discarded);
+        assert.equal(s.discardPile.length,0);
+        assert.equal(s.drawPile.length,discarded-Number(remaining===0));
+      }else{
+        assert.equal(event.deckRecycled,undefined);
+        assert.equal(s.drawPile.length,remaining-1);
+      }
+    }else{
+      assert.equal(event.deckRecycled,undefined);
+      assert.equal(event.drewCard,remaining>0);
+      assert.equal(s.hands[actor].length,handBefore-Number(remaining===0));
+      assert.equal(s.drawPile.length,Math.max(0,remaining-1));
+    }
+    const publicJSON=JSON.stringify(event);
+    for(const id of ids)assert.equal(publicJSON.includes(id),false);
+    for(const side of ['A','B']){
+      const view=JSON.stringify(project(s,side));
+      for(const hidden of [...s.drawPile,...s.hands[side==='A'?'B':'A']])assert.equal(view.includes(hidden.instanceId),false);
+      assert.equal(view.includes(s.diceLab.key),false);
+    }
+    const replayed=replay(initial,log);
+    assert.deepEqual(replayed,s);
+    assert.deepEqual(apply(before,log.at(-1)).nextState,s);
+  }
+  if(mode!=='LEGACY')assert.ok(recycles>1);
+ }
+});
