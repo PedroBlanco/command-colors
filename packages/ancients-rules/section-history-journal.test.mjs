@@ -1251,7 +1251,7 @@ test('V17 chariots and war machines: defense, sword repeat, evade without banner
 
 
 test('V18 warrior charge and war machine movement: geometry, obligatory attack, disputed roll and replay',()=>{
- for(const mode of ['WARRIOR_ONE','CHARGE','NO_TARGET','BLOCKED','FOREST_STOP','FOREST_ENTRY','DISPUTE','MACHINE','MACHINE_TWO','MACHINE_BROKEN','MACHINE_STATIONARY']){
+ for(const mode of ['WARRIOR_ONE','CHARGE','NO_TARGET','BLOCKED','FOREST_STOP','FOREST_ENTRY','DISPUTE','MACHINE','MACHINE_TWO','MACHINE_BROKEN','MACHINE_STATIONARY','LEADER_CARRIED','TARGET_REMOVED']){
   const machine=mode.startsWith('MACHINE');
   const c=rangedLabSetup({targetCol:mode==='NO_TARGET'?7:5,terrain:mode==='FOREST_STOP'?[{col:3,row:4,kind:'FOREST'}]:mode==='FOREST_ENTRY'?[{col:4,row:4,kind:'FOREST'}]:mode==='MACHINE_BROKEN'?[{col:3,row:4,kind:'BROKEN_GROUND'}]:[]});
   Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
@@ -1260,7 +1260,16 @@ test('V18 warrior charge and war machine movement: geometry, obligatory attack, 
     enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,enableSpecialFootLab:true,victoryTargets:{A:3,B:3}});
   c.movementUnitTypes.a1=machine?'HEAVY_WAR_MACHINE':'WARRIOR_INFANTRY';
   if(mode==='BLOCKED'){c.board.units.push({id:'b2',side:'B',col:3,row:4});c.movementUnitTypes.b2='HEAVY_INFANTRY';}
-  const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
+  if(mode==='LEADER_CARRIED'){c.enableLeaderLab=true;c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];}
+  if(mode==='TARGET_REMOVED'){c.board.units.push({id:'a2',side:'A',col:5,row:3});c.movementUnitTypes.a2='HEAVY_INFANTRY';c.sectorCells['5,3']=['LEFT'];}
+  const ready=mode==='TARGET_REMOVED'?(()=>{
+    const initial=init(c),play=cmd('PLAY_SECTION_CARD',0,{cardInstanceId:initial.hands.A[0].instanceId});
+    const played=apply(initial,play).nextState;
+    const order=cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1','a2'],leaderIds:[]});
+    const result=apply(played,order);assert.equal(result.accepted,true,result.code);
+    return {initial,ordered:result.nextState,commands:[play,order]};
+  })():rangedLabReady(c);
+  const {initial,ordered,commands}=ready;let s=ordered;const log=[...commands];
   const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);
     assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;};
   const path=['WARRIOR_ONE','MACHINE','MACHINE_BROKEN'].includes(mode)?[{col:3,row:4}]:[{col:3,row:4},{col:4,row:4}];
@@ -1273,9 +1282,10 @@ test('V18 warrior charge and war machine movement: geometry, obligatory attack, 
     run('MOVE_SECTION_FOOT_PATH_V2',{unitId:'a1',path});
     assert.equal(apply(s,cmd('MOVE_SECTION_FOOT_PATH_V2',s.revision,{unitId:'a1',path})).code,'UNIT_ALREADY_MOVED');
     assert.equal(s.combatLab.movement.a1.battle,machine?'UNAVAILABLE':path.length===2?'MANDATORY_CLOSE_COMBAT':'POSSIBLE');
+    if(mode==='LEADER_CARRIED')assert.deepEqual(s.board.leaders[0],{id:'a_leader',side:'A',col:4,row:4});
   }
   run('FINISH_SECTION_MOVEMENT_LAB');
-  if(['CHARGE','DISPUTE','FOREST_ENTRY'].includes(mode)){
+  if(['CHARGE','DISPUTE','FOREST_ENTRY','LEADER_CARRIED'].includes(mode)){
     assert.deepEqual(project(s,'A').combatLab.pendingWarriorCharges,['a1']);
     assert.equal(apply(s,cmd('END_EXPERIMENTAL_TURN',s.revision)).code,'WARRIOR_CHARGE_COMBAT_REQUIRED');
     run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
@@ -1291,6 +1301,14 @@ test('V18 warrior charge and war machine movement: geometry, obligatory attack, 
     run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
     run('FINALIZE_SECTION_RANGED_LAB');run('DECLINE_SECTION_BATTLE_BACK_LAB',{actor:'B'});
     assert.deepEqual(project(s,'A').combatLab.pendingWarriorCharges,[]);
+  }else if(mode==='TARGET_REMOVED'){
+    assert.deepEqual(project(s,'A').combatLab.pendingWarriorCharges,['a1']);
+    run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a2',targetId:'b1'});
+    run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:['HEAVY','HEAVY','HEAVY','HEAVY','LIGHT']});
+    run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});run('FINALIZE_SECTION_RANGED_LAB');
+    if(project(s,'A').diceLab.momentumPending)run('CHOOSE_SECTION_MOMENTUM_LAB',{path:[]});
+    assert.deepEqual(project(s,'A').combatLab.pendingWarriorCharges,[]);
+    assert.deepEqual(s.diceLab.resolvedUnitIds,['a2']);
   }else if(mode==='MACHINE'){
     assert.equal(apply(s,cmd('PREPARE_SECTION_RANGED_LAB',s.revision,{attackerId:'a1',targetId:'b1'})).code,'BATTLE_AFTER_MOVEMENT_UNAVAILABLE');
     assert.equal(project(s,'A').combatLab.candidates.length,0);
