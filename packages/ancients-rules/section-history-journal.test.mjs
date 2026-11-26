@@ -1852,3 +1852,20 @@ test('V30 Counter Attack recalculates troop fallback against own army',()=>{
  assert.equal(options.fallback,false);assert.equal(options.maximumOrders,2);assert.deepEqual(options.unitIds,['b1']);
  run('ASSIGN_SECTION_ORDERS',{unitIds:['b1'],leaderIds:[]});assert.deepEqual(replay(initial,log),s);
 });
+
+test('V30 Counter Attack retains Spartacus effect after shuffle and rolls again with own Command',()=>{
+ const c=tacticalCardSetup('I_AM_SPARTACUS',true,4);
+ Object.assign(c,{enableMoveFireMoveLab:true,enableRallyLab:true,enableSpartacusLab:true,enableCounterAttackLab:true});
+ c.cardInstances[4].definitionId='COUNTER_ATTACK';
+ c.handSizes={A:2,B:3};
+ const initial=init(c);let s=initial;const log=[];
+ const run=(type,fields={})=>{const command=cmd(type,s.revision,{actor:s.turn,...fields}),result=apply(s,command);assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;return result;};
+ const play=id=>({cardInstanceId:s.hands[s.turn].find(x=>x.definitionId===id).instanceId});
+ run('PLAY_SECTION_CARD',play('I_AM_SPARTACUS'));assert.equal(s.diceLab.spartacusFaces.length,2);
+ run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});run('END_EXPERIMENTAL_TURN');
+ assert.equal(s.discardPile.length,0);assert.equal(s.diceLab.counter.previous,'I_AM_SPARTACUS');
+ run('PLAY_SECTION_CARD',play('COUNTER_ATTACK'));assert.equal(s.diceLab.spartacusFaces.length,3);
+ assert.equal(project(s,'B').effectiveCardInPlay,'I_AM_SPARTACUS');
+ run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});run('END_EXPERIMENTAL_TURN');
+ assert.deepEqual(replay(initial,log),s);
+});
