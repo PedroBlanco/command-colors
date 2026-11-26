@@ -39,6 +39,8 @@ const explanations=Object.freeze({
   WARRIOR_CHARGE_COMBAT_REQUIRED:'Resuelve el combate obligatorio de los guerreros antes de terminar el turno.',
   STANDARD_FOOT_MOVEMENT_EXCEEDED:'La ruta supera la distancia de movimiento de esta unidad.',
   CLASH_MOVEMENT_FORBIDDEN:'Choque de escudos no permite movimiento antes del combate.',
+  RALLY_ASSIGNMENT_REQUIRED:'Asigna los dados de reagrupación antes de emitir órdenes.',
+  INVALID_RALLY_ALLOCATION:'Asigna cada dado aplicable una sola vez, respetando los tipos y los bloques perdidos.',
   MFM_CLOSE_FORBIDDEN:'Mover, disparar y mover no permite combate cercano.',
   MFM_FIRE_CLOSED:'La fase de disparos ha terminado.',
   DARKEN_CLOSE_FORBIDDEN:'Oscurecer el cielo solo permite disparos a distancia.',

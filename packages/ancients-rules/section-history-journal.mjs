@@ -6,7 +6,8 @@
 import {randomInt} from 'node:crypto';
 import {distance,neighbors} from '../hex-grid/hex.mjs';
 import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
-import {ANCIENTS_BATTLE_DIE_FACES} from './battle-dice.mjs';
+import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS} from './battle-dice.mjs';
+import {BASE_UNIT_STARTING_BLOCKS} from './block-loss-preview.mjs';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS, SELECTION_CARD_DEFINITIONS, GROUP_CARD_DEFINITIONS, ATTACK_CARD_DEFINITIONS, LEADERSHIP_CARD_DEFINITIONS, FIRE_CARD_DEFINITIONS, selectionCardOptions, screenSelectionCardOrders} from './section-card-order-screen.mjs';
 import {ANCIENTS_RULESET,assessBaseMovement} from './movement-profile.mjs';
 import {assessAncientsMovementRegime,assessOpenHexPathGeometry} from './movement-regimes.mjs';
@@ -41,7 +42,7 @@ const loc=p=>p.col+','+p.row;
 const reversedSection=sector=>sector==='LEFT'?'RIGHT':sector==='RIGHT'?'LEFT':sector;
 const goodLoc=p=>Number.isSafeInteger(p.col)&&p.col>=0&&p.col<13&&Number.isSafeInteger(p.row)&&p.row>=0&&p.row<9;
 const isCards=(a,version=0)=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validId(c.instanceId)&&
-  (Object.hasOwn(BASE_SECTION_CARD_LIMITS,c.definitionId)||version>=22&&Object.hasOwn(SELECTION_CARD_DEFINITIONS,c.definitionId)||version>=23&&Object.hasOwn(GROUP_CARD_DEFINITIONS,c.definitionId)||version>=24&&Object.hasOwn(ATTACK_CARD_DEFINITIONS,c.definitionId)||version>=25&&Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,c.definitionId)||version>=26&&Object.hasOwn(FIRE_CARD_DEFINITIONS,c.definitionId)||version>=27&&c.definitionId==='MOVE_FIRE_MOVE'));
+  (Object.hasOwn(BASE_SECTION_CARD_LIMITS,c.definitionId)||version>=22&&Object.hasOwn(SELECTION_CARD_DEFINITIONS,c.definitionId)||version>=23&&Object.hasOwn(GROUP_CARD_DEFINITIONS,c.definitionId)||version>=24&&Object.hasOwn(ATTACK_CARD_DEFINITIONS,c.definitionId)||version>=25&&Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,c.definitionId)||version>=26&&Object.hasOwn(FIRE_CARD_DEFINITIONS,c.definitionId)||version>=27&&c.definitionId==='MOVE_FIRE_MOVE'||version>=28&&c.definitionId==='RALLY'));
 
 /**
  * Strict server-owned LAB scope: ordinary foot or five mounted base types,
@@ -105,8 +106,8 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false,enableDeckRecycleLab=false,enableLongHistoryLab=false,enableSelectionCardsLab=false,enableGroupCardsLab=false,enableAttackCardsLab=false,enableLeadershipCardsLab=false,enableFireCardsLab=false,enableMoveFireMoveLab=false}={}) {
-  if(!isCards(cardInstances,enableMoveFireMoveLab===true?27:enableFireCardsLab===true?26:enableLeadershipCardsLab===true?25:enableAttackCardsLab===true?24:enableGroupCardsLab===true?23:enableSelectionCardsLab===true?22:0)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false,enableDeckRecycleLab=false,enableLongHistoryLab=false,enableSelectionCardsLab=false,enableGroupCardsLab=false,enableAttackCardsLab=false,enableLeadershipCardsLab=false,enableFireCardsLab=false,enableMoveFireMoveLab=false,enableRallyLab=false}={}) {
+  if(!isCards(cardInstances,enableRallyLab===true?28:enableMoveFireMoveLab===true?27:enableFireCardsLab===true?26:enableLeadershipCardsLab===true?25:enableAttackCardsLab===true?24:enableGroupCardsLab===true?23:enableSelectionCardsLab===true?22:0)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
     !SIDES.includes(startingSide)||!isRecord(board)||!Array.isArray(board.units)||
@@ -140,7 +141,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       typeof enableAttackCardsLab!=='boolean'||(enableAttackCardsLab&&!enableGroupCardsLab)||
       typeof enableLeadershipCardsLab!=='boolean'||(enableLeadershipCardsLab&&(!enableAttackCardsLab||!enableLeaderLab))||
       typeof enableFireCardsLab!=='boolean'||(enableFireCardsLab&&!enableLeadershipCardsLab)||
-      typeof enableMoveFireMoveLab!=='boolean'||(enableMoveFireMoveLab&&!enableFireCardsLab)))fail('INVALID_SECTION_HISTORY_SETUP');
+      typeof enableMoveFireMoveLab!=='boolean'||(enableMoveFireMoveLab&&!enableFireCardsLab)||
+      typeof enableRallyLab!=='boolean'||(enableRallyLab&&!enableMoveFireMoveLab)))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -169,7 +171,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
     if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
-    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab,loneLeaderCombat:enableLoneLeaderCombatLab,deckRecycle:enableDeckRecycleLab,longHistory:enableLongHistoryLab,selectionCards:enableSelectionCardsLab,groupCards:enableGroupCardsLab,attackCards:enableAttackCardsLab,leadershipCards:enableLeadershipCardsLab,fireCards:enableFireCardsLab,moveFireMove:enableMoveFireMoveLab});
+    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab,loneLeaderCombat:enableLoneLeaderCombatLab,deckRecycle:enableDeckRecycleLab,longHistory:enableLongHistoryLab,selectionCards:enableSelectionCardsLab,groupCards:enableGroupCardsLab,attackCards:enableAttackCardsLab,leadershipCards:enableLeadershipCardsLab,fireCards:enableFireCardsLab,moveFireMove:enableMoveFireMoveLab,rally:enableRallyLab});
   }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
@@ -188,8 +190,32 @@ function relativeSectors(state,side){
     ?Object.fromEntries(Object.entries(state.sectorCells).map(([hex,sectors])=>[hex,sectors.map(reversedSection)]))
     :copy(state.sectorCells);
 }
+function rallySelection(state,side){
+  const leaders=state.board.leaders.filter(l=>l.side===side);
+  const own=state.board.units.filter(u=>u.side===side);
+  if(!leaders.length)return {family:'RALLY',fallback:true,maximumOrders:1,unitIds:own.map(u=>u.id),leaderIds:[]};
+  const eligible=own.filter(u=>{
+    const type=state.footLab.unitTypes[u.id];
+    return !['ELEPHANT','HEAVY_CHARIOT'].includes(type)&&state.diceLab.blocks[u.id]<BASE_UNIT_STARTING_BLOCKS[type]&&leaders.some(l=>distance(l,u)<=1);
+  });
+  const rallyOptions=state.diceLab.rallyFaces.map((face,dieIndex)=>({face,dieIndex,
+    unitIds:eligible.filter(u=>face==='LEADER'||BASE_UNIT_DIE_SYMBOLS[state.footLab.unitTypes[u.id]]===face).map(u=>u.id)}));
+  return {family:'RALLY',maximumOrders:state.diceLab.rallyFaces.length,unitIds:eligible.map(u=>u.id),leaderIds:[],rallyOptions};
+}
+function allocateRally(state,selection,allocations){
+  if(!Array.isArray(allocations)||allocations.length>selection.rallyOptions.length)return null;
+  const blocks=copy(state.diceLab.blocks),used=new Set(),ordered=new Set();
+  for(const a of allocations){
+    if(!isRecord(a)||Object.keys(a).length!==2||!Number.isSafeInteger(a.dieIndex)||!validId(a.unitId)||used.has(a.dieIndex)||
+       !selection.rallyOptions[a.dieIndex]?.unitIds.includes(a.unitId)||blocks[a.unitId]>=BASE_UNIT_STARTING_BLOCKS[state.footLab.unitTypes[a.unitId]])return null;
+    used.add(a.dieIndex);ordered.add(a.unitId);blocks[a.unitId]++;
+  }
+  if(selection.rallyOptions.some(o=>!used.has(o.dieIndex)&&o.unitIds.some(id=>blocks[id]<BASE_UNIT_STARTING_BLOCKS[state.footLab.unitTypes[id]])))return null;
+  return {blocks,unitIds:[...ordered]};
+}
 function currentSelectionCard(state,side,sectors=relativeSectors(state,side)){
   if(!(state.diceLab?.version>=22)||!state.activeCard||!state.handAtPlay)return null;
+  if(state.diceLab.version>=28&&state.activeCard.definitionId==='RALLY')return rallySelection(state,side);
   return selectionCardOptions({definitionId:state.activeCard.definitionId,side,
     command:state.handAtPlay.cards.length,board:state.board,unitTypes:state.footLab.unitTypes,sectorCells:sectors});
 }
@@ -542,9 +568,19 @@ export function applySectionHistoryLabCommand(state,command={}){
     next.cardPlay={side,revision:state.revision+1,instanceId:card.instanceId,definitionId:card.definitionId};
     next.phase='ASSIGN_ORDERS';
     publicEvent={kind:'SECTION_CARD_PLAYED_LAB',side,definitionId:card.definitionId};
-  }else if(command.type==='ASSIGN_SECTION_ORDERS'){
+    if(next.diceLab?.version>=28&&card.definitionId==='RALLY'&&next.board.leaders.some(l=>l.side===side)){
+      const draw=sectionRollIndex(next.diceLab.key,'section_rally_'+(state.revision+1));
+      next.diceLab.rallyFaces=Array.from({length:next.handAtPlay.cards.length},()=>ANCIENTS_BATTLE_DIE_FACES[draw(6)]);
+      publicEvent.rallyFaces=copy(next.diceLab.rallyFaces);
+    }
+  }else if(['ASSIGN_SECTION_ORDERS','ASSIGN_SECTION_RALLY_LAB'].includes(command.type)){
     if(state.phase!=='ASSIGN_ORDERS')return reject('WRONG_PHASE');
-    const {unitIds,leaderIds}=command;
+    const rally=state.diceLab?.version>=28&&state.activeCard?.definitionId==='RALLY'?rallySelection(state,side):null;
+    const special=command.type==='ASSIGN_SECTION_RALLY_LAB';
+    if(special!==!!rally?.rallyOptions)return reject('RALLY_ASSIGNMENT_REQUIRED');
+    const recovered=special?allocateRally(state,rally,command.allocations):null;
+    if(special&&!recovered)return reject('INVALID_RALLY_ALLOCATION');
+    const {unitIds,leaderIds}=special?{unitIds:recovered.unitIds,leaderIds:[]}:command;
     if(!Array.isArray(unitIds)||!Array.isArray(leaderIds)||
       unitIds.length+leaderIds.length>117||
       ![...unitIds,...leaderIds].every(validId)||!same([...unitIds,...leaderIds]))
@@ -573,11 +609,12 @@ export function applySectionHistoryLabCommand(state,command={}){
     });
     if(screened.status!=='CANDIDATE')return reject('ORDERS_NOT_ELIGIBLE');
     next.orderSnapshot=proof;
+    if(recovered){next.diceLab.blocks=recovered.blocks;next.diceLab.rallyFaces=null;}
     if(selection?.family==='DARKEN'&&!selection.fallback)next.diceLab.darken={twice:[]};
     if(selection?.family==='MOVE_FIRE_MOVE'&&!selection.fallback)next.diceLab.moveFireMove='FIRST';
     next.phase='LAB_RESOLUTION_PENDING';
     publicEvent={kind:'SECTION_ORDERS_STAGED_LAB',side,unitCount:unitIds.length,
-      leaderCount:leaderIds.length};
+      leaderCount:leaderIds.length,...(recovered?{rallyAllocations:copy(command.allocations)}:{})};
   }else if(command.type==='MOVE_SECTION_FOOT_PATH_V2'){
     if(state.phase!=='LAB_RESOLUTION_PENDING'||!Object.hasOwn(state,'footLab'))
       return reject('FOOT_LAB_NOT_AVAILABLE');

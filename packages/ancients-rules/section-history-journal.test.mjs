@@ -1757,3 +1757,32 @@ test('V27 Move-Fire-Move: two independent moves with optional fire, leader and r
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('V28 Rally: deterministic roll, allocation by face, capacity, orders and replay',()=>{
+ const c=tacticalCardSetup('RALLY',true,10);c.enableMoveFireMoveLab=true;c.enableRallyLab=true;
+ c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];
+ c.board.units.push({id:'a2',side:'A',col:3,row:4},{id:'a3',side:'A',col:0,row:0});
+ Object.assign(c.movementUnitTypes,{a2:'MEDIUM_INFANTRY',a3:'LIGHT_INFANTRY'});
+ const initial=init(c);initial.diceLab.blocks.a1=2;initial.diceLab.blocks.a2=3;initial.diceLab.blocks.a3=2;
+ const card=initial.hands.A.find(x=>x.definitionId==='RALLY'),play=cmd('PLAY_SECTION_CARD',0,{cardInstanceId:card.instanceId});
+ let played;
+ for(let n=0;n<100;n++){
+  initial.diceLab.key=n.toString(16).padStart(64,'0');
+  const result=apply(initial,play);assert.equal(result.accepted,true,result.code);
+  played=result.nextState;
+  if(played.diceLab.rallyFaces.every(f=>['LIGHT','LEADER'].includes(f)))break;
+ }
+ assert.ok(played.diceLab.rallyFaces.every(f=>['LIGHT','LEADER'].includes(f)));
+ const options=project(played,'A').selectionCard.rallyOptions;
+ assert.equal(options.length,2);assert.ok(options.every(o=>o.unitIds.includes('a1')&&!o.unitIds.includes('a3')));
+ const command=allocations=>cmd('ASSIGN_SECTION_RALLY_LAB',1,{allocations});
+ assert.equal(apply(played,cmd('ASSIGN_SECTION_ORDERS',1,{unitIds:['a1'],leaderIds:[]})).code,'RALLY_ASSIGNMENT_REQUIRED');
+ assert.equal(apply(played,command([{dieIndex:0,unitId:'a1'},{dieIndex:0,unitId:'a1'}])).code,'INVALID_RALLY_ALLOCATION');
+ assert.equal(apply(played,command([{dieIndex:0,unitId:'a3'}])).code,'INVALID_RALLY_ALLOCATION');
+ const assign=command(options.map(o=>({dieIndex:o.dieIndex,unitId:'a1'}))),result=apply(played,assign);
+ assert.equal(result.accepted,true,result.code);assert.equal(result.nextState.diceLab.blocks.a1,4);
+ assert.deepEqual(project(result.nextState,'A').orderedUnitIds,['a1']);
+ assert.equal(result.nextState.diceLab.rallyFaces,null);assert.deepEqual(replay(initial,[play,assign]),result.nextState);
+ const fallback=tacticalCardSetup('RALLY',true);fallback.enableMoveFireMoveLab=true;fallback.enableRallyLab=true;
+ const {ordered}=rangedLabReady(fallback);assert.equal(ordered.orderSnapshot.pieces[0].id,'a1');
+});

@@ -15,6 +15,7 @@ const MAX_REVISION_STREAMS = 16;
 const ANCIENTS_LAB_COMMAND_FIELDS=Object.freeze({
   PLAY_SECTION_CARD:['cardInstanceId'],
   ASSIGN_SECTION_ORDERS:['unitIds','leaderIds'],
+  ASSIGN_SECTION_RALLY_LAB:['allocations'],
   MOVE_SECTION_FOOT_PATH_V2:['unitId','path'],
   MOVE_SECTION_MOUNTED_PATH_V1:['unitId','path'],
   MOVE_SECTION_LEADER_PATH_V1:['leaderId','path'],

@@ -24,7 +24,7 @@ const hex=p=>p.col+','+p.row;
 // is generated once by Node crypto at server setup and never projected.
 // Independent domain from the shuffled deck; stable version for old replay.
 export function sectionRollIndex(key,rollId){
-  if(!keyOK(key)||!/^section_(?:ranged|close|leader|escape|rampage|blocker|deck)_[1-9][0-9]*$/.test(rollId))fail();
+  if(!keyOK(key)||!/^section_(?:ranged|close|leader|escape|rampage|blocker|deck|rally)_[1-9][0-9]*$/.test(rollId))fail();
   let counter=0;
   return n=>{
     if(!Number.isSafeInteger(n)||n<2||n>256)fail();
@@ -37,7 +37,7 @@ export function sectionRollIndex(key,rollId){
   };
 }
 
-export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null,closeCombat=false,unitEvade=false,battleBack=false,momentum=false,bonusClose=false,elephantClose=false,specialClose=false,specialFoot=false,loneLeaderCombat=false,deckRecycle=false,longHistory=false,selectionCards=false,groupCards=false,attackCards=false,leadershipCards=false,fireCards=false,moveFireMove=false}={}){
+export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null,closeCombat=false,unitEvade=false,battleBack=false,momentum=false,bonusClose=false,elephantClose=false,specialClose=false,specialFoot=false,loneLeaderCombat=false,deckRecycle=false,longHistory=false,selectionCards=false,groupCards=false,attackCards=false,leadershipCards=false,fireCards=false,moveFireMove=false,rally=false}={}){
   if((morale&&!casualties)||(retreat&&!morale)||(retreatLeaders&&!retreat)||(leaderEscape&&!retreatLeaders)||(rampage&&!leaderEscape)||(rampageLeaders&&!rampage)||(elephantRetreatLeaders&&!rampageLeaders))fail();
   if(victoryTargets!==null&&(!elephantRetreatLeaders||!validVictoryTargets(victoryTargets)))fail();
   if(typeof closeCombat!=='boolean'||(closeCombat&&victoryTargets===null))fail();
@@ -57,13 +57,15 @@ export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=fals
   if(typeof leadershipCards!=='boolean'||(leadershipCards&&!attackCards))fail();
   if(typeof fireCards!=='boolean'||(fireCards&&!leadershipCards))fail();
   if(typeof moveFireMove!=='boolean'||(moveFireMove&&!fireCards))fail();
-  return {version:moveFireMove?27:fireCards?26:leadershipCards?25:attackCards?24:groupCards?23:selectionCards?22:longHistory?21:deckRecycle?20:loneLeaderCombat?19:specialFoot?18:specialClose?17:elephantClose?16:bonusClose?15:momentum?14:battleBack?13:unitEvade?12:closeCombat?11:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
+  if(typeof rally!=='boolean'||(rally&&!moveFireMove))fail();
+  return {version:rally?28:moveFireMove?27:fireCards?26:leadershipCards?25:attackCards?24:groupCards?23:selectionCards?22:longHistory?21:deckRecycle?20:loneLeaderCombat?19:specialFoot?18:specialClose?17:elephantClose?16:bonusClose?15:momentum?14:battleBack?13:unitEvade?12:closeCombat?11:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
     blocks:Object.fromEntries(Object.entries(unitTypes).map(([id,type])=>[
       id,BASE_UNIT_STARTING_BLOCKS[type]
     ])),
     resolvedUnitIds:[],pending:null,last:null,
     ...(fireCards?{darken:null}:{}),
     ...(moveFireMove?{moveFireMove:null}:{}),
+    ...(rally?{rallyFaces:null}:{}),
     ...(casualties?{casualties:[],leaderCheck:null}:{}),
     ...(morale?{morale:null}:{}),
     ...(retreatLeaders?{retreatPending:null}:{}),
@@ -710,8 +712,8 @@ function markSectionBattle(d,plan){
 
 export function assertSectionDiceLab(state){
   const d=state.diceLab;
-  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27].includes(d.version)||!keyOK(d.key)||
-     Object.keys(d).length!==(d.version>=27?15:d.version>=26?14:d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
+  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28].includes(d.version)||!keyOK(d.key)||
+     Object.keys(d).length!==(d.version>=28?16:d.version>=27?15:d.version>=26?14:d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
      Object.keys(d.blocks).length!==state.board.units.length||
      state.board.units.some(u=>!Object.hasOwn(d.blocks,u.id)||
        !Number.isSafeInteger(d.blocks[u.id])||d.blocks[u.id]<1||
@@ -731,6 +733,10 @@ export function assertSectionDiceLab(state){
     (['FIRST','SECOND'].includes(d.moveFireMove)&&state.activeCard?.definitionId==='MOVE_FIRE_MOVE'&&
       state.phase==='LAB_RESOLUTION_PENDING'&&!d.darken&&
       (d.moveFireMove!=='SECOND'||state.combatLab.movementClosed&&!state.combatLab.plan&&!d.pending))))fail();
+  if(d.version>=28){
+    const rolling=state.phase==='ASSIGN_ORDERS'&&state.activeCard?.definitionId==='RALLY'&&state.board.leaders.some(l=>l.side===state.turn);
+    if(rolling?(!Array.isArray(d.rallyFaces)||d.rallyFaces.length!==state.handAtPlay.cards.length||d.rallyFaces.some(f=>!ANCIENTS_BATTLE_DIE_FACES.includes(f))):d.rallyFaces!==null)fail();
+  }
   if(d.last?.momentum?.pending&&!sectionMomentumOptions(state).length)fail();
   if(d.last?.battleBackPending&&(d.version<11||!['CLOSE',...(d.version>=15?['BONUS_CLOSE']:[])].includes(d.last.attackKind)||state.combatLab.plan||
       !state.board.units.some(u=>u.id===d.last.targetId&&u.side!==state.turn)))fail();
@@ -1092,6 +1098,7 @@ export function projectSectionDiceLab(state,side){
   return {blocks:{...d.blocks},resolvedUnitIds:[...d.resolvedUnitIds],
     ...(d.version>=26?{darken:structuredClone(d.darken)}:{}),
     ...(d.version>=27?{moveFireMove:d.moveFireMove}:{}),
+    ...(d.version>=28?{rallyFaces:structuredClone(d.rallyFaces)}:{}),
     pending:p?structuredClone(p):null,last:d.last?structuredClone(d.last):null,
     canReview:side!==sectionCombatSide(state)&&p?.review==='AWAITING_OPPONENT',
     canFinalize:side===sectionCombatSide(state)&&!!p&&!blocker&&p.review!=='AWAITING_OPPONENT',
@@ -1135,6 +1142,7 @@ export function resetSectionDiceTurn(next){
   next.diceLab.resolvedUnitIds=[];
   if(next.diceLab.version>=26)next.diceLab.darken=null;
   if(next.diceLab.version>=27)next.diceLab.moveFireMove=null;
+  if(next.diceLab.version>=28)next.diceLab.rallyFaces=null;
   next.diceLab.pending=null;
   next.diceLab.last=null;
   if(next.diceLab.version>=2)next.diceLab.leaderCheck=null;

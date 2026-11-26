@@ -204,10 +204,11 @@ function renderAncients() {
       :'solo hexágonos despejados')+'.';
   const selection=cached.selectionCard;
   const clash=cached.cardInPlay==='CLASH_OF_SHIELDS',darken=!!cached.diceLab?.darken,noMove=clash||darken;
-  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho',DARKEN_THE_SKY:'Oscurecer el cielo',MOVE_FIRE_MOVE:'Mover, disparar y mover'};
+  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho',DARKEN_THE_SKY:'Oscurecer el cielo',MOVE_FIRE_MOVE:'Mover, disparar y mover',RALLY:'Reagrupar'};
   if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':selection.family==='LEADERSHIP'?' (grupo contiguo desde un líder válido o una sola unidad; sin separar líderes adjuntos)':selection.connected?' (grupo de unidades contiguas)':'');
   if(darken)el('ancients-status').textContent+=' · Doble disparo: '+cached.diceLab.resolvedUnitIds.length+' unidades han disparado, '+cached.diceLab.darken.twice.length+' dos veces';
   if(mfm)el('ancients-status').textContent+=' · '+(secondMove?'Segundo movimiento':movementClosed?'Disparos':'Primer movimiento');
+  if(cached.diceLab?.rallyFaces)el('ancients-status').textContent+=' · Dados de reagrupación: '+cached.diceLab.rallyFaces.join(', ')+' · Selecciona una unidad por dado aplicable';
   const cardSelect=el('ancients-card');
   const chosen=cardSelect.value;
   cardSelect.replaceChildren();
@@ -222,7 +223,16 @@ function renderAncients() {
   const unitSelect=el('ancients-units');
   const selected=new Set(Array.from(unitSelect.selectedOptions??[],x=>x.value));
   unitSelect.replaceChildren();
-  for(const unit of cached.board??[]){
+  if(selection?.rallyOptions){
+    for(const o of selection.rallyOptions){
+      for(const id of o.unitIds){
+        const unit=cached.board.find(u=>u.id===id);
+        const option=document.createElement('option');option.value=o.dieIndex+':'+id;
+        option.textContent=`Dado ${o.dieIndex+1} (${o.face}) → ${id} (${unit.blocksRemaining} bloques)`;
+        option.selected=selected.has(option.value);unitSelect.appendChild(option);
+      }
+    }
+  }else for(const unit of cached.board??[]){
     if(unit.side!==cached.you||selection&&!selection.unitIds.includes(unit.id))continue;
     const option=document.createElement('option');
     option.value=unit.id;
@@ -955,7 +965,9 @@ action('ancients-refresh',inspect);
 action('ancients-play',()=>sendAncients('PLAY_SECTION_CARD',{
   cardInstanceId:el('ancients-card').value
 }));
-action('ancients-order',()=>sendAncients('ASSIGN_SECTION_ORDERS',{
+action('ancients-order',()=>cached?.selectionCard?.rallyOptions?sendAncients('ASSIGN_SECTION_RALLY_LAB',{
+  allocations:Array.from(el('ancients-units').selectedOptions??[],x=>{const [index,unitId]=x.value.split(':');return {dieIndex:Number(index),unitId};})
+}):sendAncients('ASSIGN_SECTION_ORDERS',{
   unitIds:cached?.selectionCard?.allRequired?[...cached.selectionCard.unitIds]:Array.from(el('ancients-units').selectedOptions??[],x=>x.value),
   leaderIds:Array.from(el('ancients-leader-orders').selectedOptions??[],x=>x.value)
 }));
