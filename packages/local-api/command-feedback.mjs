@@ -42,6 +42,8 @@ const explanations=Object.freeze({
   UNIT_EVADE_NOT_AVAILABLE:'No hay una decisión de evasión disponible para este jugador.',
   INVALID_UNIT_EVADE_PATH:'La ruta de evasión no es válida. Consulta la partida.',
   CLOSE_ATTACK_DECLARED:'No se puede cancelar un combate anunciado con decisión de evasión.',
+  BONUS_CLOSE_DECISION_PENDING:'Resuelve el combate adicional o renuncia antes de continuar.',
+  BONUS_CLOSE_NOT_AVAILABLE:'No hay combate adicional disponible para esa unidad.',
   MOMENTUM_DECISION_PENDING:'Resuelve el avance tras el combate antes de continuar.',
   MOMENTUM_NOT_AVAILABLE:'No hay un avance pendiente para este jugador.',
   INVALID_MOMENTUM_PATH:'La ruta de avance no está permitida. Consulta la partida.',

@@ -1064,3 +1064,63 @@ test('V14 momentum: advance, decline, cavalry extra step, terrain stop, evade an
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('V15 bonus close: same ordered unit, new adjacent target, second advance, defense, decline and replay',()=>{
+ for(const mode of ['SECOND_ADVANCE','DECLINE','BATTLE_BACK','EVADE','NO_TARGET','FOOT','LEADER','WIN']){
+  const c=rangedLabSetup({targetCol:3});
+  Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,enableBonusCloseLab:true,victoryTargets:{A:mode==='WIN'?2:3,B:3}});
+  c.movementUnitTypes.a1=['FOOT','LEADER'].includes(mode)?'HEAVY_INFANTRY':'HEAVY_CAVALRY';
+  if(mode==='LEADER'){c.enableLeaderLab=true;c.board.leaders=[{id:'a_leader',side:'A',col:2,row:4}];}
+  if(mode!=='NO_TARGET'){
+    c.board.units.push({id:'b2',side:'B',col:4,row:4});c.movementUnitTypes.b2=mode==='EVADE'?'LIGHT_INFANTRY':'HEAVY_INFANTRY';
+  }
+  const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);
+    assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;};
+  run('FINISH_SECTION_MOVEMENT_LAB');run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:Array(s.combatLab.plan.diceCount).fill('HEAVY')});
+  run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});run('FINALIZE_SECTION_RANGED_LAB');
+  run('CHOOSE_SECTION_MOMENTUM_LAB',{path:[{col:3,row:4}]});
+  if(['NO_TARGET','FOOT'].includes(mode)){
+    assert.equal(project(s,'A').diceLab.bonusClosePending,false);
+    assert.equal(project(s,'A').combatLab.candidates.length,0);
+  }else{
+    assert.equal(project(s,'A').diceLab.bonusClosePending,true);
+    assert.equal(project(s,'A').combatLab.candidates.length,1);
+    assert.equal(project(s,'A').combatLab.candidates[0].bonusClose,true);
+    assert.deepEqual(project(s,'B').combatLab.candidates,[]);
+    assert.equal(apply(s,cmd('END_EXPERIMENTAL_TURN',s.revision)).code,'BONUS_CLOSE_DECISION_PENDING');
+    assert.equal(apply(s,cmd('PREPARE_SECTION_CLOSE_LAB',s.revision,{attackerId:'other',targetId:'b2'})).code,'BONUS_CLOSE_NOT_AVAILABLE');
+    if(mode==='DECLINE')run('DECLINE_SECTION_BONUS_CLOSE_LAB');
+    else {
+      run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b2'});
+      assert.equal(s.combatLab.plan.bonusClose,true);
+      assert.equal(apply(s,cmd('CANCEL_SECTION_RANGED_LAB',s.revision)).code,'CLOSE_ATTACK_DECLARED');
+      if(mode==='EVADE')run('CHOOSE_SECTION_UNIT_EVADE_LAB',{actor:'B',path:s.combatLab.plan.evadeOptions[0]});
+      run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:Array(s.combatLab.plan.diceCount).fill(mode==='BATTLE_BACK'?'LIGHT':'HEAVY')});
+      run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+      if(mode!=='WIN')run('FINALIZE_SECTION_RANGED_LAB');
+      assert.equal(s.diceLab.last.attackKind,'BONUS_CLOSE');
+      if(mode==='BATTLE_BACK'){
+        run('ACCEPT_SECTION_BATTLE_BACK_LAB',{actor:'B'});
+        run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',faces:Array(s.combatLab.plan.diceCount).fill('LIGHT')});
+        run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true});run('FINALIZE_SECTION_RANGED_LAB',{actor:'B'});
+        assert.equal(s.diceLab.last.attackKind,'BATTLE_BACK');
+      }else if(['SECOND_ADVANCE','LEADER'].includes(mode)){
+        const p=project(s,'A').diceLab;
+        assert.equal(p.momentumPending,true);assert.equal(p.momentumOptions.length,1);
+        assert.deepEqual(p.momentumOptions[0],{path:[{col:4,row:4}],bonusEligible:false});
+        assert.equal(apply(s,cmd('CHOOSE_SECTION_MOMENTUM_LAB',s.revision,{path:[{col:4,row:4},{col:5,row:4}]})).code,'INVALID_MOMENTUM_PATH');
+        run('CHOOSE_SECTION_MOMENTUM_LAB',{path:p.momentumOptions[0].path});
+        if(mode==='LEADER')assert.deepEqual(s.board.leaders[0],{id:'a_leader',side:'A',col:4,row:4});
+      }else assert.equal(project(s,'A').diceLab.momentumPending,false);
+    }
+    assert.equal(project(s,'A').diceLab.bonusClosePending,false);
+  }
+  assert.deepEqual(s.diceLab.resolvedUnitIds,['a1']);
+  assert.deepEqual(replay(initial,log),s);
+ }
+});

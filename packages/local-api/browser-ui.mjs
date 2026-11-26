@@ -31,6 +31,7 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-decline-battle-back':'ancients-combat-feedback',
   'ancients-accept-battle-back':'ancients-combat-feedback',
   'ancients-confirm-momentum':'ancients-combat-feedback',
+  'ancients-decline-bonus-close':'ancients-combat-feedback',
   'ancients-confirm-unit-evade':'ancients-combat-feedback',
   'ancients-roll-leader':'ancients-combat-feedback',
   'ancients-evade-leader':'ancients-combat-feedback',
@@ -260,7 +261,7 @@ function renderAncients() {
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
-  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending;
+  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending||!!cached.diceLab?.bonusClosePending;
   el('ancients-finish-movement').hidden=!combat;
   el('ancients-finish-movement').disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed;
   el('ancients-clear-path').disabled=!ancientsDraft;
@@ -276,13 +277,13 @@ function renderAncients() {
   for(const [index,candidate] of candidates.entries()){
     const option=document.createElement('option');
     option.value=String(index);
-    option.textContent=`${candidate.kind==='CLOSE_PREVIEW'?'Cuerpo a cuerpo':'A distancia'}: ${candidate.attackerId} → ${candidate.targetId} (${candidate.diceCount} dados)`;
+    option.textContent=`${candidate.bonusClose?'Combate adicional':candidate.kind==='CLOSE_PREVIEW'?'Cuerpo a cuerpo':'A distancia'}: ${candidate.attackerId} → ${candidate.targetId} (${candidate.diceCount} dados)`;
     choice.appendChild(option);
   }
   if(candidates.length)choice.value=candidates[Number(oldChoice)]?oldChoice||'0':'0';
   el('ancients-prepare-ranged').disabled=!isTurn||!candidates.length||Boolean(combat?.plan);
   const dice=cached.diceLab,pending=dice?.pending,last=dice?.last;
-  el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan||!!pending||!!combat?.plan?.evadeOptions?.length||!!combat?.plan?.battleBack;
+  el('ancients-cancel-ranged').disabled=!isTurn||!combat?.plan||!!pending||!!combat?.plan?.evadeOptions?.length||!!combat?.plan?.battleBack||!!combat?.plan?.bonusClose;
   const plan=combat?.plan;
   el('ancients-combat-status').textContent=plan
     ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}).`
@@ -335,6 +336,10 @@ function renderAncients() {
   el('ancients-confirm-momentum').disabled=stopped||!dice?.canChooseMomentum;
   momentumChoice.disabled=stopped||!dice?.canChooseMomentum;
   el('ancients-momentum-status').textContent=dice?.canChooseMomentum?'Puedes avanzar al hexágono liberado o renunciar.':'El atacante debe decidir si avanza.';
+  el('ancients-decline-bonus-close').hidden=!dice?.bonusClosePending;
+  el('ancients-decline-bonus-close').disabled=stopped||!dice?.canDeclineBonusClose;
+  if(dice?.bonusClosePending)el('ancients-combat-status').textContent='Combate adicional disponible: el atacante puede seleccionar un objetivo adyacente o renunciar.';
+  if(plan?.bonusClose)el('ancients-combat-status').textContent=`Combate adicional: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
   if(plan?.battleBack)el('ancients-combat-status').textContent=`Respuesta al combate: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
   el('ancients-accept-physical').disabled=stopped||!dice?.canReview;
   el('ancients-dispute-physical').disabled=stopped||!dice?.canReview;
@@ -1021,6 +1026,7 @@ action('ancients-confirm-momentum',()=>{
   if(!path)throw Error('INVALID_MOMENTUM_PATH');
   return sendAncients('CHOOSE_SECTION_MOMENTUM_LAB',{path});
 });
+action('ancients-decline-bonus-close',()=>sendAncients('DECLINE_SECTION_BONUS_CLOSE_LAB'));
 action('ancients-end',()=>sendAncients('END_EXPERIMENTAL_TURN'));
 action('deck-play',()=>sendDeck('play_synthetic_card',{cardRef:el('deck-card').value}));
 el('deck-units').addEventListener('change',()=>{
