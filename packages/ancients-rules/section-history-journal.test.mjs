@@ -1248,3 +1248,56 @@ test('V17 chariots and war machines: defense, sword repeat, evade without banner
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+
+test('V18 warrior charge and war machine movement: geometry, obligatory attack, disputed roll and replay',()=>{
+ for(const mode of ['WARRIOR_ONE','CHARGE','NO_TARGET','BLOCKED','FOREST_STOP','FOREST_ENTRY','DISPUTE','MACHINE','MACHINE_TWO','MACHINE_BROKEN','MACHINE_STATIONARY']){
+  const machine=mode.startsWith('MACHINE');
+  const c=rangedLabSetup({targetCol:mode==='NO_TARGET'?7:5,terrain:mode==='FOREST_STOP'?[{col:3,row:4,kind:'FOREST'}]:mode==='FOREST_ENTRY'?[{col:4,row:4,kind:'FOREST'}]:mode==='MACHINE_BROKEN'?[{col:3,row:4,kind:'BROKEN_GROUND'}]:[]});
+  Object.assign(c,{enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,enableSpecialFootLab:true,victoryTargets:{A:3,B:3}});
+  c.movementUnitTypes.a1=machine?'HEAVY_WAR_MACHINE':'WARRIOR_INFANTRY';
+  if(mode==='BLOCKED'){c.board.units.push({id:'b2',side:'B',col:3,row:4});c.movementUnitTypes.b2='HEAVY_INFANTRY';}
+  const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);
+    assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;};
+  const path=['WARRIOR_ONE','MACHINE','MACHINE_BROKEN'].includes(mode)?[{col:3,row:4}]:[{col:3,row:4},{col:4,row:4}];
+  const denied={NO_TARGET:'WARRIOR_CHARGE_TARGET_REQUIRED',BLOCKED:'OCCUPIED_DESTINATION',FOREST_STOP:'MUST_STOP_ON_FOREST_ENTRY',MACHINE_TWO:'STANDARD_FOOT_MOVEMENT_EXCEEDED',MACHINE_BROKEN:'WAR_MACHINE_CANNOT_ENTER_BROKEN_GROUND'};
+  if(denied[mode]){
+    const result=apply(s,cmd('MOVE_SECTION_FOOT_PATH_V2',s.revision,{unitId:'a1',path}));
+    assert.equal(result.code,denied[mode],mode);assert.deepEqual(s,ordered);continue;
+  }
+  if(mode!=='MACHINE_STATIONARY'){
+    run('MOVE_SECTION_FOOT_PATH_V2',{unitId:'a1',path});
+    assert.equal(apply(s,cmd('MOVE_SECTION_FOOT_PATH_V2',s.revision,{unitId:'a1',path})).code,'UNIT_ALREADY_MOVED');
+    assert.equal(s.combatLab.movement.a1.battle,machine?'UNAVAILABLE':path.length===2?'MANDATORY_CLOSE_COMBAT':'POSSIBLE');
+  }
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  if(['CHARGE','DISPUTE','FOREST_ENTRY'].includes(mode)){
+    assert.deepEqual(project(s,'A').combatLab.pendingWarriorCharges,['a1']);
+    assert.equal(apply(s,cmd('END_EXPERIMENTAL_TURN',s.revision)).code,'WARRIOR_CHARGE_COMBAT_REQUIRED');
+    run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+    assert.equal(s.combatLab.plan.diceCount,mode==='FOREST_ENTRY'?2:4);
+    const faces=Array(s.combatLab.plan.diceCount).fill('LIGHT');
+    run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
+    if(mode==='DISPUTE'){
+      run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:false});
+      run('ARCHIVE_SECTION_RANGED_LAB');assert.equal(s.diceLab.pending,null);
+      assert.deepEqual(s.diceLab.resolvedUnitIds,[]);
+      run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
+    }
+    run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+    run('FINALIZE_SECTION_RANGED_LAB');run('DECLINE_SECTION_BATTLE_BACK_LAB',{actor:'B'});
+    assert.deepEqual(project(s,'A').combatLab.pendingWarriorCharges,[]);
+  }else if(mode==='MACHINE'){
+    assert.equal(apply(s,cmd('PREPARE_SECTION_RANGED_LAB',s.revision,{attackerId:'a1',targetId:'b1'})).code,'BATTLE_AFTER_MOVEMENT_UNAVAILABLE');
+    assert.equal(project(s,'A').combatLab.candidates.length,0);
+  }else if(mode==='MACHINE_STATIONARY'){
+    assert.ok(project(s,'A').combatLab.candidates.some(o=>o.targetId==='b1'));
+  }
+  run('END_EXPERIMENTAL_TURN');
+  assert.deepEqual(replay(initial,log),s);
+ }
+});

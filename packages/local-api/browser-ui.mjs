@@ -263,7 +263,7 @@ function renderAncients() {
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
-  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending||!!cached.diceLab?.bonusClosePending;
+  el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending||!!cached.diceLab?.bonusClosePending||!!combat?.pendingWarriorCharges?.length;
   el('ancients-finish-movement').hidden=!combat;
   el('ancients-finish-movement').disabled=!combat||!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed;
   el('ancients-clear-path').disabled=!ancientsDraft;
@@ -349,6 +349,8 @@ function renderAncients() {
   el('ancients-decline-bonus-close').hidden=!dice?.bonusClosePending;
   el('ancients-decline-bonus-close').disabled=stopped||!dice?.canDeclineBonusClose;
   if(dice?.bonusClosePending)el('ancients-combat-status').textContent='Combate adicional disponible: el atacante puede seleccionar un objetivo adyacente o renunciar.';
+  if(isTurn&&!plan&&!dice?.momentumPending&&!dice?.battleBackPending&&!dice?.bonusClosePending&&combat?.pendingWarriorCharges?.length)
+    el('ancients-combat-status').textContent='Carga obligatoria pendiente: '+combat.pendingWarriorCharges.join(', ')+'. Selecciona un combate cuerpo a cuerpo.';
   if(plan?.bonusClose)el('ancients-combat-status').textContent=`Combate adicional: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
   if(plan?.battleBack)el('ancients-combat-status').textContent=`Respuesta al combate: ${plan.attackerId} → ${plan.targetId} (${plan.diceCount} dados).`;
   el('ancients-accept-physical').disabled=stopped||!dice?.canReview;

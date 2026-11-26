@@ -8,8 +8,8 @@ import {distance,neighbors} from '../hex-grid/hex.mjs';
 import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES} from './battle-dice.mjs';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS} from './section-card-order-screen.mjs';
-import {ANCIENTS_RULESET} from './movement-profile.mjs';
-import {assessAncientsMovementRegime} from './movement-regimes.mjs';
+import {ANCIENTS_RULESET,assessBaseMovement} from './movement-profile.mjs';
+import {assessAncientsMovementRegime,assessOpenHexPathGeometry} from './movement-regimes.mjs';
 import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
 import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
@@ -101,7 +101,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false}={}) {
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -126,7 +126,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       typeof enableMomentumLab!=='boolean'||(enableMomentumLab&&!enableBattleBackLab)||
       typeof enableBonusCloseLab!=='boolean'||(enableBonusCloseLab&&!enableMomentumLab)||
       typeof enableElephantCloseLab!=='boolean'||(enableElephantCloseLab&&!enableBonusCloseLab)||
-      typeof enableSpecialCloseLab!=='boolean'||(enableSpecialCloseLab&&!enableElephantCloseLab)))fail('INVALID_SECTION_HISTORY_SETUP');
+      typeof enableSpecialCloseLab!=='boolean'||(enableSpecialCloseLab&&!enableElephantCloseLab)||
+      typeof enableSpecialFootLab!=='boolean'||(enableSpecialFootLab&&!enableSpecialCloseLab)))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -155,12 +156,49 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
     if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
-    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab});
+    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab});
   }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
   assertSectionHistoryLab(state);
   return state;
+}
+
+// V18 extends the existing foot command to the two special foot regimes.
+function previewSpecialFootMove(state,command){
+  const piece=state.board.units.find(u=>u.id===command.unitId);
+  if(!piece||piece.side!==state.turn||
+    !state.orderSnapshot.pieces.some(p=>p.kind==='UNIT'&&p.id===piece.id))return {reason:'UNIT_NOT_ORDERED'};
+  if(state.footLab.movedUnitIds.includes(piece.id))return {reason:'UNIT_ALREADY_MOVED'};
+  const type=state.footLab.unitTypes[piece.id];
+  const path=command.path;
+  if(!Array.isArray(path)||!path.length||path.length>2||
+     !path.every(c=>isRecord(c)&&Object.keys(c).length===2&&goodLoc(c)))return {reason:'INVALID_PATH_CORE_ACTION'};
+  const profile=assessBaseMovement({unitType:type,steps:path.length});
+  if(profile.status==='EXCEEDS_STANDARD_PROFILE')return {reason:'STANDARD_FOOT_MOVEMENT_EXCEEDED'};
+  const from={col:piece.col,row:piece.row};
+  const geometry=assessOpenHexPathGeometry({from,path,occupiedCells:[
+    ...state.board.units,...state.board.leaders.filter(l=>l.side!==piece.side&&!state.board.units.some(u=>loc(u)===loc(l)))
+  ]});
+  if(geometry.status!=='CANDIDATE_PATH_GEOMETRY')return {reason:geometry.reason};
+  if(profile.battle==='MANDATORY_CLOSE_COMBAT'&&!state.board.units.some(u=>u.side!==piece.side&&distance(u,geometry.destination)===1))
+    return {reason:'WARRIOR_CHARGE_TARGET_REQUIRED'};
+  const board=copy(state.board);
+  Object.assign(board.units.find(u=>u.id===piece.id),geometry.destination);
+  return {status:'RULE_PATH_TRANSITION_CANDIDATE',
+    nextState:{board,orderLedger:{movedUnitIds:[...state.footLab.movedUnitIds,piece.id]}},
+    transition:{unitId:piece.id,from,to:geometry.destination,path:copy(path),battleAfterMovement:profile.battle}};
+}
+
+// A two-hex charge is compulsory while at least one supported enemy unit
+// remains adjacent. If earlier combats remove every target, it is waived.
+function pendingWarriorCharges(state){
+  if(!(state.diceLab?.version>=18)||state.phase!=='LAB_RESOLUTION_PENDING')return [];
+  return Object.entries(state.combatLab.movement).filter(([id,m])=>{
+    if(m.battle!=='MANDATORY_CLOSE_COMBAT'||state.diceLab.resolvedUnitIds.includes(id))return false;
+    const unit=state.board.units.find(u=>u.id===id&&u.side===state.turn);
+    return !!unit&&state.board.units.some(u=>u.side!==state.turn&&distance(unit,u)===1);
+  }).map(([id])=>id);
 }
 
 /** Only the replayed server state may supply movement, orders, terrain or dice. */
@@ -359,7 +397,7 @@ export function assertSectionHistoryLab(s){
        Object.entries(c.movement).some(([id,m])=>
          !s.footLab.movedUnitIds.includes(id)||!isRecord(m)||
          Object.keys(m).length!==2||!Number.isSafeInteger(m.steps)||
-         m.steps<1||m.steps>4||!['POSSIBLE','UNAVAILABLE'].includes(m.battle))||
+         m.steps<1||m.steps>4||!['POSSIBLE','UNAVAILABLE',...(s.diceLab?.version>=18&&m.steps===2&&(s.footLab.unitTypes[id]==='WARRIOR_INFANTRY'||!s.board.units.some(u=>u.id===id))?['MANDATORY_CLOSE_COMBAT']:[])].includes(m.battle))||
        (c.plan!==null&&!c.movementClosed))fail('INVALID_COMBAT_LAB_STATE');
     if(c.plan!==null){
       const checked=(c.plan.kind==='CLOSE_PREVIEW'?screenClosePlan:screenRangedPlan)(s,c.plan.attackerId,c.plan.targetId,c.plan.evadePath,c.plan.battleBack===true,c.plan.bonusClose===true);
@@ -471,7 +509,8 @@ export function applySectionHistoryLabCommand(state,command={}){
       cardFamily:'ORDINARY_SECTION',terrain:[],scenarioExceptions:[],
       unitTypes:copy(state.footLab.unitTypes)
     };
-    const result=reduceCoreOpenFootPath({
+    const special=state.diceLab?.version>=18&&['WARRIOR_INFANTRY','HEAVY_WAR_MACHINE'].includes(state.footLab.unitTypes[command.unitId]);
+    const result=special?previewSpecialFootMove(state,command):reduceCoreOpenFootPath({
       state:coreState,policy,
       action:{actor:side,expectedRevision:state.revision,
         unitId:command.unitId,path:command.path}
@@ -502,6 +541,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     });
     if(terrain.status!=='CANDIDATE')
       return reject(terrain.reason??'FOOT_LAB_TERRAIN_BLOCKED');
+    if(special&&result.transition.battleAfterMovement==='MANDATORY_CLOSE_COMBAT'&&terrain.battleOnEntry==='UNAVAILABLE')return reject('WARRIOR_CHARGE_TERRAIN_BLOCKED');
     const battleAfterMovement=terrain.battleOnEntry==='UNAVAILABLE'
       ? 'UNAVAILABLE':result.transition.battleAfterMovement;
     // The reducer determines every changed cell and public event field.
@@ -509,7 +549,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     next.board.units=result.nextState.board.units;
     next.footLab.movedUnitIds=result.nextState.orderLedger.movedUnitIds;
     if(next.combatLab)next.combatLab.movement[command.unitId]={
-      steps:command.path.length,battle:battleAfterMovement==='POSSIBLE'?'POSSIBLE':'UNAVAILABLE'
+      steps:command.path.length,battle:battleAfterMovement==='MANDATORY_CLOSE_COMBAT'?'MANDATORY_CLOSE_COMBAT':battleAfterMovement==='POSSIBLE'?'POSSIBLE':'UNAVAILABLE'
     };
     if(attached){
       const destination=result.transition.to;
@@ -710,6 +750,7 @@ export function applySectionHistoryLabCommand(state,command={}){
   }else if(command.type==='END_EXPERIMENTAL_TURN'){
     if(state.combatLab?.plan)return reject('COMBAT_PLAN_PENDING');
     if(state.phase!=='LAB_RESOLUTION_PENDING')return reject('WRONG_PHASE');
+    if(pendingWarriorCharges(state).length)return reject('WARRIOR_CHARGE_COMBAT_REQUIRED');
     next.discardPile.push(next.activeCard);
     next.activeCard=null;
     const drew=next.drawPile.length>0;
@@ -772,6 +813,7 @@ export function projectSectionHistoryLab(state,side){
       ...(state.combatLab?{
         combatLab:{movementClosed:state.combatLab.movementClosed,
           plan:copy(state.combatLab.plan),
+          ...(state.diceLab?.version>=18?{pendingWarriorCharges:pendingWarriorCharges(state)}:{}),
           candidates:state.revision<SECTION_HISTORY_MAX_COMMANDS&&!sectionVictory(state)?.winner&&state.turn===side&&state.combatLab.movementClosed&&!state.combatLab.plan&&!state.diceLab?.last?.battleBackPending&&!state.diceLab?.last?.momentum?.pending
             ?state.diceLab?.last?.momentum?.bonusPending?bonusCloseCandidates(state):state.orderSnapshot.pieces.filter(p=>p.kind==='UNIT'&&p.side===side)
               .flatMap(p=>state.board.units.filter(u=>u.side!==side).flatMap(u=>{

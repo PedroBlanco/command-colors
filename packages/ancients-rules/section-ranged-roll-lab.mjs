@@ -37,7 +37,7 @@ export function sectionRollIndex(key,rollId){
   };
 }
 
-export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null,closeCombat=false,unitEvade=false,battleBack=false,momentum=false,bonusClose=false,elephantClose=false,specialClose=false}={}){
+export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=false,retreat=false,retreatLeaders=false,leaderEscape=false,rampage=false,rampageLeaders=false,elephantRetreatLeaders=false,victoryTargets=null,closeCombat=false,unitEvade=false,battleBack=false,momentum=false,bonusClose=false,elephantClose=false,specialClose=false,specialFoot=false}={}){
   if((morale&&!casualties)||(retreat&&!morale)||(retreatLeaders&&!retreat)||(leaderEscape&&!retreatLeaders)||(rampage&&!leaderEscape)||(rampageLeaders&&!rampage)||(elephantRetreatLeaders&&!rampageLeaders))fail();
   if(victoryTargets!==null&&(!elephantRetreatLeaders||!validVictoryTargets(victoryTargets)))fail();
   if(typeof closeCombat!=='boolean'||(closeCombat&&victoryTargets===null))fail();
@@ -47,7 +47,8 @@ export function initializeSectionDiceLab(unitTypes,{casualties=false,morale=fals
   if(typeof bonusClose!=='boolean'||(bonusClose&&!momentum))fail();
   if(typeof elephantClose!=='boolean'||(elephantClose&&!bonusClose))fail();
   if(typeof specialClose!=='boolean'||(specialClose&&!elephantClose))fail();
-  return {version:specialClose?17:elephantClose?16:bonusClose?15:momentum?14:battleBack?13:unitEvade?12:closeCombat?11:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
+  if(typeof specialFoot!=='boolean'||(specialFoot&&!specialClose))fail();
+  return {version:specialFoot?18:specialClose?17:elephantClose?16:bonusClose?15:momentum?14:battleBack?13:unitEvade?12:closeCombat?11:victoryTargets!==null?10:elephantRetreatLeaders?9:rampageLeaders?8:rampage?7:leaderEscape?6:retreatLeaders?5:retreat?4:morale?3:casualties?2:1,key:randomBytes(32).toString('hex'),
     blocks:Object.fromEntries(Object.entries(unitTypes).map(([id,type])=>[
       id,BASE_UNIT_STARTING_BLOCKS[type]
     ])),
@@ -671,7 +672,7 @@ export function settleSectionVictory(next,event){
 
 export function assertSectionDiceLab(state){
   const d=state.diceLab;
-  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17].includes(d.version)||!keyOK(d.key)||
+  if(!state.combatLab||!record(d)||![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18].includes(d.version)||!keyOK(d.key)||
      Object.keys(d).length!==(d.version>=10?13:d.version>=9?12:d.version>=7?11:d.version>=5?10:d.version>=3?9:d.version===2?8:6)||!record(d.blocks)||
      Object.keys(d.blocks).length!==state.board.units.length||
      state.board.units.some(u=>!Object.hasOwn(d.blocks,u.id)||
@@ -855,6 +856,12 @@ export function applySectionDiceCommand(state,next,command){
     if(!p)return deny('RANGED_ROLL_REQUIRED');
     if(p.review==='AWAITING_OPPONENT')return deny('PHYSICAL_REVIEW_REQUIRED');
     const blocker=p.review==='DISPUTED'?'PHYSICAL_ROLL_DISPUTED':resolutionBlocker(state,p);
+    if(command.type==='ARCHIVE_SECTION_RANGED_LAB'&&d.version>=18&&!plan.battleBack&&!plan.bonusClose&&state.combatLab.movement[plan.attackerId]?.battle==='MANDATORY_CLOSE_COMBAT'){
+      if(p.review!=='DISPUTED')return deny('WARRIOR_CHARGE_COMBAT_REQUIRED');
+      // A rejected physical declaration cannot discharge a compulsory attack.
+      next.diceLab.pending=null;
+      return {accepted:true,event:{kind:'SECTION_CHARGE_ROLL_DISPUTED_LAB',side,attackerId:plan.attackerId,targetId:plan.targetId,rollId:p.roll.rollId}};
+    }
     const evade=command.type==='EVADE_SECTION_LEADER_LAB';
     let evasion,escape;
     if(evade){
@@ -1039,7 +1046,8 @@ export function projectSectionDiceLab(state,side){
     pending:p?structuredClone(p):null,last:d.last?structuredClone(d.last):null,
     canReview:side!==sectionCombatSide(state)&&p?.review==='AWAITING_OPPONENT',
     canFinalize:side===sectionCombatSide(state)&&!!p&&!blocker&&p.review!=='AWAITING_OPPONENT',
-    canArchive:side===sectionCombatSide(state)&&!!p&&!!blocker&&blocker!=='ELEPHANT_RED_CHOICE_PENDING'&&p.review!=='AWAITING_OPPONENT'&&
+    canArchive:side===sectionCombatSide(state)&&!!p&&!!blocker&&blocker!=='ELEPHANT_RED_CHOICE_PENDING'&&
+      (!(d.version>=18&&!state.combatLab.plan?.battleBack&&!state.combatLab.plan?.bonusClose&&state.combatLab.movement[state.combatLab.plan?.attackerId]?.battle==='MANDATORY_CLOSE_COMBAT')||p.review==='DISPUTED')&&p.review!=='AWAITING_OPPONENT'&&
       !(d.version>=2&&blocker==='LEADER_CHECK_PENDING')&&
       !(d.version>=3&&(blocker==='MORALE_CHOICE_PENDING'||evasionOptions.length>0))&&
       !retreat?.options.length&&!d.retreatPending&&!d.elephantRetreatPending&&!(elephant&&!elephant.leaderPending&&!(d.version>=8&&retreat?.reason==='ELEPHANT_BLOCKER_LEADERS_PENDING')),
