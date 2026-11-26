@@ -101,7 +101,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
 export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
-  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false}={}) {
+  movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false}={}) {
   if(!isCards(cardInstances)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -127,7 +127,8 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       typeof enableBonusCloseLab!=='boolean'||(enableBonusCloseLab&&!enableMomentumLab)||
       typeof enableElephantCloseLab!=='boolean'||(enableElephantCloseLab&&!enableBonusCloseLab)||
       typeof enableSpecialCloseLab!=='boolean'||(enableSpecialCloseLab&&!enableElephantCloseLab)||
-      typeof enableSpecialFootLab!=='boolean'||(enableSpecialFootLab&&!enableSpecialCloseLab)))fail('INVALID_SECTION_HISTORY_SETUP');
+      typeof enableSpecialFootLab!=='boolean'||(enableSpecialFootLab&&!enableSpecialCloseLab)||
+      typeof enableLoneLeaderCombatLab!=='boolean'||(enableLoneLeaderCombatLab&&!enableSpecialFootLab)))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
   if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
@@ -156,13 +157,19 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       terrain:copy(movementTerrain)};
     if(enableLeaderLab)state.leaderLab={movedLeaderIds:[],joinedUnitIds:[]};
     if(enableCombatLab)state.combatLab={movementClosed:false,movement:{},plan:null};
-    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab});
+    if(enableDiceLab)state.diceLab=initializeSectionDiceLab(state.footLab.unitTypes,{casualties:enableCasualtyLab,morale:enableMoraleLab,retreat:enableRetreatLab,retreatLeaders:enableRetreatLeaderLab,leaderEscape:enableLeaderEscapeLab,rampage:enableRampageLab,rampageLeaders:enableRampageLeaderLab,elephantRetreatLeaders:enableElephantRetreatLeaderLab,victoryTargets,closeCombat:enableCloseCombatLab,unitEvade:enableUnitEvadeLab,battleBack:enableBattleBackLab,momentum:enableMomentumLab,bonusClose:enableBonusCloseLab,elephantClose:enableElephantCloseLab,specialClose:enableSpecialCloseLab,specialFoot:enableSpecialFootLab,loneLeaderCombat:enableLoneLeaderCombatLab});
   }else if(enableLeaderLab||enableCombatLab||!Array.isArray(movementTerrain)||movementTerrain.length>0){
     fail('FOOT_TERRAIN_REQUIRES_FOOT_LAB');
   }
   assertSectionHistoryLab(state);
   return state;
 }
+
+// Leaders sharing a hex with a unit cannot be targeted independently.
+function loneLeaderTargets(state){
+  return state.diceLab?.version>=19?state.board.leaders.filter(l=>!state.board.units.some(u=>loc(u)===loc(l))):[];
+}
+function combatTargets(state){return [...state.board.units,...loneLeaderTargets(state)];}
 
 // V18 extends the existing foot command to the two special foot regimes.
 function previewSpecialFootMove(state,command){
@@ -181,7 +188,7 @@ function previewSpecialFootMove(state,command){
     ...state.board.units,...state.board.leaders.filter(l=>l.side!==piece.side&&!state.board.units.some(u=>loc(u)===loc(l)))
   ]});
   if(geometry.status!=='CANDIDATE_PATH_GEOMETRY')return {reason:geometry.reason};
-  if(profile.battle==='MANDATORY_CLOSE_COMBAT'&&!state.board.units.some(u=>u.side!==piece.side&&distance(u,geometry.destination)===1))
+  if(profile.battle==='MANDATORY_CLOSE_COMBAT'&&!combatTargets(state).some(u=>u.side!==piece.side&&distance(u,geometry.destination)===1))
     return {reason:'WARRIOR_CHARGE_TARGET_REQUIRED'};
   const board=copy(state.board);
   Object.assign(board.units.find(u=>u.id===piece.id),geometry.destination);
@@ -197,7 +204,7 @@ function pendingWarriorCharges(state){
   return Object.entries(state.combatLab.movement).filter(([id,m])=>{
     if(m.battle!=='MANDATORY_CLOSE_COMBAT'||state.diceLab.resolvedUnitIds.includes(id))return false;
     const unit=state.board.units.find(u=>u.id===id&&u.side===state.turn);
-    return !!unit&&state.board.units.some(u=>u.side!==state.turn&&distance(unit,u)===1);
+    return !!unit&&combatTargets(state).some(u=>u.side!==state.turn&&distance(unit,u)===1);
   }).map(([id])=>id);
 }
 
@@ -206,7 +213,7 @@ function screenRangedPlan(state,attackerId,targetId){
   if(!state.combatLab?.movementClosed||state.phase!=='LAB_RESOLUTION_PENDING')
     return reject('COMBAT_PHASE_NOT_AVAILABLE');
   const attacker=state.board.units.find(u=>u.id===attackerId);
-  const target=state.board.units.find(u=>u.id===targetId);
+  const target=combatTargets(state).find(u=>u.id===targetId);
   if(!validId(attackerId)||!validId(targetId)||!attacker||!target||
      attacker.side!==state.turn||target.side===state.turn)
     return reject('INVALID_RANGED_TARGET');
@@ -228,8 +235,14 @@ function screenRangedPlan(state,attackerId,targetId){
     return reject('BATTLE_AFTER_MOVEMENT_UNAVAILABLE');
   const units=state.board.units.map(u=>({...u,type:state.footLab.unitTypes[u.id]}));
   const checked=precheckAncientsRangedAttack({units,leaders:state.board.leaders,
-    terrain:state.footLab.terrain??[],attackerId,targetId,movedSteps:gate.movedSteps});
+    terrain:state.footLab.terrain??[],attackerId,targetId,movedSteps:gate.movedSteps,
+    allowLoneLeader:state.diceLab?.version>=19});
   if(checked.status!=='CANDIDATE')return reject(checked.reason);
+  if(state.diceLab?.version>=19&&loneLeaderTargets(state).some(l=>l.id===targetId)){
+    return {accepted:true,plan:{kind:'RANGED_PREVIEW',attackerId,targetId,distance:checked.distance,
+      movedSteps:gate.movedSteps,baseDice:checked.baseDice,diceCount:checked.diceAfterTerrain,
+      targetUnitType:'LEADER',dieFaces:[...ANCIENTS_BATTLE_DIE_FACES],loneLeader:true}};
+  }
   const dice=createRangedDicePlan({mode:'OFFICIAL_PREVIEW',screening:{ranged:checked},
     board:{units},targetId});
   if(!dice)return reject('RANGED_DICE_PLAN_UNAVAILABLE');
@@ -280,7 +293,7 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
     prior.attackerId===attackerId&&prior.momentum?.bonusEligible&&prior.momentum.path?.length&&
     !prior.momentum.pending&&state.diceLab.resolvedUnitIds.includes(attackerId)))return reject('BONUS_CLOSE_NOT_AVAILABLE');
   const attacker=state.board.units.find(u=>u.id===attackerId);
-  const target=state.board.units.find(u=>u.id===targetId);
+  const target=combatTargets(state).find(u=>u.id===targetId);
   if(!validId(attackerId)||!validId(targetId)||!attacker||!target||
      (battleBack?attacker.side===state.turn||target.side!==state.turn:attacker.side!==state.turn||target.side===state.turn)||distance(attacker,target)!==1)
     return reject('INVALID_CLOSE_TARGET');
@@ -296,11 +309,12 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
   if(gate.status!=='CANDIDATE')return reject(gate.reason);
   if(!battleBack&&!bonusClose&&state.combatLab.movement[attackerId]?.battle==='UNAVAILABLE')
     return reject('BATTLE_AFTER_MOVEMENT_UNAVAILABLE');
-  const attackerType=state.footLab.unitTypes[attackerId],targetUnitType=state.footLab.unitTypes[targetId];
+  const loneLeader=state.diceLab.version>=19&&loneLeaderTargets(state).some(l=>l.id===targetId);
+  const attackerType=state.footLab.unitTypes[attackerId],targetUnitType=loneLeader?'LEADER':state.footLab.unitTypes[targetId];
   if((state.diceLab.version<16&&attackerType==='ELEPHANT')||(state.diceLab.version>=13&&state.diceLab.version<17&&attackerType==='HEAVY_CHARIOT'))return reject('CLOSE_COMBAT_SPECIAL_UNIT_PENDING');
   if(!['AUXILIA_INFANTRY','MEDIUM_INFANTRY','HEAVY_INFANTRY','WARRIOR_INFANTRY',
     ...(state.diceLab.version>=12?[...lightEvaders,'MEDIUM_CAVALRY','HEAVY_CAVALRY']:[]),
-    ...(battleBack?['HEAVY_WAR_MACHINE']:[]),...(state.diceLab.version>=16?['ELEPHANT']:[]),...(state.diceLab.version>=17?['HEAVY_CHARIOT','HEAVY_WAR_MACHINE']:[])].includes(targetUnitType))
+    ...(battleBack?['HEAVY_WAR_MACHINE']:[]),...(state.diceLab.version>=16?['ELEPHANT']:[]),...(state.diceLab.version>=17?['HEAVY_CHARIOT','HEAVY_WAR_MACHINE']:[]),...(loneLeader?['LEADER']:[])].includes(targetUnitType))
     return reject('CLOSE_COMBAT_SPECIAL_TARGET_PENDING');
   const terrainAt=p=>(state.footLab.terrain??[]).find(t=>loc(t)===loc(p))?.kind??'CLEAR';
   // Warriors retain their full-strength dice for the response to this attack.
@@ -308,15 +322,15 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
   const elephantTarget=state.diceLab.version>=16&&targetUnitType==='ELEPHANT';
   const elephantMountedDefense=elephantTarget&&['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY',...(state.diceLab.version>=17?['HEAVY_CHARIOT']:[])].includes(attackerType);
   const chariotDefense=state.diceLab.version>=17&&targetUnitType==='HEAVY_CHARIOT';
-  const baseDice=elephantAttack?(['ELEPHANT','WARRIOR_INFANTRY','HEAVY_CHARIOT'].includes(targetUnitType)?3:baseCloseAttackDice(targetUnitType,state.diceLab.blocks[targetId])):
+  const baseDice=elephantAttack?(loneLeader?1:['ELEPHANT','WARRIOR_INFANTRY','HEAVY_CHARIOT'].includes(targetUnitType)?3:baseCloseAttackDice(targetUnitType,state.diceLab.blocks[targetId])):
     state.diceLab.version>=17&&battleBack&&attackerType==='HEAVY_CHARIOT'?3:
     baseCloseAttackDice(attackerType,battleBack?prior.loss.originalBlocks:state.diceLab.blocks[attackerId]);
   const {maxDice}=assessAncientsTerrainDiceCap({attackerType,attackerTerrain:terrainAt(attacker),
     targetTerrain:terrainAt(target),attackKind:'CLOSE'});
-  const swordsHit=!elephantTarget&&!['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY',
+  const swordsHit=!loneLeader&&!elephantTarget&&!['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY',
     'LIGHT_CAVALRY','HEAVY_WAR_MACHINE'].includes(attackerType);
-  const leaderHit=!elephantAttack&&state.board.leaders.some(l=>l.side===attacker.side&&distance(l,attacker)<=1);
-  const evadeOptions=state.diceLab.version>=12&&!battleBack?unitEvadePaths(state,attacker,target):[];
+  const leaderHit=loneLeader||!elephantAttack&&state.board.leaders.some(l=>l.side===attacker.side&&distance(l,attacker)<=1);
+  const evadeOptions=state.diceLab.version>=12&&!battleBack&&!loneLeader?unitEvadePaths(state,attacker,target):[];
   const choice=evadePath===undefined?(evadeOptions.length?null:[]):evadePath;
   if(state.diceLab.version>=12&&!(choice===null&&evadeOptions.length||
      Array.isArray(choice)&&(!choice.length||evadeOptions.some(p=>JSON.stringify(p)===JSON.stringify(choice)))))
@@ -326,16 +340,16 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
     targetUnitType,dieFaces:[...ANCIENTS_BATTLE_DIE_FACES],swordsHit,leaderHit,
     ...(state.diceLab.version>=12?{evadeOptions,evadePath:choice}:{}),
     ...(battleBack?{battleBack:true}:{}),...(bonusClose?{bonusClose:true}:{}),
-    ...(elephantAttack?{elephantAttack:true}:{}),...(elephantMountedDefense?{elephantMountedDefense:true}:{}),...(chariotDefense?{chariotDefense:true}:{})}};
+    ...(elephantAttack?{elephantAttack:true}:{}),...(elephantMountedDefense?{elephantMountedDefense:true}:{}),...(chariotDefense?{chariotDefense:true}:{}),...(loneLeader?{loneLeader:true}:{})}};
 }
 
 function bonusCloseCandidates(state){
   const last=state.diceLab?.last;
   if(!last?.momentum?.bonusPending||state.combatLab.plan)return [];
-  return state.board.units.filter(u=>u.side!==state.turn).flatMap(u=>{
+  return combatTargets(state).filter(u=>u.side!==state.turn).flatMap(u=>{
     const checked=screenClosePlan(state,last.attackerId,u.id,undefined,false,true);
     return checked.accepted?[{kind:'CLOSE_PREVIEW',bonusClose:true,attackerId:last.attackerId,
-      targetId:u.id,diceCount:checked.plan.diceCount}]:[];
+      targetId:u.id,diceCount:checked.plan.diceCount,...(checked.plan.loneLeader?{loneLeader:true}:{})}]:[];
   });
 }
 
@@ -816,11 +830,11 @@ export function projectSectionHistoryLab(state,side){
           ...(state.diceLab?.version>=18?{pendingWarriorCharges:pendingWarriorCharges(state)}:{}),
           candidates:state.revision<SECTION_HISTORY_MAX_COMMANDS&&!sectionVictory(state)?.winner&&state.turn===side&&state.combatLab.movementClosed&&!state.combatLab.plan&&!state.diceLab?.last?.battleBackPending&&!state.diceLab?.last?.momentum?.pending
             ?state.diceLab?.last?.momentum?.bonusPending?bonusCloseCandidates(state):state.orderSnapshot.pieces.filter(p=>p.kind==='UNIT'&&p.side===side)
-              .flatMap(p=>state.board.units.filter(u=>u.side!==side).flatMap(u=>{
+              .flatMap(p=>combatTargets(state).filter(u=>u.side!==side).flatMap(u=>{
                 const ranged=screenRangedPlan(state,p.id,u.id);
-                if(ranged.accepted)return [{attackerId:p.id,targetId:u.id,diceCount:ranged.plan.diceCount}];
+                if(ranged.accepted)return [{attackerId:p.id,targetId:u.id,diceCount:ranged.plan.diceCount,...(ranged.plan.loneLeader?{loneLeader:true}:{})}];
                 const close=screenClosePlan(state,p.id,u.id);
-                return close.accepted?[{kind:'CLOSE_PREVIEW',attackerId:p.id,targetId:u.id,diceCount:close.plan.diceCount}]:[];
+                return close.accepted?[{kind:'CLOSE_PREVIEW',attackerId:p.id,targetId:u.id,diceCount:close.plan.diceCount,...(close.plan.loneLeader?{loneLeader:true}:{})}]:[];
               })):[]}
       }:{}),
       ...(state.leaderLab?{

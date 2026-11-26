@@ -16,8 +16,8 @@ const validCell = c => c && typeof c === 'object' && !Array.isArray(c) &&
   Number.isSafeInteger(c.col) && Number.isSafeInteger(c.row) && inBounds(c);
 const validId = id => typeof id === 'string' && ID.test(id);
 
-function trustedBoard(units, leaders, terrain) {
-  if (!Array.isArray(units) || units.length < 2 || units.length > 117 ||
+function trustedBoard(units, leaders, terrain,allowLoneLeader=false) {
+  if (!Array.isArray(units) || units.length < (allowLoneLeader?1:2) || units.length > 117 ||
       !Array.isArray(leaders) || leaders.length > 117 ||
       !Array.isArray(terrain) || terrain.length > 117)
     throw new TypeError('INVALID_RANGED_BOARD');
@@ -59,13 +59,13 @@ const result = (status, reason, extra = {}) => Object.freeze({
  * The eventual HTTP adapter MUST NOT accept them as client-controlled values.
  */
 export function precheckAncientsRangedAttack({units, leaders = [], terrain = [],
-  attackerId, targetId, movedSteps} = {}) {
-  const {byId, terrainIndex} = trustedBoard(units, leaders, terrain);
+  attackerId, targetId, movedSteps,allowLoneLeader=false} = {}) {
+  const {byId, terrainIndex} = trustedBoard(units, leaders, terrain,allowLoneLeader);
   if (!validId(attackerId) || !validId(targetId) || attackerId === targetId ||
       !Number.isSafeInteger(movedSteps) || movedSteps < 0)
     throw new TypeError('INVALID_RANGED_ATTACK');
   const attacker = units.find(u => u.id === attackerId);
-  const target = units.find(u => u.id === targetId);
+  const target = units.find(u => u.id === targetId) ?? (allowLoneLeader?leaders.find(l=>l.id===targetId&&!units.some(u=>key(u)===key(l))):undefined);
   if (!attacker || !target || !byId.has(attackerId) || !byId.has(targetId))
     throw new TypeError('UNKNOWN_RANGED_UNIT'); // leader-only targets need their own rules
   if (attacker.side === target.side) return result('BLOCKED', 'FRIENDLY_TARGET');

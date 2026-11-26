@@ -279,7 +279,7 @@ function renderAncients() {
   for(const [index,candidate] of candidates.entries()){
     const option=document.createElement('option');
     option.value=String(index);
-    option.textContent=`${candidate.bonusClose?'Combate adicional':candidate.kind==='CLOSE_PREVIEW'?'Cuerpo a cuerpo':'A distancia'}: ${candidate.attackerId} → ${candidate.targetId} (${candidate.diceCount} dados)`;
+    option.textContent=`${candidate.bonusClose?'Combate adicional':candidate.kind==='CLOSE_PREVIEW'?'Cuerpo a cuerpo':'A distancia'}: ${candidate.attackerId} → ${candidate.loneLeader?'líder ':''}${candidate.targetId} (${candidate.diceCount} dados)`;
     choice.appendChild(option);
   }
   if(candidates.length)choice.value=candidates[Number(oldChoice)]?oldChoice||'0':'0';

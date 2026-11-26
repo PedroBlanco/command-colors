@@ -1319,3 +1319,50 @@ test('V18 warrior charge and war machine movement: geometry, obligatory attack, 
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('V19 lone leader: ranged and close, hits, compulsory escape, no momentum, victory and replay',()=>{
+ for(const mode of ['CLOSE_HIT','RANGED_HIT','CLOSE_EVADE','RANGED_EVADE','EXIT','ELEPHANT','ATTACHED','CHARGE','WIN']){
+  const ranged=mode.startsWith('RANGED'),charge=mode==='CHARGE';
+  const c=rangedLabSetup({targetCol:ranged?4:charge?5:3});
+  Object.assign(c,{enableLeaderLab:true,enableDiceLab:true,enableCasualtyLab:true,enableMoraleLab:true,enableRetreatLab:true,
+    enableRetreatLeaderLab:true,enableLeaderEscapeLab:true,enableRampageLab:true,enableRampageLeaderLab:true,
+    enableElephantRetreatLeaderLab:true,enableCloseCombatLab:true,enableUnitEvadeLab:true,enableBattleBackLab:true,
+    enableMomentumLab:true,enableBonusCloseLab:true,enableElephantCloseLab:true,enableSpecialCloseLab:true,enableSpecialFootLab:true,
+    enableLoneLeaderCombatLab:true,victoryTargets:{A:mode==='WIN'?1:3,B:3}});
+  c.movementUnitTypes.a1=mode==='ELEPHANT'?'ELEPHANT':charge?'WARRIOR_INFANTRY':ranged?'LIGHT_INFANTRY':'HEAVY_INFANTRY';
+  const target=c.board.units[1];c.board.leaders=[{id:'b_leader',side:'B',col:target.col,row:target.row}];
+  if(mode!=='ATTACHED'){c.board.units.splice(1,1);delete c.movementUnitTypes.b1;}
+  if(mode==='EXIT'){Object.assign(c.board.units[0],{col:3,row:1});Object.assign(c.board.leaders[0],{col:3,row:0});}
+  const {initial,ordered,commands}=rangedLabReady(c);let s=ordered;const log=[...commands];
+  const run=(type,fields={})=>{const command=cmd(type,s.revision,fields),result=apply(s,command);
+    assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;};
+  if(charge)run('MOVE_SECTION_FOOT_PATH_V2',{unitId:'a1',path:[{col:3,row:4},{col:4,row:4}]});
+  run('FINISH_SECTION_MOVEMENT_LAB');
+  const fields={attackerId:'a1',targetId:'b_leader'},prepare=ranged?'PREPARE_SECTION_RANGED_LAB':'PREPARE_SECTION_CLOSE_LAB';
+  if(mode==='ATTACHED'){assert.equal(apply(s,cmd(prepare,s.revision,fields)).code,'INVALID_CLOSE_TARGET');continue;}
+  assert.ok(project(s,'A').combatLab.candidates.some(o=>o.targetId==='b_leader'&&o.loneLeader));
+  run(prepare,fields);
+  assert.equal(s.combatLab.plan.diceCount,mode==='ELEPHANT'?1:charge?4:ranged?2:5);
+  const hit=['CLOSE_HIT','RANGED_HIT','ELEPHANT','CHARGE','WIN'].includes(mode);
+  const faces=Array(s.combatLab.plan.diceCount).fill('FLAG');if(hit)faces[0]='LEADER';
+  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
+  run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:true});
+  if(mode!=='WIN'){
+    if(hit)run('FINALIZE_SECTION_RANGED_LAB');
+    else{
+      assert.equal(project(s,'B').diceLab.blocker,'LEADER_EVASION_PENDING');
+      assert.equal(apply(s,cmd('FINALIZE_SECTION_RANGED_LAB',s.revision)).code,'LEADER_EVASION_PENDING');
+      const option=project(s,'B').diceLab.leaderEvasionOptions.find(o=>mode==='EXIT'?o.exit:!o.exit&&o.path.length===1&&!o.risks.length);
+      assert.ok(option);
+      run('EVADE_SECTION_LEADER_LAB',{actor:'B',path:option.path,exit:option.exit});
+      if(mode!=='EXIT')assert.deepEqual({col:s.board.leaders[0].col,row:s.board.leaders[0].row},option.path[0]);
+    }
+  }
+  assert.equal(s.board.leaders.length,hit||mode==='EXIT'?0:1);
+  assert.equal(project(s,'A').diceLab.banners.A,hit?1:0);
+  assert.equal(project(s,'A').diceLab.momentumPending,false);
+  assert.equal(project(s,'A').diceLab.battleBackPending,false);
+  assert.deepEqual(s.diceLab.resolvedUnitIds,['a1']);
+  assert.deepEqual(replay(initial,log),s);
+ }
+});
