@@ -203,8 +203,8 @@ function renderAncients() {
       :'solo hexágonos despejados')+'.';
   const selection=cached.selectionCard;
   const clash=cached.cardInPlay==='CLASH_OF_SHIELDS';
-  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos'};
-  if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':selection.connected?' (grupo de unidades contiguas)':'');
+  const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho'};
+  if(isTurn&&selection)el('ancients-status').textContent+=' · '+(cardNames[cached.cardInPlay]??cached.cardInPlay)+' · máximo '+selection.maximumOrders+' órdenes'+(selection.fallback?' (sin tropas de esa clase)':selection.family==='LEADERSHIP'?' (grupo contiguo desde un líder válido o una sola unidad; sin separar líderes adjuntos)':selection.connected?' (grupo de unidades contiguas)':'');
   const cardSelect=el('ancients-card');
   const chosen=cardSelect.value;
   cardSelect.replaceChildren();

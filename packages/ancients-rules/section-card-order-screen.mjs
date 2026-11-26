@@ -117,6 +117,10 @@ export const SELECTION_CARD_DEFINITIONS=Object.freeze({
 });
 export const GROUP_CARD_DEFINITIONS=Object.freeze({LINE_COMMAND:'LINE',DOUBLE_TIME:'DOUBLE_TIME'});
 export const ATTACK_CARD_DEFINITIONS=Object.freeze({MOUNTED_CHARGE:'MOUNTED_CHARGE',CLASH_OF_SHIELDS:'CLASH'});
+export const LEADERSHIP_CARD_DEFINITIONS=Object.freeze({
+  LEADERSHIP_ANY_SECTION:null,INSPIRED_LEFT_LEADERSHIP:'LEFT',
+  INSPIRED_CENTER_LEADERSHIP:'CENTER',INSPIRED_RIGHT_LEADERSHIP:'RIGHT'
+});
 const mountedTypes=new Set(['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT']);
 const troopClasses={
   LIGHT:new Set(['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY','LIGHT_CAVALRY']),
@@ -125,6 +129,16 @@ const troopClasses={
   MOUNTED:mountedTypes
 };
 export function selectionCardOptions({definitionId,side,command,board,unitTypes,sectorCells}){
+  if(Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,definitionId)){
+    const section=LEADERSHIP_CARD_DEFINITIONS[definitionId];
+    const units=board.units.filter(u=>u.side===side),leaders=board.leaders.filter(l=>l.side===side);
+    const lone=leaders.filter(l=>!units.some(u=>cell(u)===cell(l)));
+    const anchors=leaders.filter(l=>section===null||sectorCells[cell(l)]?.includes(section))
+      .map(l=>({id:l.id,orderId:units.find(u=>cell(u)===cell(l))?.id??l.id,col:l.col,row:l.row}));
+    return {family:'LEADERSHIP',maximumOrders:section===null?4:5,
+      unitIds:units.map(u=>u.id),leaderIds:anchors.length?lone.map(l=>l.id):[],
+      leadershipAnchors:anchors,section,singleUnitAlternative:true};
+  }
   if(!Object.hasOwn(SELECTION_CARD_DEFINITIONS,definitionId)&&!Object.hasOwn(GROUP_CARD_DEFINITIONS,definitionId)&&!Object.hasOwn(ATTACK_CARD_DEFINITIONS,definitionId))return null;
   const family=SELECTION_CARD_DEFINITIONS[definitionId]??GROUP_CARD_DEFINITIONS[definitionId]??ATTACK_CARD_DEFINITIONS[definitionId];
   const units=board.units.filter(u=>u.side===side),leaders=board.leaders.filter(l=>l.side===side);
@@ -159,6 +173,21 @@ export function selectionCardOptions({definitionId,side,command,board,unitTypes,
 }
 export function screenSelectionCardOrders(options,pieces,sectorCells){
   if(!options||pieces.length>options.maximumOrders||pieces.some(p=>!(p.kind==='UNIT'?options.unitIds:options.leaderIds).includes(p.id)))return false;
+  if(options.family==='LEADERSHIP'){
+    // A unit and its attached leader are one ordered hex. A lone leader
+    // uses its own order. A single-unit alternative is always available.
+    if(pieces.length===1&&pieces[0].kind==='UNIT')return true;
+    if(!pieces.length)return true;
+    return options.leadershipAnchors.some(anchor=>{
+      const start=pieces.findIndex(p=>p.id===anchor.orderId&&cell(p)===cell(anchor));
+      if(start<0)return false;
+      const reached=new Set([start]),queue=[start];
+      for(let i=0;i<queue.length;i++)for(let j=0;j<pieces.length;j++){
+        if(!reached.has(j)&&distance(pieces[queue[i]],pieces[j])===1){reached.add(j);queue.push(j);}
+      }
+      return reached.size===pieces.length;
+    });
+  }
   if(options.allRequired&&(pieces.length!==options.unitIds.length||!options.unitIds.every(id=>pieces.some(p=>p.kind==='UNIT'&&p.id===id))))return false;
   if(options.fallback){
     const units=pieces.filter(p=>p.kind==='UNIT');
