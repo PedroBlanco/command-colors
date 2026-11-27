@@ -165,7 +165,7 @@ export function openSqliteComposition({file, clock = Date.now,
           LEFT JOIN accounts guest ON guest.id=m.guest_id
           WHERE m.owner_id=? OR m.guest_id=?
           ORDER BY m.rowid DESC LIMIT 101`).all(user.userId,user.userId,user.userId,user.userId);
-        return {ok:true,more:rows.length>100,matches:rows.slice(0,100).map(row=>({...row}))};
+        return {ok:true,handle:user.handle,more:rows.length>100,matches:rows.slice(0,100).map(row=>({...row}))};
       });
     },
     getMatch({sessionToken, matchId} = {}) {

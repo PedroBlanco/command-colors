@@ -45,7 +45,7 @@ async function withBrowser(run,{owner='alice'}={}) {
     else if(path==='/api/session' && options.method==='DELETE'){state.login=false;response={ok:true};status=200;}
     else if(path==='/api/session' && state.login){response={authenticated:true,handle:owner};status=200;}
     else if(path==='/api/matches' && options.method==='POST'){response={matchId:MATCH};status=201;}
-    else if(path==='/api/matches' && state.login){response={ok:true,more:false,matches:[{matchId:MATCH,side:'A',opponent:'bob',status:'READY'}]};status=200;}
+    else if(path==='/api/matches' && state.login){response={ok:true,handle:state.listHandle??owner,more:false,matches:[{matchId:MATCH,side:'A',opponent:'bob',status:'READY'}]};status=200;}
     else if(path===`/api/matches/${MATCH}` && state.login && state.lab){
       response={code:'SECTION_LAB_INTERNAL_ONLY'};status=409;
     }
@@ -140,6 +140,11 @@ async function nextTurn() {await new Promise(resolve=>setImmediate(resolve));}
 
 test('browser UI: auto-refresca al recibir revisión SSE sin mostrar la mano contraria',()=>withBrowser(async ctx=>{
   await ctx.element('login-form').dispatch('submit');
+  ctx.state.listHandle='another';
+  await ctx.element('list-matches').dispatch('click');
+  assert.equal(ctx.element('my-matches').children.length,1);
+  assert.equal(ctx.element('my-matches').disabled,true);
+  ctx.state.listHandle=undefined;
   await ctx.element('list-matches').dispatch('click');
   assert.equal(ctx.element('my-matches').children[1].value,MATCH);
   ctx.element('my-matches').value=MATCH;

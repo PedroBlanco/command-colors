@@ -190,6 +190,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
       if (req.method === 'GET' && route === '/api/matches') {
         if(typeof invitations.listMatches!=='function')return reply(res,404,{code:'NOT_FOUND'});
         const result=invitations.listMatches({sessionToken:token});
+        if(result?.ok&&result.handle!==current.handle)return reply(res,503,{code:'SERVICE_UNAVAILABLE'});
         return reply(res,...Object.values(domainReply(result)));
       }
       if (req.method === 'POST' && route === '/api/matches') {

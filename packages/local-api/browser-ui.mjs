@@ -934,6 +934,7 @@ action('list-matches',async()=>{
   if(!await confirmCurrentSession(ticket))return false;
   const owner=signedInHandle,result=await api('GET','/api/matches');
   if(!await confirmCurrentSession(ticket)||owner!==signedInHandle)return false;
+  if(result.handle!==owner)throw Error('El listado no corresponde a la sesión vigente.');
   if(!Array.isArray(result.matches)||typeof result.more!=='boolean'||result.matches.length>100||
      result.matches.some(m=>!m||typeof m.matchId!=='string'||!/^[0-9a-f-]{36}$/i.test(m.matchId)||
        !['A','B'].includes(m.side)||!['READY','INVITING'].includes(m.status)||

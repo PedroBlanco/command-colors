@@ -39,7 +39,7 @@ export function createInvitationService({identity, clock = Date.now, invitationT
     const actor=login(sessionToken);
     if(!actor)return denied('UNAUTHENTICATED');
     const owned=[...matches.values()].reverse().filter(m=>m.players.some(p=>p.userId===actor.userId));
-    return {ok:true,more:owned.length>100,matches:owned.slice(0,100).map(m=>{
+    return {ok:true,handle:actor.handle,more:owned.length>100,matches:owned.slice(0,100).map(m=>{
       const own=m.players.find(p=>p.userId===actor.userId),other=m.players.find(p=>p.userId!==actor.userId);
       return {matchId:m.id,side:own.side,opponent:other?.handle??null,status:other?'READY':'INVITING'};
     })};

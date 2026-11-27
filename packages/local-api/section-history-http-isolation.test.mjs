@@ -88,9 +88,9 @@ test('HTTP: regular synthetic match GET still works before internal lab activati
   for(const [who,side,opponent] of [['alice','A','bob'],['bob','B','alice']]){
     const listed=await api(origin,'/api/matches',tokens[who]);
     assert.equal(listed.status,200);
-    assert.deepEqual(listed.body,{ok:true,more:false,matches:[{matchId,side,opponent,status:'READY'}]});
+    assert.deepEqual(listed.body,{ok:true,handle:who,more:false,matches:[{matchId,side,opponent,status:'READY'}]});
   }
-  assert.deepEqual((await api(origin,'/api/matches',tokens.outsider)).body,{ok:true,more:false,matches:[]});
+  assert.deepEqual((await api(origin,'/api/matches',tokens.outsider)).body,{ok:true,handle:'outsider',more:false,matches:[]});
   assert.equal((await api(origin,'/api/matches','invalid')).status,401);
   const result=await api(origin,`/api/matches/${matchId}`,tokens.alice);
   assert.equal(result.status,200);

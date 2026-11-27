@@ -84,9 +84,9 @@ test('CCWB composition: logged section-card command survives restart and stays p
  const reopened=connect();
  for(const [token,side,opponent] of [[tokens.A,'A','bob'],[tokens.B,'B','alice']]){
    const listed=reopened.invitations.listMatches({sessionToken:token});
-   assert.deepEqual(listed,{ok:true,more:false,matches:[{matchId,side,opponent,status:'READY'}]});
+   assert.deepEqual(listed,{ok:true,handle:side==='A'?'alice':'bob',more:false,matches:[{matchId,side,opponent,status:'READY'}]});
  }
- assert.deepEqual(reopened.invitations.listMatches({sessionToken:tokens.outsider}),{ok:true,more:false,matches:[]});
+ assert.deepEqual(reopened.invitations.listMatches({sessionToken:tokens.outsider}),{ok:true,handle:'charlie',more:false,matches:[]});
  const next=reopened.getStore(matchId);
  assert.equal(next.view('B').revision,1);
  assert.equal(next.view('B').opponentCardCount,1);
