@@ -20,6 +20,7 @@ const deckFeedbackSlots=Object.freeze({
   'deck-evade':'deck-combat-feedback','deck-combat':'deck-combat-feedback',
   'deck-draw':'deck-combat-feedback',
   'ancients-finish-movement':'ancients-combat-feedback',
+  'ancients-reserve-deploy':'ancients-reserve-feedback','ancients-exit-unit':'ancients-exit-feedback',
   'ancients-prepare-ranged':'ancients-combat-feedback',
   'ancients-cancel-ranged':'ancients-combat-feedback',
   'ancients-roll-digital':'ancients-combat-feedback',
@@ -286,13 +287,31 @@ function renderAncients() {
   el('ancients-select-leader').disabled=!isTurn||
     cached.phase!=='LAB_RESOLUTION_PENDING'||movementClosed||availableLeaders.length===0;
   const ordered=new Set(Array.isArray(cached.orderedUnitIds)?cached.orderedUnitIds:[]);
-  const moved=new Set(Array.isArray(cached.movedUnitIds)?cached.movedUnitIds:[]);
+  const moved=new Set((cached.movedUnitIds??[]).filter(id=>!(cached.scenarioReserveMovableIds??[]).includes(id)));
   const locked=new Set(Array.isArray(cached.unitsLockedByLeader)?cached.unitsLockedByLeader:[]);
   const selectable=movementClosed||!isTurn||noMove?[]:(cached.board??[]).filter(u=>u.side===cached.you&&
     ordered.has(u.id)&&!moved.has(u.id)&&!locked.has(u.id)).map(u=>u.id);
   el('ancients-play').disabled=!isTurn||cached.phase!=='AWAIT_CARD'||
     (cached.yourHand??[]).length===0;
   el('ancients-order').disabled=!isTurn||cached.phase!=='ASSIGN_ORDERS';
+  const reserve=cached.scenarioReserveOptions,rc=el('ancients-reserve-controls');
+  if(rc){
+    rc.hidden=!isTurn||!reserve;
+    if(reserve&&isTurn){
+      const section=el('ancients-reserve-section'),leader=el('ancients-reserve-leader'),oldSection=section.value,oldLeader=leader.value;
+      section.replaceChildren();leader.replaceChildren();
+      for(const o of reserve.options){const option=document.createElement('option');option.value=o.section;option.textContent=o.section+' ('+o.cells.map(c=>c.col+1).join(', ')+')';section.appendChild(option);}
+      for(const u of reserve.units){const option=document.createElement('option');option.value=u.id;option.textContent=u.id+' '+u.type;leader.appendChild(option);}
+      if(reserve.options.some(o=>o.section===oldSection))section.value=oldSection;
+      if(reserve.units.some(u=>u.id===oldLeader))leader.value=oldLeader;
+      el('ancients-reserve-info').textContent='Orden alternativo de liderazgo: '+reserve.units.map(u=>u.id+' ('+u.type+')').join(', ')+'. Selecciona tres columnas libres del mismo sector en la última fila enemiga.';
+    }
+  }
+  const exitButton=el('ancients-exit-unit');
+  if(exitButton){const rule=cached.scenarioUnitExit?.rule,end=ancientsDraft?.path.at(-1)??ancientsDraft?.origin;
+    exitButton.hidden=rule?.side!==cached.you;
+    exitButton.disabled=!isTurn||movementClosed||noMove||cached.phase!=='LAB_RESOLUTION_PENDING'||!ancientsDraft||ancientsDraft.kind==='LEADER'||end?.row!==(cached.you==='A'?0:8);
+  }
   el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending||!!cached.diceLab?.bonusClosePending||!!combat?.pendingWarriorCharges?.length||!!cached.diceLab?.marshPending;
   el('ancients-finish-movement').hidden=!combat;
   const finishMove=el('ancients-finish-movement');
@@ -528,7 +547,7 @@ function selectAncientsHex(cell){
   const units=cached.board??[];
   const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
   const ordered=new Set(cached.orderedUnitIds??[]);
-  const moved=new Set(cached.movedUnitIds??[]);
+  const moved=new Set((cached.movedUnitIds??[]).filter(id=>!(cached.scenarioReserveMovableIds??[]).includes(id)));
   const locked=new Set(cached.unitsLockedByLeader??[]);
   const transit=!!ancientsDraft&&ancientsDraft.kind!=='LEADER'&&((cached.effectiveCardInPlay??cached.cardInPlay)==='ORDER_LIGHT_TROOPS'||!!cached.diceLab?.moveFireMove)&&ancientsDraft.path.length===0&&at?.side===cached.you&&at.id!==ancientsDraft.unitId&&['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY'].includes(units.find(u=>u.id===ancientsDraft.unitId)?.unitType)&&geometry.distance(ancientsDraft.origin,cell)===1;
   if(!transit&&ancientsDraft?.kind!=='LEADER'&&at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)&&!locked.has(at.id)){
@@ -994,6 +1013,16 @@ action('ancients-order',()=>cached?.selectionCard?.rallyOptions?sendAncients('AS
   unitIds:cached?.selectionCard?.allRequired?[...cached.selectionCard.unitIds]:Array.from(el('ancients-units').selectedOptions??[],x=>x.value),
   leaderIds:Array.from(el('ancients-leader-orders').selectedOptions??[],x=>x.value)
 }));
+if(el('ancients-reserve-deploy'))action('ancients-reserve-deploy',()=>{
+  const reserve=cached?.scenarioReserveOptions,section=el('ancients-reserve-section').value;
+  const raw=el('ancients-reserve-columns').value.trim().split(',').map(x=>x.trim());
+  if(!reserve||raw.length!==3||raw.some(x=>!/^\d{1,2}$/.test(x)))throw Error('INVALID_SCENARIO_RESERVE');
+  return sendAncients('DEPLOY_SCENARIO_RESERVE',{section,placements:reserve.units.map((u,i)=>({unitId:u.id,col:Number(raw[i])-1})),leaderUnitId:el('ancients-reserve-leader').value});
+});
+if(el('ancients-exit-unit'))action('ancients-exit-unit',()=>{
+  if(!ancientsDraft||ancientsDraft.kind==='LEADER'||ancientsDraft.revision!==cached?.revision)throw Error('BORRADOR_DESACTUALIZADO');
+  return sendAncients('EXIT_SCENARIO_UNIT',{unitId:ancientsDraft.unitId,path:ancientsDraft.path.map(p=>({col:p.col,row:p.row}))});
+});
 action('ancients-select-leader',async()=>{
   if(cached?.status!=='LAB_ONLY'||cached.diceLab?.victory?.winner||cached.historyLimitReached||cached.turn!==cached.you||
      cached.phase!=='LAB_RESOLUTION_PENDING'||cached.combatLab?.movementClosed)throw Error('ACCION_NO_DISPONIBLE');
