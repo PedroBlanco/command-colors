@@ -59,6 +59,7 @@ export function precheckAncientsLeaderPath({
   const leader=leaders.find(x=>x.id===leaderId);
   if(!leader)throw new TypeError('UNKNOWN_MOVING_LEADER');
   if(path.length>3)return blocked('LEADER_RANGE_EXCEEDED',3);
+  if(terrainByCell.get(key(leader))==='BUILDING'&&path.length>1)return blocked('BUILDING_EXIT_ONE_HEX',1);
   const fromAttached=occupied.get(key(leader))?.side===leader.side;
   const seen=new Set([key(leader)]);
   let last=leader;
@@ -74,6 +75,7 @@ export function precheckAncientsLeaderPath({
     if(i===path.length-1&&otherLeader)return blocked('FRIENDLY_LEADER_AT_DESTINATION',i);
     const ground=terrainByCell.get(cellKey);
     if(isImpassableTerrain(ground))return blocked('IMPASSABLE_TERRAIN',i);
+    if(ground==='BUILDING'&&path.length!==1)return blocked('BUILDING_MOVE_ONE_HEX',i);
     if((ground==='FOREST'||ground==='BROKEN_GROUND'||ground==='FORDABLE_RIVER'||ground==='MARSH')&&i!==path.length-1)
       return blocked('LEADER_MUST_STOP_ON_TERRAIN',i);
     seen.add(cellKey);last=destination;
