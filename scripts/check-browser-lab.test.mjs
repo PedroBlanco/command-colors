@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {checkLocalLab, LOCAL_TEST_FILES} from './check-browser-lab.mjs';
 import {verifyTestInventory} from './check-test-inventory.mjs';
+import {loadAncientsScenarioDirectory} from './scenario-import.mjs';
 
 test('diagnóstico es de solo lectura, no crea base ni directorios', async() => {
  const root=await mkdtemp(join(tmpdir(), 'ccw-preflight-'));
@@ -113,3 +114,19 @@ test('el manifiesto completo coincide con todos los archivos locales',()=>{
  assert.equal(inventory.ok,true,JSON.stringify(inventory));
  assert.equal(inventory.actual,LOCAL_TEST_FILES.length);
 });
+test('scenario directory imports validated JSON atomically and rejects invalid files',()=>runnerLab(async dir=>{
+ const example=await readFile(new URL('../scenarios/examples/ford-example-v1.json',import.meta.url));
+ await writeFile(join(dir,'ford.json'),example);
+ const catalog=loadAncientsScenarioDirectory(dir);
+ assert.equal(catalog.list().length,4);
+ assert.equal(catalog.setup('ford-example-v1').scenario.provenance.kind,'ORIGINAL');
+ await writeFile(join(dir,'bad.json'),'{');
+ assert.throws(()=>loadAncientsScenarioDirectory(dir),/SCENARIO_IMPORT_FAILED bad.json/);
+ await rm(join(dir,'bad.json'));
+ await writeFile(join(dir,'duplicate.json'),example);
+ assert.throws(()=>loadAncientsScenarioDirectory(dir),/DUPLICATE_SCENARIO_ID/);
+ await rm(join(dir,'duplicate.json'));
+ await writeFile(join(dir,'large.json'),Buffer.alloc(256*1024+1,32));
+ assert.throws(()=>loadAncientsScenarioDirectory(dir),/SCENARIO_FILE_SIZE/);
+ assert.equal(catalog.list().length,4);
+}));
