@@ -6,6 +6,7 @@
 import {createAncientsLoopbackSetup} from './loopback-demo-setup.mjs';
 import {initializeSectionHistoryLab} from './section-history-journal.mjs';
 
+export const LAB_SCENARIO_GEOMETRY='LAB_ODD_Q_13X9';
 export const BASE_DECK_ID='ancients-base-2009';
 export const BASE_DECK_COUNTS=Object.freeze({
   ORDER_2_LEFT:3,ORDER_2_CENTER:4,ORDER_2_RIGHT:3,
@@ -63,7 +64,7 @@ function sharedSectorCells(){
 const record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&Object.getPrototypeOf(x)===Object.prototype;
 const exact=(x,required,optional=[])=>record(x)&&required.every(k=>Object.hasOwn(x,k))&&Object.keys(x).every(k=>required.includes(k)||optional.includes(k));
 const short=(x,max)=>typeof x==='string'&&x.length>0&&x.length<=max&&x.trim()===x;
-const validId=x=>typeof x==='string'&&/^[a-z][a-z0-9-]{0,62}-v[1-9][0-9]*$/.test(x)&&x.length<=80;
+const validId=x=>typeof x==='string'&&/^[a-z][a-z0-9-]{0,62}-v[1-9][0-9]*$/.test(x)&&x.length<=64;
 const pair=x=>exact(x,['A','B']);
 const unitKeys=['id','side','col','row'];
 const fail=()=>{throw new Error('INVALID_SCENARIO_DOCUMENT');};
@@ -86,7 +87,7 @@ function scenarioSetup(s){
 // A portable, versioned data format, not a way of injecting arbitrary setup
 // options. The engine is the final authority for geometry and supported rules.
 export function importAncientsScenario(doc){
-  if(!exact(doc,['schemaVersion','id','title','deckId','provenance','factions','startingSide','handSizes','victoryTargets','units','leaders','terrain','sectorCells'],['objectives'])||
+  if(!exact(doc,['schemaVersion','geometry','id','title','deckId','provenance','factions','startingSide','handSizes','victoryTargets','units','leaders','terrain','sectorCells'],['objectives'])||
      doc.schemaVersion!==1||!validId(doc.id)||!short(doc.title,120)||doc.deckId!==BASE_DECK_ID||
      !exact(doc.provenance,['kind','source'])||!['OFFICIAL','COMMUNITY','ORIGINAL'].includes(doc.provenance.kind)||!short(doc.provenance.source,500)||
      !pair(doc.factions)||!['A','B'].every(side=>short(doc.factions[side],80))||!['A','B'].includes(doc.startingSide)||
@@ -97,6 +98,7 @@ export function importAncientsScenario(doc){
      !doc.units.every(u=>exact(u,[...unitKeys,'type'])&&typeof u.type==='string')||
      !doc.leaders.every(l=>exact(l,unitKeys))||
      !['A','B'].every(side=>doc.units.some(u=>u.side===side)))fail();
+  if(doc.geometry!==LAB_SCENARIO_GEOMETRY)throw Error('UNSUPPORTED_SCENARIO_GEOMETRY');
   const normalized={...structuredClone(doc),units:doc.units.map(u=>[u.id,u.side,u.col,u.row,u.type]),
     leaders:doc.leaders.map(l=>[l.id,l.side,l.col,l.row])};
   // Validate exactly the same setup accepted by live initialization; no
