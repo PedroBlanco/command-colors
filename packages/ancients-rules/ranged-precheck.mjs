@@ -10,7 +10,7 @@ import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
 
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES = new Set(['A', 'B']);
-import {BASE_TERRAIN_TYPES,terrainTileShapeOK} from './terrain-movement.mjs';
+import {BASE_TERRAIN_TYPES,terrainTileShapeOK,isImpassableTerrain} from './terrain-movement.mjs';
 const TERRAIN_TYPES = new Set(BASE_TERRAIN_TYPES);
 const key = ({col,row}) => `${col},${row}`;
 const validCell = (c,board) => c && typeof c === 'object' && !Array.isArray(c) &&
@@ -73,7 +73,7 @@ export function precheckAncientsRangedAttack({units, leaders = [], terrain = [],
   if (attacker.side === target.side) return result('BLOCKED', 'FRIENDLY_TARGET');
 
   if([terrainIndex.get(key(attacker)),terrainIndex.get(key(target))].includes('BUILDING'))return result('BLOCKED','BUILDING_RANGED_FORBIDDEN');
-  if([terrainIndex.get(key(attacker)),terrainIndex.get(key(target))].includes('FORTIFIED_CITY_WALL'))return result('BLOCKED','IMPASSABLE_TERRAIN');
+  if([terrainIndex.get(key(attacker)),terrainIndex.get(key(target))].some(isImpassableTerrain))return result('BLOCKED','IMPASSABLE_TERRAIN');
   const profile = assessAncientsRangedProfile({
     unitType: attacker.type, movedSteps, targetDistance: board.distance(attacker, target)
   });
