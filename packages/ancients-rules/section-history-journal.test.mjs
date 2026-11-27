@@ -2171,13 +2171,15 @@ test('external scenario import: schema, provenance, authority, isolation and rep
  imported.board.units[0].col=0;
  assert.equal(catalog.setup(doc.id).board.units[0].col,2);
  assert.equal(catalog.setup(doc.id).scenario.provenance.kind,'COMMUNITY');
+ doc.provenance.kind='COMMUNITY';
  const invalid=[
   {...doc,enableDiceLab:false},{...doc,deckId:'unknown'},{...doc,schemaVersion:2},
   {...doc,objectives:null},{...doc,units:[...doc.units,{...doc.units[0]}]},
   {...doc,sectorCells:{}},{...doc,id:'open-field-v1'},{...doc,id:'demo-v1'}
  ];
  for(const bad of invalid)assert.throws(()=>createAncientsScenarioCatalog([bad]));
- assert.throws(()=>createAncientsScenarioCatalog([{...doc,geometry:'OFFICIAL_ODD_R_113'}]),/UNSUPPORTED_SCENARIO_GEOMETRY/);
+ assert.throws(()=>createAncientsScenarioCatalog([{...doc,geometry:'UNKNOWN'}]),/UNSUPPORTED_SCENARIO_GEOMETRY/);
+ assert.throws(()=>createAncientsScenarioCatalog([{...doc,geometry:OFFICIAL_BOARD_GEOMETRY}]));
  assert.throws(()=>createAncientsScenarioCatalog([doc,doc]),/DUPLICATE_SCENARIO_ID/);
  assert.equal(catalog.setup('__proto__'),null);
 });
@@ -2208,8 +2210,11 @@ test('official geometry journal: legal diagonal, forbidden short-row cell, close
  assert.equal(s.combatLab.plan.distance,1);
  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:Array(s.combatLab.plan.diceCount).fill('FLAG')});
  run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true},'B');
- run('FINALIZE_SECTION_RANGED_LAB');
- assert.ok(s.diceLab.last||s.diceLab.pending);
+ if(project(s,'B').diceLab.blocker==='MORALE_CHOICE_PENDING')run('CHOOSE_SECTION_MORALE_LAB',{ignored:0},'B');
+ const route=project(s,'B').diceLab.retreat.options.find(o=>o.blocksLost===0);
+ assert.ok(route);assert.ok(route.path.every((p,i)=>p.row===(i?route.path[i-1].row:2)-1));
+ run('RETREAT_SECTION_UNIT_LAB',{path:route.path},'B');
+ assert.deepEqual(s.board.units.find(u=>u.id==='b1'),{id:'b1',side:'B',...route.path.at(-1)});
  assert.deepEqual(replay(initial,log),s);
  const bad=structuredClone(setup);bad.board.units[0].col=12;bad.board.units[0].row=3;
  assert.throws(()=>init({...bad,randomIndex:n=>n-1}),/INVALID_SECTION_HISTORY_BOARD/);
