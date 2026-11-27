@@ -336,7 +336,9 @@ test('public Ancients markers show unit classes and terrain without changing mov
   {col:4,row:4,kind:'HILL'},
   {col:9,row:4,kind:'BROKEN_GROUND'}
  ];
- renderMovementBoard(svg,board,null,()=>{},'A',{terrain});
+ renderMovementBoard(svg,board,null,()=>{},'A',{terrain,objectiveCells:[{col:4,row:4}]});
+ assert.match(cell(svg,4,4).attrs['aria-label'],/objetivo de victoria/);
+ assert.equal(cell(svg,4,4).children.some(n=>n.attrs.class==='objective-marker'),true);
  assert.equal(cell(svg,3,4).classes.has('terrain-forest'),true);
  assert.equal(cell(svg,4,4).classes.has('terrain-hill'),true);
  assert.equal(cell(svg,9,4).classes.has('terrain-broken'),true);
