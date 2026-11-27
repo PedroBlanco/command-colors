@@ -2327,6 +2327,7 @@ test('scenario exit and ambush: authenticated orders, movement budget, victory a
   assert.equal(get().diceLab.casualties.length,0);assert.equal(project(get(),'B').diceLab.banners.A,1);assert.equal(project(get(),'B').diceLab.victory.winner,'A');
  });
  const y=setup();y.scenarioRules={sacredBand:[],handGrowth:[],reserve:{side:'B',units:[{id:'reserve_c',type:'MEDIUM_CAVALRY'},{id:'reserve_w1',type:'WARRIOR_INFANTRY'},{id:'reserve_w2',type:'WARRIOR_INFANTRY'}],leaderId:'reserve_l'}};
+ y.cardInstances.sort((a,b)=>Number(/^ORDER_[234]_/.test(a.definitionId))-Number(/^ORDER_[234]_/.test(b.definitionId)));
  pick(y,'ORDER_2_CENTER',59);pick(y,'INSPIRED_LEFT_LEADERSHIP',55);pick(y,'LEADERSHIP_ANY_SECTION',54);
  exercise(init({...y,randomIndex:n=>n-1}),(run,get,deny)=>{
   const pass=()=>{const s=get(),card=s.hands[s.turn].find(c=>/^ORDER_[234]_/.test(c.definitionId));assert.ok(card);
