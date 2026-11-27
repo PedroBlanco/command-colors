@@ -62,32 +62,47 @@ Solo se admiten campos conocidos. Se comprueba la configuración con el iniciali
 
 El campo `sacredBand` contiene identificadores de unidades de infantería pesada presentes al inicio. Suma aciertos por símbolo de líder en cuerpo a cuerpo aunque no haya líder próximo y permite ignorar una bandera adicional. El rasgo se muestra en el tablero y persiste hasta la eliminación. No se aplica al fuego a distancia. Para el segundo caso, OWN_TURN_END cuenta turnos propios terminados y roba las cartas extra tras el robo ordinario; CASUALTY_BANNERS cuenta medallas por bajas de unidades o líderes y concede la recompensa al confirmar la resolución que alcanza el umbral. No incluye medallas territoriales. No se roba si la partida ya terminó. Cada recompensa se registra una sola vez. Los eventos públicos solo revelan la cantidad, nunca la identidad de las cartas nuevas. Se conserva el máximo de 20 cartas por bando y se reserva al menos una carta fuera de las manos. Las partidas anteriores no adquieren excepciones retroactivamente.
 
-Fuentes de requisitos: [Crimissos](https://www.commandsandcolors.net/ancients/scenario-list/sicilian-wars-600-265-bc/002-crimissos-river-341-bc.html), [Lago Trasimeno](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/006-lake-trasimenus-217-bc.html), [Beneventum II](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/009-2nd-beneventum-214-bc.html). Pendientes para Trasimeno: tipos específicos de lago y colina escarpada; para Trebbia: reserva fuera del tablero y entrada autorizada por carta de liderazgo. No se certifica una batalla solo por disponer de una excepción.
+Fuentes de requisitos: [Crimissos](https://www.commandsandcolors.net/ancients/scenario-list/sicilian-wars-600-265-bc/002-crimissos-river-341-bc.html), [Lago Trasimeno](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/006-lake-trasimenus-217-bc.html), [Beneventum II](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/009-2nd-beneventum-214-bc.html). Para Trasimeno se admiten LAKE y STEEP_HILL: ambos infranqueables; el lago no bloquea la línea de visión, conforme a la regla de costa; la colina escarpada la bloquea (interpretación conservadora de elevación, a validar). Para Trebbia sigue pendiente la reserva fuera del tablero y la entrada autorizada por carta de liderazgo. No se certifica una batalla solo por disponer de una excepción.
 
 ## Tablero físico: geometría versionada
 
 La página 2 del [libro oficial de escenarios de GMT (2006)](https://www.gmtgames.com/cca/CCScenarioBook0906.pdf) muestra el tablero real: nueve filas alternas de 13 y 12 celdas, 113 hexágonos, orientación de filas desplazadas. El laboratorio usa odd-q (columnas desplazadas), 13 × 9 = 117 celdas. La diferencia afecta a vecinos, distancias, LOS, retiradas, posiciones de borde, sectores y representación. No basta con copiar las coordenadas del mapa. Se ha añadido la geometría versionada OFFICIAL_ODD_R_113 y propagado por el diario, movimiento, combate, retirada, LOS, sectores y SVG. Los diarios anteriores siguen usando odd-q. Se rechazan geometrías desconocidas y documentos marcados OFFICIAL con topología antigua; la configuración debe incluir el mapa de sectores exacto. En filas pares (base cero), los hexágonos de columnas 4 y 8 pertenecen a dos sectores. En filas impares, las fronteras coinciden con aristas, de modo que las columnas 0–3 son LEFT, 4–7 CENTER, 8–11 RIGHT. Fuente: página 2 del [libro de escenarios de GMT, 2.ª edición](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-201.pdf). Falta regresión nativa y validación de una partida oficial completa.
 
-## Inventario oficial base (pendiente de importación exacta)
+## Inventario oficial base
 
-Fuente: [índice de escenarios básicos](https://www.commandsandcolors.net/ancients/the-game/main/base-game-official-scenarios.html) y libro oficial de GMT. Este inventario es de referencias, no el catálogo jugable.
+Fuentes: [índice de escenarios básicos](https://www.commandsandcolors.net/ancients/the-game/main/base-game-official-scenarios.html) y libro de GMT, 2.ª edición, [parte 1](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-201.pdf) y [parte 2](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-202.pdf). Los despliegues oficiales se preparan como datos locales del propietario, sin publicar mapas, ilustraciones ni textos de escenarios en GitHub. El ZIP de entrega al propietario contiene ocho documentos JSON v1; no se instala automáticamente en el servidor.
 
 | N.º | Batalla | Estado |
 |---|---|---|
-| 001 | Akragas (406 a. C.) | Primer escenario para importación local: sin terreno ni reglas especiales, Siracusa comienza con 6 cartas, Cartago 5, objetivo 5 medallas; geometría habilitada, despliegue local pendiente de validación integral |
-| 002 | Crimissos River (341 a. C.) | Banda Sagrada y vados implementados; falta preparar y verificar despliegue |
-| 003 | Bagradas (253 a. C.) | Preparar despliegue; verificar elefantes |
-| 004 | Ticinus River (218 a. C.) | Río infranqueable disponible; preparar despliegue |
+| 001 | Akragas (406 a. C.) | JSON local, 24 unidades/4 líderes, inicialización aislada correcta |
+| 002 | Crimissos River (341 a. C.) | JSON local, 22/3, cinco vados y Banda Sagrada, inicialización correcta |
+| 003 | Bagradas (253 a. C.) | JSON local, 37/5, incluye elefantes, inicialización correcta |
+| 004 | Ticinus River (218 a. C.) | JSON local, 24/4, río infranqueable, inicialización correcta |
 | 005 | Trebbia (218 a. C.) | Falta emboscada y entrada de reservas |
-| 006 | Lake Trasimenus (217 a. C.) | Crecimiento de mano implementado; falta terreno específico y despliegue |
-| 007 | Cannae (216 a. C.) | Pendiente |
-| 008 | Dertosa (215 a. C.) | Pendiente |
-| 009 | 2nd Beneventum (214 a. C.) | Crecimiento por medallas y río infranqueable implementados; falta despliegue |
-| 010 | Castulo (211 a. C.) | Pendiente |
-| 011 | Baecula (208 a. C.) | Objetivos CAPTURE disponibles; falta despliegue |
+| 006 | Lake Trasimenus (217 a. C.) | JSON local, 35/5, lago y colinas escarpadas, mano romana 2→3→4, inicialización correcta |
+| 007 | Cannae (216 a. C.) | JSON local, 32/6, inicialización correcta |
+| 008 | Dertosa (215 a. C.) | JSON local, 29/3, inicialización correcta |
+| 009 | 2nd Beneventum (214 a. C.) | JSON local, 29/4, mano romana +2 al alcanzar tres medallas, inicialización correcta |
+| 010 | Castulo (211 a. C.) | Falta victoria inmediata por baja de líder designado y salida puntuable por sectores |
+| 011 | Baecula (208 a. C.) | Objetivos CAPTURE disponibles, falta preparar despliegue |
 | 012 | Metaurus (207 a. C.) | Pendiente |
 | 013 | Ilipa (206 a. C.) | Pendiente |
 | 014 | Great Plains (203 a. C.) | Pendiente |
 | 015 | Zama (202 a. C.) | Pendiente |
 
-Orden de trabajo: geometría y sectores implementados; preparar Akragas a partir de una copia local legítima, validar despliegue y partida completa; importar el resto de escenarios base según sus dependencias. Más adelante, expansiones y escenarios comunitarios con el mismo formato y filtros de catálogo. Un importador directo de formatos de terceros (p. ej. Vassal) será un adaptador separado, nunca un ejecutor de reglas arbitrarias.
+Los ocho documentos se transcribieron visualmente a coordenadas oficiales; se validaron conjuntamente con los tres escenarios originales (11 entradas). Cada configuración se inicializó con el motor, verificando conservación de las 60 cartas, manos, primer turno, piezas, terrenos y replay vacío. Se comprobó coincidencia de las huellas FNV-1a de ID, turno, manos, objetivos, posiciones/tipos de unidades, posiciones de líderes, terrenos y excepciones con el paquete de entrega:
+
+```text
+akragas-v1        f6d45a5c
+crimissos-v1      8ee5ec9e
+bagradas-v1       7072d7ec
+ticinus-v1        97de6396
+trasimeno-v1      ec5d2cc8
+cannae-v1         ffb611b2
+dertosa-v1        1d88f402
+beneventum-ii-v1  a9696fde
+```
+
+Huellas no criptográficas de los datos de juego, no de todo el fichero. La comprobación de inicialización no equivale a certificar la exactitud de todos los despliegues ni una partida completa: se recomienda cotejar con el ejemplar físico en la futura validación. En particular, confirmar los cinco vados de Crimissos, los líderes sin nombre impreso y las variantes de edición. La mano de Cartago en Trasimeno sigue la 2.ª edición (6 cartas). No se requiere acción inmediata del propietario.
+
+Próximos pasos: completar los escenarios compatibles restantes, reservas de Trebbia, salida de unidades y victoria por líder en Castulo; validar nativamente la composición SQLite/HTTP y el navegador. Escenarios comunitarios y expansiones posteriores emplearán el mismo formato.
