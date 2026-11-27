@@ -111,7 +111,7 @@ async function withBrowser(run,{owner='alice'}={}) {
       }
     }
     else if(path===`/api/matches/${MATCH}` && state.login){response={matchId:MATCH,status:state.lobby,players:state.lobby==='READY'?[{side:'A',handle:owner},{side:'B',handle:owner==='alice'?'bob':'alice'}]:[{side:'A',handle:owner}],
-      ...(state.lobby==='READY'?{state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:state.board,
+      ...(state.lobby==='READY'?{...(state.scenarios?{ancientsScenarios:state.scenarios}:{}),state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:state.board,
         ...(state.deckPhase?{phase:state.deckPhase,actingSide:'A',
           pendingDecision:null,movedUnitIds:[],drawPileCount:10,
           discardPile:[],cardInPlay:null}:{})}}:{})};status=200;}
@@ -404,6 +404,10 @@ test('browser: explicit loopback Ancients mode uses distinct authenticated route
  ctx.state.lobby='READY';
  await ctx.element('refresh').dispatch('click');
  assert.equal(ctx.element('ancients-start').disabled,false);
+ ctx.state.scenarios=[{id:'demo-v1',title:'Demo'},{id:'open-field-v1',title:'Campo abierto'}];
+ await ctx.element('refresh').dispatch('click');
+ assert.deepEqual(ctx.element('ancients-scenario').children.map(o=>o.value),['demo-v1','open-field-v1']);
+ ctx.element('ancients-scenario').value='open-field-v1';
  assert.equal(ctx.element('deck-initialize').disabled,false);
  await ctx.element('ancients-start').dispatch('click');
  assert.equal(ctx.state.lab,true);
@@ -418,7 +422,7 @@ test('browser: explicit loopback Ancients mode uses distinct authenticated route
  assert.match(ctx.element('ancients-status').textContent,/AWAIT_CARD/);
  const init=ctx.requests.find(r=>r.path===`/api/matches/${MATCH}/ancients-lab/initialize`);
  assert.equal(init.method,'POST');
- assert.deepEqual(JSON.parse(init.body),{});
+ assert.deepEqual(JSON.parse(init.body),{scenarioId:'open-field-v1'});
  await ctx.element('ancients-play').dispatch('click');
  assert.equal(ctx.state.labPhase,'ASSIGN_ORDERS');
  assert.equal(ctx.element('ancients-order').disabled,false);
