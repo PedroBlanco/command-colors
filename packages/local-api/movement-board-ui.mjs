@@ -63,7 +63,7 @@ function svgNode(doc, name, attrs = {}) {
 /** Render public cells/units with keyboard and pointer selection. */
 export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
-    terrain=[],leaders=[]}={}) {
+    terrain=[],leaders=[],objectiveCells=[]}={}) {
   if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -110,6 +110,8 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
      new Set(terrain.map(key)).size!==terrain.length)
     throw new TypeError('INVALID_MOVEMENT_TERRAIN_VIEW');
   const terrainByCell=new Map(terrain.map(t=>[key(t),t]));
+  if(!Array.isArray(objectiveCells)||objectiveCells.length>13689||objectiveCells.some(c=>!c||!Number.isSafeInteger(c.col)||!Number.isSafeInteger(c.row)||c.col<0||c.col>12||c.row<0||c.row>8))throw new TypeError('INVALID_MOVEMENT_OBJECTIVE_VIEW');
+  const objectives=new Set(objectiveCells.map(key));
   // Presentational hints cannot grant permission; validate their bounded shape.
   if (!Array.isArray(nextCells) || nextCells.length>6 ||
       nextCells.some(cell => !cell || !Number.isSafeInteger(cell.col) ||
@@ -150,7 +152,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}${blocks!==null?`, ${blocks} bloques restantes`:''}` : leader ? ', sin unidad' : ', vacía'}${leader ? `, líder ${leader.id} del bando ${leader.side}`:''}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}${blocks!==null?`, ${blocks} bloques restantes`:''}` : leader ? ', sin unidad' : ', vacía'}${leader ? `, líder ${leader.id} del bando ${leader.side}`:''}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${objectives.has(key(cell))?', objetivo de victoria':''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
       'aria-pressed':String(Boolean(origin || step)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -178,6 +180,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       marker.textContent=terrainLabel[0];
       hex.append(marker);
     }
+    if(objectives.has(key(cell)))hex.append(svgNode(doc,'circle',{cx:position.x,cy:position.y,r:20,class:'objective-marker','pointer-events':'none'}));
     if (next) hex.append(svgNode(doc,'circle',{
       cx:position.x,cy:position.y,r:7,class:'hex-next-marker','pointer-events':'none'
     }));
