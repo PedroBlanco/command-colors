@@ -93,6 +93,7 @@ export function importAncientsScenario(doc){
      !pair(doc.handSizes)||!pair(doc.victoryTargets)||!Array.isArray(doc.units)||doc.units.length<2||doc.units.length>117||
      !Array.isArray(doc.leaders)||doc.leaders.length>117||!Array.isArray(doc.terrain)||doc.terrain.length>117||
      !record(doc.sectorCells)||Object.keys(doc.sectorCells).length!==117||
+     (Object.hasOwn(doc,'objectives')&&(!Array.isArray(doc.objectives)||doc.objectives.length<1||doc.objectives.length>117))||
      !doc.units.every(u=>exact(u,[...unitKeys,'type'])&&typeof u.type==='string')||
      !doc.leaders.every(l=>exact(l,unitKeys))||
      !['A','B'].every(side=>doc.units.some(u=>u.side===side)))fail();
