@@ -1,6 +1,7 @@
 /** Declarative, versioned scenario exceptions. No scenario names or code hooks.
  * All effects are evaluated on the authoritative, replayable journal.
  */
+import {isImpassableTerrain} from './terrain-movement.mjs';
 const SIDES=['A','B'];
 const record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&Object.getPrototypeOf(x)===Object.prototype;
 const exact=(x,keys)=>record(x)&&Object.keys(x).length===keys.length&&keys.every(k=>Object.hasOwn(x,k));
@@ -96,11 +97,11 @@ export function reserveEntryOptions(state,side,sectors,geometry,leadershipSectio
   const r=state.scenarioRules?.reserve;
   if(!r||r.enteredTurn!==null||r.rule.side!==side||state.turn!==side||state.phase!=='ASSIGN_ORDERS'||state.scenarioRules.turns[side]<1||leadershipSection===undefined)return null;
   const row=side==='A'?0:8,occupied=[...state.board.units,...state.board.leaders];
-  const cells=geometry.allCells().filter(c=>c.row===row&&!occupied.some(p=>p.col===c.col&&p.row===c.row)&&!state.footLab.terrain.some(t=>t.col===c.col&&t.row===c.row));
+  const cells=geometry.allCells().filter(c=>c.row===row&&!occupied.some(p=>p.col===c.col&&p.row===c.row)&&!state.footLab.terrain.some(t=>t.col===c.col&&t.row===c.row&&(isImpassableTerrain(t.kind)||t.kind==='BUILDING'||t.kind==='MARSH')));
   const options=SECTORS.filter(s=>leadershipSection===null||s===leadershipSection).map(section=>({section,cells:cells.filter(c=>sectors[c.col+','+c.row]?.includes(section))})).filter(o=>o.cells.length>=3);
   return options.length?{units:structuredClone(r.rule.units),leaderId:r.rule.leaderId,options}:null;
 }
 export function reserveCanContinue(state,id){
   const r=state.scenarioRules?.reserve;
-  return !!(r&&r.enteredTurn!==null&&state.turn===r.rule.side&&state.scenarioRules.turns[state.turn]===r.enteredTurn&&r.rule.units.some(u=>u.id===id)&&state.combatLab.movement[id]?.steps===1);
+  return !!(r&&r.enteredTurn!==null&&state.turn===r.rule.side&&state.scenarioRules.turns[state.turn]===r.enteredTurn&&r.rule.units.some(u=>u.id===id)&&state.combatLab.movement[id]?.steps===1&&!state.footLab.terrain.some(t=>['FOREST','FORDABLE_RIVER','MARSH','BUILDING'].includes(t.kind)&&state.board.units.some(u=>u.id===id&&u.col===t.col&&u.row===t.row)));
 }
