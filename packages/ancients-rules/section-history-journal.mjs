@@ -4,14 +4,14 @@
  * come from a trusted server setup, never a request. NOT an official game turn.
  */
 import {validScenarioObjectives,claimScenarioObjectives,projectScenarioObjectives} from './scenario-objectives.mjs';
-import {initializeScenarioRules,validScenarioRules,isSacredBand,applyScenarioHandGrowth} from './scenario-special-rules.mjs';
+import {initializeScenarioRules,validScenarioRules,isSacredBand,applyScenarioHandGrowth,reserveEntryOptions,reserveCanContinue} from './scenario-special-rules.mjs';
 import {randomInt} from 'node:crypto';
 import {getBoardGeometry,LAB_BOARD_GEOMETRY,OFFICIAL_BOARD_GEOMETRY,officialSectorCells} from '../hex-grid/hex.mjs';
 import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS} from './block-loss-preview.mjs';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS, SELECTION_CARD_DEFINITIONS, GROUP_CARD_DEFINITIONS, ATTACK_CARD_DEFINITIONS, LEADERSHIP_CARD_DEFINITIONS, FIRE_CARD_DEFINITIONS, effectiveSectionCard, selectionCardOptions, screenSelectionCardOrders} from './section-card-order-screen.mjs';
-import {ANCIENTS_RULESET,assessBaseMovement} from './movement-profile.mjs';
+import {ANCIENTS_RULESET,assessBaseMovement,BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 import {assessAncientsMovementRegime,assessOpenHexPathGeometry} from './movement-regimes.mjs';
 import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex,isImpassableTerrain,terrainTileShapeOK,fortificationProtects,isMarshHex,pathHasMarsh,isBuildingHex,buildingOccupantAllowed,isRetreatBlockedHex} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
@@ -311,6 +311,36 @@ function attackCardEffect(state,unitId){
   if(card==='MOUNTED_CHARGE'&&BASE_MOUNTED_TYPES.includes(state.footLab.unitTypes[unitId]))return card;
   return null;
 }
+function ambushOptions(state,side){
+  const card=effectiveSectionCard(state);
+  // Counter Attack is not itself a Leadership card.
+  if(state.activeCard?.definitionId!==card||!Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,card))return null;
+  return reserveEntryOptions(state,side,relativeSectors(state,side),geometryOf(state),LEADERSHIP_CARD_DEFINITIONS[card]);
+}
+function exitRule(state,side,cell){
+  const rule=state.scenarioRules?.unitExit?.rule;
+  return rule?.side===side&&cell.row===(side==='A'?0:8)&&relativeSectors(state,side)[loc(cell)]?.some(s=>rule.sectors.includes(s));
+}
+function scenarioPath(state,piece,path,steps,exit=false){
+  if(!Array.isArray(path)||path.length>4||!path.every(c=>isRecord(c)&&Object.keys(c).length===2&&goodLoc(c,geometryOf(state))))return false;
+  const type=state.footLab.unitTypes[piece.id],group=groupFootCard(state,piece.id);
+  const max=group==='LINE_COMMAND'?1:group==='DOUBLE_TIME'&&type!=='HEAVY_WAR_MACHINE'?(type==='WARRIOR_INFANTRY'?3:2):
+    attackCardEffect(state,piece.id)==='MOUNTED_CHARGE'&&['HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT'].includes(type)?3:BASE_MOVEMENT_PROFILES[type].maxSteps;
+  if(steps>max)return false;
+  const terrain=state.footLab.terrain??[],at=c=>terrain.find(t=>loc(t)===loc(c))?.kind??'CLEAR';
+  if(exit&&['FOREST','FORDABLE_RIVER','MARSH','BUILDING'].includes(at(path.at(-1)??piece)))return false;
+  if(path.length){
+    const checked=assessOpenHexPathGeometry({from:{col:piece.col,row:piece.row},path,
+      occupiedCells:[...state.board.units.filter(u=>!(mayPassFriendlyFoot(state,piece.id)&&path.length===2&&u.side===piece.side&&loc(u)===loc(path[0]))),
+        ...state.board.leaders.filter(l=>!state.board.units.some(u=>loc(u)===loc(l)))]},state.scenario?.geometry);
+    if(checked.status!=='CANDIDATE_PATH_GEOMETRY')return false;
+    const ground=assessAncientsTerrainMovement({unitType:type,origin:piece,path,terrain,geometryId:state.scenario?.geometry});
+    if(ground.status!=='CANDIDATE'||exit&&ground.destinationTerrain==='BROKEN_GROUND'&&BASE_MOUNTED_TYPES.includes(type))return false;
+    if(exit&&['MARSH','BUILDING'].includes(at(piece))&&steps>1)return false;
+  }
+  return true;
+}
+
 // V18 extends the existing foot command; V22/V23 reuse it for card effects.
 function previewSpecialFootMove(state,command){
   const piece=state.board.units.find(u=>u.id===command.unitId);
@@ -750,6 +780,53 @@ export function applySectionHistoryLabCommand(state,command={}){
     next.phase='LAB_RESOLUTION_PENDING';
     publicEvent={kind:'SECTION_ORDERS_STAGED_LAB',side,unitCount:unitIds.length,
       leaderCount:leaderIds.length,...(recovered?{rallyAllocations:copy(command.allocations)}:{})};
+  }else if(command.type==='DEPLOY_SCENARIO_RESERVE'){
+    const available=ambushOptions(state,side),option=available?.options.find(o=>o.section===command.section);
+    const placements=command.placements;
+    if(!option||!Array.isArray(placements)||placements.length!==3||!same(placements.map(p=>p?.unitId))||
+       !same(placements.map(p=>p?.col))||!placements.every(p=>isRecord(p)&&Object.keys(p).length===2&&available.units.some(u=>u.id===p.unitId)&&option.cells.some(c=>c.col===p.col))||
+       !placements.some(p=>p.unitId===command.leaderUnitId))return reject('INVALID_SCENARIO_RESERVE');
+    const row=side==='A'?0:8,pieces=[];
+    for(const p of placements){
+      const u=available.units.find(x=>x.id===p.unitId),unit={id:u.id,side,col:p.col,row};
+      next.board.units.push(unit);next.footLab.unitTypes[u.id]=u.type;next.diceLab.blocks[u.id]=BASE_UNIT_STARTING_BLOCKS[u.type];
+      next.footLab.movedUnitIds.push(u.id);next.combatLab.movement[u.id]={steps:1,battle:'POSSIBLE'};
+      pieces.push({...unit,kind:'UNIT'});
+    }
+    const host=placements.find(p=>p.unitId===command.leaderUnitId);
+    next.board.leaders.push({id:available.leaderId,side,col:host.col,row});
+    next.leaderLab.movedLeaderIds.push(available.leaderId);
+    next.scenarioRules.reserve.enteredTurn=state.scenarioRules.turns[side];
+    next.orderSnapshot={side,revision:state.revision+1,pieces,sectorCells:relativeSectors(state,side)};
+    if(effectiveSectionCard(state)==='LEADERSHIP_ANY_SECTION')next.diceLab.counter.section=command.section;
+    next.phase='LAB_RESOLUTION_PENDING';
+    publicEvent={kind:'SCENARIO_RESERVE_DEPLOYED',side,section:command.section,placements:copy(placements),leaderUnitId:command.leaderUnitId};
+  }else if(['MOVE_SECTION_FOOT_PATH_V2','MOVE_SECTION_MOUNTED_PATH_V1'].includes(command.type)&&reserveCanContinue(state,command.unitId)){
+    const piece=state.board.units.find(u=>u.id===command.unitId),path=command.path;
+    if(!piece||state.phase!=='LAB_RESOLUTION_PENDING'||state.combatLab.movementClosed||!Array.isArray(path)||!path.length||
+       !scenarioPath(state,piece,path,path.length+1))return reject('INVALID_RESERVE_CONTINUATION');
+    const type=state.footLab.unitTypes[piece.id];
+    if((command.type==='MOVE_SECTION_MOUNTED_PATH_V1')!==BASE_MOUNTED_TYPES.includes(type))return reject('INVALID_RESERVE_CONTINUATION');
+    const to=path.at(-1),battle=assessBaseMovement({unitType:type,steps:path.length+1}).battle;
+    const terrain=assessAncientsTerrainMovement({unitType:type,origin:piece,path,terrain:state.footLab.terrain??[],geometryId:state.scenario?.geometry});
+    if(battle==='MANDATORY_CLOSE_COMBAT'&&(terrain.battleOnEntry==='UNAVAILABLE'||!combatTargets(state).some(u=>u.side!==side&&geometryOf(state).distance(u,to)===1)))return reject('WARRIOR_CHARGE_TARGET_REQUIRED');
+    Object.assign(next.board.units.find(u=>u.id===piece.id),to);
+    const leader=next.board.leaders.find(l=>l.side===side&&loc(l)===loc(piece));if(leader)Object.assign(leader,to);
+    next.combatLab.movement[piece.id]={steps:path.length+1,battle:terrain.battleOnEntry==='UNAVAILABLE'?'UNAVAILABLE':battle};
+    publicEvent={kind:'SCENARIO_RESERVE_MOVED',side,unitId:piece.id,path:copy(path),to:copy(to)};
+  }else if(command.type==='EXIT_SCENARIO_UNIT'){
+    const piece=state.board.units.find(u=>u.id===command.unitId&&u.side===side),path=command.path;
+    if(!piece||state.phase!=='LAB_RESOLUTION_PENDING'||state.combatLab.movementClosed||
+       !state.orderSnapshot.pieces.some(p=>p.kind==='UNIT'&&p.id===piece.id)||state.footLab.movedUnitIds.includes(piece.id)||state.leaderLab.joinedUnitIds.includes(piece.id)||
+       ['CLASH_OF_SHIELDS','DARKEN_THE_SKY'].includes(effectiveSectionCard(state))||!Array.isArray(path)||
+       !exitRule(state,side,path.at(-1)??piece)||!scenarioPath(state,piece,path,path.length+1,true))return reject('INVALID_SCENARIO_EXIT');
+    const leader=state.board.leaders.find(l=>l.side===side&&loc(l)===loc(piece));
+    if(leader&&state.leaderLab.movedLeaderIds.includes(leader.id))return reject('UNIT_LOCKED_BY_LEADER_MOVE');
+    next.board.units=next.board.units.filter(u=>u.id!==piece.id);delete next.footLab.unitTypes[piece.id];delete next.diceLab.blocks[piece.id];
+    if(leader)next.board.leaders=next.board.leaders.filter(l=>l.id!==leader.id);
+    next.scenarioRules.unitExit.exited.push(piece.id);
+    next.footLab.movedUnitIds.push(piece.id);next.combatLab.movement[piece.id]={steps:path.length+1,battle:'UNAVAILABLE'};
+    publicEvent={kind:'SCENARIO_UNIT_EXITED',side,unitId:piece.id,path:copy(path),...(leader?{leaderExited:leader.id}:{}),banners:state.scenarioRules.unitExit.rule.banners};
   }else if(command.type==='MOVE_SECTION_FOOT_PATH_V2'){
     if(state.phase!=='LAB_RESOLUTION_PENDING'||!Object.hasOwn(state,'footLab'))
       return reject('FOOT_LAB_NOT_AVAILABLE');
@@ -1156,6 +1233,9 @@ export function projectSectionHistoryLab(state,side){
     phase:state.phase, yourHand:copy(state.hands[side]),
     ...(state.scenario?{scenario:copy(state.scenario)}:{}),
     ...(state.victoryObjectives?{victoryObjectives:projectScenarioObjectives(state)}:{}),
+    ...(state.scenarioRules?.unitExit?{scenarioUnitExit:copy(state.scenarioRules.unitExit)}:{}),
+    ...(ambushOptions(state,side)?{scenarioReserveOptions:ambushOptions(state,side)}:{}),
+    ...(state.scenarioRules?.reserve?{scenarioReserveMovableIds:state.board.units.filter(u=>u.side===side&&reserveCanContinue(state,u.id)).map(u=>u.id)}:{}),
     ...(state.scenarioRules?.leaderLoss?{scenarioLeaderLoss:copy(state.scenarioRules.leaderLoss)}:{}),
     ...(state.scenarioRules?{scenarioHandGrowth:state.scenarioRules.handGrowth.map(rule=>({...copy(rule),granted:state.scenarioRules.granted.includes(rule.id)}))}:{}),
     ...(state.revision>=sectionHistoryCommandLimit(state)?{historyLimitReached:true}:{}),
