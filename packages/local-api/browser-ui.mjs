@@ -323,7 +323,7 @@ function renderAncients() {
     ?`Preparación: ${plan.attackerId} → ${plan.targetId}. Distancia ${plan.distance}; movimiento ${plan.movedSteps}; ${plan.diceCount} dados (base: ${plan.baseDice}${plan.cardBonusDice?' · carta +'+plan.cardBonusDice:''}).`
     :!isTurn?'El adversario prepara su combate.':candidates.length
       ?`${candidates.length} ataques disponibles.`:'No hay ataques disponibles en esta posición.';
-  el('ancients-banners').textContent=dice?.banners?`Medallas: A ${dice.banners.A}${victory?'/'+victory.targets.A:''} · B ${dice.banners.B}${victory?'/'+victory.targets.B:''}`+(finished?` · ${victory.winner==='DRAW'?'Empate':'Vencedor: '+victory.winner}`:''):'';
+  el('ancients-banners').textContent=dice?.banners?`Medallas: A ${dice.banners.A}${victory?'/'+victory.targets.A:''} · B ${dice.banners.B}${victory?'/'+victory.targets.B:''}`+(finished?` · ${victory.winner==='DRAW'?'Empate':'Vencedor: '+victory.winner}${victory.reason==='DESIGNATED_LEADER_LOST'?' (pérdida del líder decisivo)':''}`:''):'';
   el('ancients-dice-controls').hidden=!dice||!movementClosed;
   const unitEvadeChoice=el('ancients-unit-evade-choice'),oldUnitEvade=unitEvadeChoice.value;
   unitEvadeChoice.replaceChildren();
