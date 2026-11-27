@@ -11,6 +11,8 @@ import {join} from 'node:path';
 import {createServer as netServer} from 'node:net';
 import {openSqliteComposition} from '../sqlite-store/sqlite.mjs';
 import {createAccessGateway} from './gateway.mjs';
+import {loadAncientsScenarioDirectory} from '../../scripts/scenario-import.mjs';
+import {fileURLToPath} from 'node:url';
 
 const PASSWORD='CCW-local-HTTP-lab-test-only-password-2026';
 const setup=()=>({cardInstances:[
@@ -49,12 +51,12 @@ async function fixture(work){
       sessionToken:tokens.bob,invitationToken:invited.token
     }).ok,true);
     const start=async({browser=false,revisionPollMs=30,storeFactory=app.getStore,
-      ancientsBrowserLab=false}={})=>{
+      ancientsBrowserLab=false,ancientsScenarioCatalog=undefined}={})=>{
       const port=await availablePort();
       const origin=`http://127.0.0.1:${port}`;
       const srv=createAccessGateway({
         identity:app.identity,invitations:app.invitations,getStore:storeFactory,
-        revisionPollMs,ancientsBrowserLab,...(browser?{browser:{origin,insecureLoopback:true}}:{})
+        revisionPollMs,ancientsBrowserLab,ancientsScenarioCatalog,...(browser?{browser:{origin,insecureLoopback:true}}:{})
       });
       await new Promise((resolve,reject)=>srv.once('error',reject).listen(port,'127.0.0.1',resolve));
       servers.push(srv);
@@ -572,4 +574,30 @@ test('Ancients HTTP SSE: opt-in stream notifies revision only; generic SSE remai
  }finally{
   controller.abort();
  }
+}));
+
+test('HTTP: imported scenario selected by owner survives a server without the catalog',()=>fixture(async({matchId,start})=>{
+ const catalog=loadAncientsScenarioDirectory(fileURLToPath(new URL('../../scenarios/examples/',import.meta.url)));
+ const {origin}=await start({browser:true,ancientsBrowserLab:true,ancientsScenarioCatalog:catalog});
+ const login=async(handle)=>{
+  const res=await fetch(origin+'/api/session',{method:'POST',
+   headers:{origin,'x-ccw-request':'1','content-type':'application/json'},body:JSON.stringify({handle,password:PASSWORD})});
+  assert.equal(res.status,200);return res.headers.get('set-cookie').split(';')[0];
+ };
+ const [alice,bob]=await Promise.all(['alice','bob'].map(login));
+ const url='/api/matches/'+matchId,lab=url+'/ancients-lab';
+ const view=async(base,cookie,path=lab)=>{const res=await fetch(base+path,{headers:{cookie}});assert.equal(res.status,200);return await res.json();};
+ const init=async(cookie,body)=>fetch(origin+lab+'/initialize',{method:'POST',headers:{cookie,origin,'x-ccw-request':'1','content-type':'application/json'},body:JSON.stringify(body)});
+ assert.ok((await view(origin,alice,url)).ancientsScenarios.some(s=>s.id==='ford-example-v1'));
+ assert.equal((await view(origin,bob,url)).ancientsScenarios,undefined);
+ assert.equal((await init(bob,{scenarioId:'ford-example-v1'})).status,403);
+ assert.equal((await init(alice,{scenarioId:'ford-example-v1',board:{}})).status,400);
+ assert.equal((await init(alice,{scenarioId:'ford-example-v1'})).status,201);
+ const a=(await view(origin,alice)).state,b=(await view(origin,bob)).state;
+ assert.equal(a.scenario.id,'ford-example-v1');assert.equal(b.scenario.id,a.scenario.id);
+ assert.equal(a.yourHand.length,4);assert.equal(b.yourHand.length,5);assert.equal(a.turn,'B');
+ assert.equal(a.victoryObjectives.length,2);
+ assert.equal(JSON.stringify(a).includes(b.yourHand[0].instanceId),false);
+ const second=await start({browser:true,ancientsBrowserLab:true});
+ assert.deepEqual((await view(second.origin,alice)).state,a);
 }));
