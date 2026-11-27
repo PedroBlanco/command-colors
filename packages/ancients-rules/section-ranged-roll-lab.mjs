@@ -16,6 +16,7 @@ import {planBaseAncientsRangedResolution,captureBaseAncientsLeaderCasualtyDice,
   previewBaseAncientsLeaderCasualtyCheck} from './ranged-resolution-sequence.mjs';
 
 import {scenarioObjectiveBanners,claimScenarioObjectives} from './scenario-objectives.mjs';
+import {isSacredBand} from './scenario-special-rules.mjs';
 
 const record=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -240,9 +241,10 @@ function moralePreview(state){
   const fullWarrior=type==='WARRIOR_INFANTRY'&&p.loss.originalBlocks===BASE_UNIT_STARTING_BLOCKS[type];
   const bridgeDefense=!['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT'].includes(type)&&state.footLab.terrain?.some(t=>t.kind==='BRIDGE'&&hex(t)===hex(target));
   const fortificationDefense=fortificationProtects(state.footLab.terrain??[],state.board.units.find(u=>u.id===state.combatLab.plan.attackerId),target,type,state.scenario?.geometry);
-  const capacity=Number(attachedLeader)+Number(supported)+Number(fullWarrior)+Number(!!state.combatLab.plan.elephantMountedDefense)+Number(!!bridgeDefense)+Number(fortificationDefense);
+  const sacredBand=isSacredBand(state,target.id);
+  const capacity=Number(sacredBand)+Number(attachedLeader)+Number(supported)+Number(fullWarrior)+Number(!!state.combatLab.plan.elephantMountedDefense)+Number(!!bridgeDefense)+Number(fortificationDefense);
   const flags=p.loss.effectiveFlagsPending;
-  return {flags,attachedLeader,supported,fullWarrior,supportHexes,...(bridgeDefense?{bridgeDefense:true}:{}),...(fortificationDefense?{fortificationDefense:true}:{}),
+  return {flags,attachedLeader,supported,fullWarrior,supportHexes,...(sacredBand?{sacredBand:true}:{}),...(bridgeDefense?{bridgeDefense:true}:{}),...(fortificationDefense?{fortificationDefense:true}:{}),
     maxIgnored:Math.min(flags,capacity)};
 }
 
