@@ -9,7 +9,7 @@
  * Napoleonics can reuse the geometric concept but must supply its own
  * ruleset/bounds and eligibility policy. No Napoleonics rules live here.
  */
-import {distance,inBounds} from '../hex-grid/hex.mjs';
+import {getBoardGeometry} from '../hex-grid/hex.mjs';
 import {ANCIENTS_RULESET,BASE_MOVEMENT_PROFILES,assessBaseMovement}
   from './movement-profile.mjs';
 
@@ -48,11 +48,11 @@ const hasFields=(source,keys)=>plain(source)&&
   keys.every(k=>Object.hasOwn(source,k)&&
     Object.getOwnPropertyDescriptor(source,k)?.enumerable===true&&
     Object.hasOwn(Object.getOwnPropertyDescriptor(source,k),'value'));
-const readCell=value=>{
+const readCell=(value,board)=>{
   if(!plain(value))return null;
   const col=field(value,'col'),row=field(value,'row');
   return Number.isSafeInteger(col)&&Number.isSafeInteger(row)&&
-    inBounds({col,row})?{col,row}:null;
+    board.inBounds({col,row})?{col,row}:null;
 };
 const key=cell=>cell.col+','+cell.row;
 
@@ -101,17 +101,18 @@ export function assessAncientsMovementRegime(input={}){
  * are enforced elsewhere. Occupancy considers both friendly and enemy units.
  * No eligible result alone authorizes a movement or changes a board.
  */
-export function assessOpenHexStepGeometry(input={}){
+export function assessOpenHexStepGeometry(input={},geometryId){
   try{
+    const board=getBoardGeometry(geometryId);
     if(!hasFields(input,['from','to','occupiedCells']))
       return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
-    const from=readCell(field(input,'from')),to=readCell(field(input,'to')),
+    const from=readCell(field(input,'from'),board),to=readCell(field(input,'to'),board),
       occupied=field(input,'occupiedCells');
     if(!from||!to||!Array.isArray(occupied)||
        Object.getPrototypeOf(occupied)!==Array.prototype)
       return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
     const count=Object.getOwnPropertyDescriptor(occupied,'length')?.value;
-    if(!Number.isSafeInteger(count)||count<0||count>117||
+    if(!Number.isSafeInteger(count)||count<0||count>board.cellCount||
        Reflect.ownKeys(occupied).length!==count+1)
       return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
     const positions=[];
@@ -119,11 +120,11 @@ export function assessOpenHexStepGeometry(input={}){
       const d=Object.getOwnPropertyDescriptor(occupied,String(i));
       if(!d||!d.enumerable||!Object.hasOwn(d,'value'))
         return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
-      const cell=readCell(d.value);
+      const cell=readCell(d.value,board);
       if(!cell)return geometry('BLOCKED','INVALID_GEOMETRY_INPUT');
       positions.push(cell);
     }
-    if(distance(from,to)!==1)
+    if(board.distance(from,to)!==1)
       return geometry('BLOCKED','NOT_ONE_ADJACENT_HEX');
     if(positions.some(unit=>key(unit)===key(to)))
       return geometry('BLOCKED','OCCUPIED_DESTINATION');
@@ -144,7 +145,7 @@ const pathVerdict=(status,reason,step=null,destination=null,steps=null)=>
       Object.freeze({col:destination.col,row:destination.row}),
     steps,movementAuthorized:false,canCommit:false,needsFullLegalityCheck:true
   });
-const cellArray=(source,min,max)=>{
+const cellArray=(source,min,max,board)=>{
   if(!Array.isArray(source)||Object.getPrototypeOf(source)!==Array.prototype)
     return null;
   const size=Object.getOwnPropertyDescriptor(source,'length')?.value;
@@ -154,19 +155,20 @@ const cellArray=(source,min,max)=>{
   for(let i=0;i<size;i++){
     const desc=Object.getOwnPropertyDescriptor(source,String(i));
     if(!desc?.enumerable||!Object.hasOwn(desc,'value'))return null;
-    const cell=readCell(desc.value);
+    const cell=readCell(desc.value,board);
     if(!cell)return null;
     cells.push(cell);
   }
   return cells;
 };
-export function assessOpenHexPathGeometry(input={}){
+export function assessOpenHexPathGeometry(input={},geometryId){
   try{
+    const board=getBoardGeometry(geometryId);
     if(!hasFields(input,['from','path','occupiedCells']))
       return pathVerdict('BLOCKED','INVALID_PATH_GEOMETRY_INPUT');
-    const from=readCell(field(input,'from'));
-    const path=cellArray(field(input,'path'),1,32);
-    const occupied=cellArray(field(input,'occupiedCells'),0,117);
+    const from=readCell(field(input,'from'),board);
+    const path=cellArray(field(input,'path'),1,32,board);
+    const occupied=cellArray(field(input,'occupiedCells'),0,board.cellCount,board);
     if(!from||!path||!occupied)
       return pathVerdict('BLOCKED','INVALID_PATH_GEOMETRY_INPUT');
     let previous=from;
@@ -177,7 +179,7 @@ export function assessOpenHexPathGeometry(input={}){
         return pathVerdict('BLOCKED','REPEATED_HEX',i);
       const edge=assessOpenHexStepGeometry({
         from:previous,to:target,occupiedCells:occupied
-      });
+      },geometryId);
       if(edge.status!=='CANDIDATE_GEOMETRY')
         return pathVerdict('BLOCKED',edge.reason,i);
       visited.add(key(target));
