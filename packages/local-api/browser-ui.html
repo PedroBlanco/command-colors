@@ -26,8 +26,17 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 /* Tablero táctico del laboratorio autenticado, sin recursos oficiales. */
 #movement-viewport{width:100%;overflow:hidden;border:1px solid #a4b5b0;border-radius:8px;background:#e7e8de;overflow-x:auto;touch-action:auto}
 #movement-board{display:block;width:100%;min-width:510px;height:auto;aspect-ratio:510 / 430}
+#ancients-board{display:block;width:100%;min-width:510px;height:auto;aspect-ratio:510 / 430}
+#ancients-board-viewport{overflow-x:auto;border:1px solid #a4b5b0;border-radius:8px;background:#e7e8de}
+#ancients-units{min-height:95px}
+#ancients-leader-orders{min-height:60px}
+.leader-marker{fill:#512e8a;stroke:#fff;stroke-width:.8px;paint-order:stroke;font-size:14px;font-weight:900}
 .hex-shape{stroke:#859b91;stroke-width:1.3;fill:#e9ede6}
 .hex-target:nth-child(even) .hex-shape{fill:#e0e6df}
+.hex-target.terrain-forest .hex-shape{fill:#b9d4bc}
+.hex-target.terrain-hill .hex-shape{fill:#e8d6a0}
+.hex-target.terrain-broken .hex-shape{fill:#d2c3b0}
+.terrain-marker{fill:#253f36;font-size:10px;font-weight:700}
 .hex-target.hex-selectable .hex-shape{stroke:#237b95;stroke-width:2.5}
 .hex-target.hex-next .hex-shape{fill:#d8ebd1;stroke:#267951;stroke-width:2.8}
 .hex-target.hex-combat-selectable .hex-shape{stroke:#a34d43;stroke-width:2.8}
@@ -40,6 +49,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f1;border-radius
 .unit-a{fill:#2d607b;stroke:white;stroke-width:2}
 .unit-b{fill:#a34d43;stroke:white;stroke-width:2}
 .unit-label{fill:white;font-weight:700;font-size:13px}
+.unit-block-label{fill:#1d3531;stroke:#fff;stroke-width:1.2px;paint-order:stroke;font-weight:900;font-size:12px}
 .route-number{fill:#27421c;font-weight:700;font-size:13px}
 #movement-status{min-height:2em}
 @media(max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
@@ -101,6 +111,86 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <button type="button" id="board-confirm" disabled>Confirmar movimiento</button>
 <button type="button" id="board-ask-defense" disabled>Solicitar defensa del objetivo</button>
 <p class="notice">Sin reglas oficiales: el servidor valida unidades ordenadas, recorrido y límites de la partida.</p>
+</details></section>
+<section id="ancients-section"><details id="ancients-details">
+<summary>Ancients — laboratorio reglado de movimientos (opcional)</summary>
+<p class="notice">Demo experimental en este ordenador. No es un escenario oficial ni implementa el combate completo; no utiliza cartas licenciadas. Debe habilitarse expresamente al iniciar el servidor.</p>
+<button id="ancients-start" type="button" disabled>Inicializar demo de Ancients</button>
+<button id="ancients-refresh" type="button" disabled>Actualizar demo</button>
+<p id="ancients-status" role="status" aria-live="polite">No se ha iniciado el laboratorio.</p>
+<div id="ancients-controls" hidden>
+<p id="ancients-banners" role="status" aria-live="polite"></p>
+<label>Carta propia de sección<select id="ancients-card"></select></label>
+<button id="ancients-play" disabled>Jugar carta de sección</button>
+<label>Unidades propias a ordenar (selección múltiple)
+<select id="ancients-units" multiple size="6"></select></label>
+<label>Líderes propios que reciben orden (independiente de la unidad)
+<select id="ancients-leader-orders" multiple size="3"></select></label>
+<button id="ancients-order" disabled>Asignar órdenes</button>
+<p>Selecciona una unidad ordenada en el tablero o elige un líder ordenado. Después, traza la ruta por hexágonos contiguos. El servidor decide si es válida. Un líder unido a una unidad puede desplazarse con ella sin recibir una orden independiente; moverlo por separado sí exige orden.</p>
+<label>Líder ordenado para movimiento independiente
+<select id="ancients-leader-choice"><option value="">Selecciona un líder</option></select></label>
+<button id="ancients-select-leader" disabled>Trazar ruta del líder</button>
+<p id="ancients-terrain-info">Terrenos de la demostración pendientes de consultar.</p>
+<div id="ancients-board-viewport">
+<svg id="ancients-board" role="group" aria-label="Tablero experimental de Ancients" viewBox="0 0 510 430"></svg>
+</div>
+<p id="ancients-route-status" role="status" aria-live="polite">Selecciona una unidad ordenada.</p>
+<button id="ancients-clear-path" disabled>Borrar ruta</button>
+<button id="ancients-move" disabled>Confirmar ruta</button>
+<button id="ancients-finish-movement" disabled>Cerrar movimiento y preparar combate</button>
+<section id="ancients-combat" hidden>
+<h3>Combate a distancia experimental</h3>
+<p>El servidor calcula los dados y permite tiradas digitales o físicas. Las físicas requieren revisión del adversario. Se aplican bajas directas y eliminaciones; las comprobaciones de líderes son digitales. La evasión de líderes supervivientes admite rutas sin enemigos y salida por el borde propio. Las retiradas ordinarias incluyen comprobaciones de bajas de líderes, evasión y escape con dados digitales. La estampida incluye líderes adyacentes y evasiones. Se incluyen las bajas de líderes en las retiradas de elefantes; algunas combinaciones de líderes amigos que bloquean el paso siguen pendientes.</p>
+<label>Ataque disponible<select id="ancients-ranged-choice"></select></label>
+<button id="ancients-prepare-ranged" disabled>Preparar ataque</button>
+<p id="ancients-combat-status" role="status" aria-live="polite"></p>
+<p id="ancients-combat-feedback" role="status" aria-live="polite"></p>
+<button id="ancients-cancel-ranged" disabled>Descartar preparación</button>
+<div id="ancients-dice-controls" hidden>
+<button id="ancients-roll-digital" disabled>Tirar dados digitales</button>
+<label>Resultados físicos (un símbolo por dado)
+<select id="ancients-physical-die-1"><option value="">Seleccionar</option><option value="LIGHT">Ligera</option><option value="MEDIUM">Media</option><option value="HEAVY">Pesada</option><option value="LEADER">Líder</option><option value="FLAG">Bandera</option><option value="SWORDS">Espadas</option></select></label>
+<label id="ancients-physical-die-2-label">Segundo dado
+<select id="ancients-physical-die-2"><option value="">Seleccionar</option><option value="LIGHT">Ligera</option><option value="MEDIUM">Media</option><option value="HEAVY">Pesada</option><option value="LEADER">Líder</option><option value="FLAG">Bandera</option><option value="SWORDS">Espadas</option></select></label>
+<button id="ancients-declare-physical" disabled>Registrar tirada física</button>
+<p id="ancients-dice-status" role="status" aria-live="polite"></p>
+<button id="ancients-accept-physical" disabled>Confirmar resultados físicos</button>
+<button id="ancients-dispute-physical" disabled>Discrepar de los resultados físicos</button>
+<button id="ancients-roll-leader" disabled>Comprobar baja del líder (dados digitales)</button>
+<p id="ancients-leader-check-status" role="status" aria-live="polite"></p>
+<div id="ancients-morale-controls" hidden>
+<p id="ancients-morale-status" role="status" aria-live="polite"></p>
+<label>Decisión de moral del defensor<select id="ancients-morale-choice"></select></label>
+<button id="ancients-confirm-morale" disabled>Confirmar banderas ignoradas</button>
+</div>
+<div id="ancients-rampage-controls" hidden>
+<p id="ancients-rampage-status" role="status" aria-live="polite"></p>
+<label>Orden de estampida (atacante)<select id="ancients-rampage-choice"></select></label>
+<button id="ancients-roll-rampage" disabled>Tirar dos dados de estampida</button>
+<div id="ancients-rampage-evasion-controls" hidden>
+<p id="ancients-rampage-evasion-status" role="status"></p>
+<label>Ruta de evasión<select id="ancients-rampage-evasion"></select></label>
+<button id="ancients-evade-rampage" disabled>Confirmar evasión de líder</button>
+</div>
+</div>
+<div id="ancients-retreat-controls" hidden>
+<p id="ancients-retreat-status" role="status" aria-live="polite"></p>
+<label>Ruta de retirada<select id="ancients-retreat-choice"></select></label>
+<button id="ancients-confirm-retreat" disabled>Confirmar retirada</button>
+</div>
+<div id="ancients-evasion-controls" hidden>
+<p id="ancients-evasion-status" role="status" aria-live="polite"></p>
+<label>Ruta de evasión del líder<select id="ancients-evasion-choice"></select></label>
+<button id="ancients-evade-leader" disabled>Confirmar evasión</button>
+</div>
+<button id="ancients-finalize-ranged" disabled>Aplicar bajas y medallas</button>
+<p id="ancients-casualty-status" role="status" aria-live="polite"></p>
+<button id="ancients-archive-ranged" disabled>Archivar sin aplicar efectos (solo laboratorio)</button>
+</div>
+</section>
+<button id="ancients-end" disabled>Terminar turno del laboratorio</button>
+</div>
 </details></section>
 </div>
 </main>

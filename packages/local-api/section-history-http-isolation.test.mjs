@@ -48,12 +48,13 @@ async function fixture(work){
     assert.equal(app.invitations.acceptInvitation({
       sessionToken:tokens.bob,invitationToken:invited.token
     }).ok,true);
-    const start=async({browser=false,revisionPollMs=30,storeFactory=app.getStore}={})=>{
+    const start=async({browser=false,revisionPollMs=30,storeFactory=app.getStore,
+      ancientsBrowserLab=false}={})=>{
       const port=await availablePort();
       const origin=`http://127.0.0.1:${port}`;
       const srv=createAccessGateway({
         identity:app.identity,invitations:app.invitations,getStore:storeFactory,
-        revisionPollMs,...(browser?{browser:{origin,insecureLoopback:true}}:{})
+        revisionPollMs,ancientsBrowserLab,...(browser?{browser:{origin,insecureLoopback:true}}:{})
       });
       await new Promise((resolve,reject)=>srv.once('error',reject).listen(port,'127.0.0.1',resolve));
       servers.push(srv);
@@ -371,4 +372,200 @@ test('SEC-001: mid-request revocation takes precedence over private lab denial',
     },before);
     assert.equal(db.isTransaction,false);
   } finally {app.identity.resolveSession=original;}
+}));
+
+test('Ancients HTTP: opt-in cannot be enabled without explicit loopback browser',()=>fixture(async({app,start,tokens,matchId})=>{
+ assert.throws(()=>createAccessGateway({...app,ancientsBrowserLab:true}),
+  /ANCIENTS_LAB_LOOPBACK_ONLY/);
+ assert.throws(()=>createAccessGateway({...app,
+  browser:{origin:'https://example.org',insecureLoopback:false},ancientsBrowserLab:true}),
+  /ANCIENTS_LAB_LOOPBACK_ONLY/);
+ const {origin}=await start({browser:true});
+ const login=await fetch(origin+'/api/session',{
+  method:'POST',headers:{'content-type':'application/json',origin,'x-ccw-request':'1'},
+  body:JSON.stringify({handle:'alice',password:PASSWORD})
+ });
+ const cookie=login.headers.get('set-cookie').split(';')[0];
+ assert.equal((await fetch(origin+`/api/matches/${matchId}/ancients-lab`,{headers:{cookie}})).status,404);
+ const disabled=await fetch(origin+`/api/matches/${matchId}/ancients-lab/initialize`,{
+  method:'POST',headers:{cookie,origin,'x-ccw-request':'1','content-type':'application/json'},
+  body:'{}'
+ });
+ assert.equal(disabled.status,404);
+ assert.equal(app.getStore(matchId).viewExperimentalSectionHistory({sessionToken:tokens.alice}).status,409);
+}));
+
+test('Ancients HTTP: own hand, ordered movement and SQLite replay through explicit opt-in',()=>fixture(async({app,matchId,start})=>{
+ const {origin}=await start({browser:true,ancientsBrowserLab:true});
+ const login=async(handle)=>{
+  const res=await fetch(origin+'/api/session',{
+   method:'POST',headers:{origin,'x-ccw-request':'1','content-type':'application/json'},
+   body:JSON.stringify({handle,password:PASSWORD})
+  });
+  assert.equal(res.status,200);
+  return res.headers.get('set-cookie').split(';')[0];
+ };
+ const cookies={alice:await login('alice'),bob:await login('bob'),outsider:await login('outsider')};
+ const endpoint=`/api/matches/${matchId}/ancients-lab`;
+ const request=async(cookie,resource='',method='GET',data=undefined)=>{
+  const res=await fetch(origin+endpoint+resource,{
+   method,headers:{cookie,...(data===undefined?{}:{
+    origin,'x-ccw-request':'1','content-type':'application/json'
+   })},
+   ...(data===undefined?{}:{body:JSON.stringify(data)})
+  });
+  return {status:res.status,body:await res.json()};
+ };
+ assert.equal((await request(cookies.alice)).body.code,'SECTION_LAB_NOT_INITIALIZED');
+ assert.equal((await request(cookies.outsider)).status,404);
+ assert.equal((await request(cookies.bob,'/initialize','POST',{})).status,403);
+ assert.equal((await request(cookies.alice,'/initialize','POST',{
+  board:{units:[]},actor:'A'
+ })).status,400);
+ const init=await request(cookies.alice,'/initialize','POST',{});
+ assert.equal(init.status,201);
+ const a=await request(cookies.alice),b=await request(cookies.bob);
+ assert.equal(a.status,200);assert.equal(b.status,200);
+ assert.equal(a.body.state.status,'LAB_ONLY');
+ assert.equal(b.body.state.status,'LAB_ONLY');
+ assert.equal(a.body.state.board.length,6);
+ assert.equal(a.body.state.yourHand.length,3);
+ assert.equal(b.body.state.yourHand.length,3);
+ assert.equal(a.body.state.opponentCardCount,3);
+ assert.equal(JSON.stringify(a.body).includes(b.body.state.yourHand[0].instanceId),false);
+ assert.equal(JSON.stringify(b.body).includes(a.body.state.yourHand[0].instanceId),false);
+ assert.equal((await fetch(origin+`/api/matches/${matchId}`,{
+  headers:{cookie:cookies.alice}
+ })).status,409);
+ const card=a.body.state.yourHand[0];
+ const section=card.definitionId.split('_').at(-1);
+ const unit=section==='LEFT'?'A_light':section==='CENTER'?'A_medium':'A_cavalry';
+ const path=section==='LEFT'?[{col:3,row:7}]:
+  section==='CENTER'?[{col:6,row:6}]:[{col:11,row:7}];
+ const action=async(type,expectedRevision,key,fields)=>request(cookies.alice,
+  '/commands','POST',{type,expectedRevision,idempotencyKey:key,...fields});
+ assert.equal((await action('PLAY_SECTION_CARD',0,'browser_card_001',{
+  cardInstanceId:card.instanceId
+ })).status,200);
+ assert.equal((await action('ASSIGN_SECTION_ORDERS',1,'browser_order_001',{
+  unitIds:[unit],leaderIds:[]
+ })).status,200);
+ const ordered=(await request(cookies.alice)).body.state;
+ assert.deepEqual(ordered.orderedUnitIds,[unit]);
+ assert.deepEqual((await request(cookies.bob)).body.state.orderedUnitIds,[]);
+ const command={
+  type:unit==='A_cavalry'?'MOVE_SECTION_MOUNTED_PATH_V1':'MOVE_SECTION_FOOT_PATH_V2',
+  expectedRevision:2,idempotencyKey:'browser_move_001',unitId:unit,path
+ };
+ const forged=await request(cookies.alice,'/commands','POST',{...command,actor:'A'});
+ assert.equal(forged.status,400);
+ const moved=await request(cookies.alice,'/commands','POST',command);
+ assert.equal(moved.status,200);
+ assert.equal(moved.body.code,'SECTION_LAB_APPLIED');
+ const movedView=(await request(cookies.alice)).body.state;
+ assert.equal(movedView.revision,3);
+ assert.deepEqual(movedView.movedUnitIds,[unit]);
+ const at=movedView.board.find(p=>p.id===unit);
+ assert.deepEqual({col:at.col,row:at.row},path.at(-1));
+ assert.equal((await request(cookies.alice,'/commands','POST',command)).body.code,'ALREADY_APPLIED');
+ const rows=app.unsafeTestDatabase().prepare(
+  'SELECT COUNT(*) n FROM game_events WHERE match_id=?'
+ ).get(matchId);
+ assert.equal(rows.n,3);
+ assert.equal((await request(cookies.alice,'/commands','POST',{
+  ...command,idempotencyKey:'browser_move_002',expectedRevision:3
+ })).status,409);
+ const finalB=(await request(cookies.bob)).body.state;
+ assert.equal(finalB.board.find(p=>p.id===unit).col,at.col);
+ assert.equal(JSON.stringify(finalB).includes(a.body.state.yourHand[1].instanceId),false);
+ // The other player now gets a complete turn, with LEFT/RIGHT understood
+ // from B's rotated viewpoint rather than from side A's board coordinates.
+ const finished=await request(cookies.alice,'/commands','POST',{
+  type:'END_EXPERIMENTAL_TURN',expectedRevision:3,
+  idempotencyKey:'browser_finish_a_001'
+ });
+ assert.equal(finished.status,200);
+ const turnB=(await request(cookies.bob)).body.state;
+ assert.equal(turnB.turn,'B');
+ assert.equal(turnB.revision,4);
+ const bCard=turnB.yourHand[0];
+ const bSection=bCard.definitionId.split('_').at(-1);
+ const bUnit=bSection==='LEFT'?'B_cavalry':
+  bSection==='RIGHT'?'B_heavy':'B_auxilia';
+ const bPath=bSection==='LEFT'?[{col:9,row:1}]:
+  bSection==='RIGHT'?[{col:3,row:1}]:[{col:6,row:2}];
+ const bCommand=async(type,revision,key,fields)=>request(cookies.bob,
+  '/commands','POST',{type,expectedRevision:revision,
+   idempotencyKey:key,...fields});
+ assert.equal((await bCommand('PLAY_SECTION_CARD',4,'browser_card_b_001',{
+  cardInstanceId:bCard.instanceId
+ })).status,200);
+ assert.equal((await bCommand('ASSIGN_SECTION_ORDERS',5,'browser_order_b_001',{
+  unitIds:[bUnit],leaderIds:[]
+ })).status,200);
+ const bType=bUnit==='B_cavalry'?'MOVE_SECTION_MOUNTED_PATH_V1':
+  'MOVE_SECTION_FOOT_PATH_V2';
+ assert.equal((await bCommand(bType,6,'browser_move_b_001',{
+  unitId:bUnit,path:bPath
+ })).status,200);
+ const finalA=(await request(cookies.alice)).body.state;
+ assert.equal(finalA.board.find(x=>x.id===bUnit).col,bPath[0].col);
+ assert.deepEqual(finalA.orderedUnitIds,[]);
+ assert.equal(JSON.stringify(finalA).includes(bCard.instanceId),false);
+}));
+
+test('Ancients HTTP SSE: opt-in stream notifies revision only; generic SSE remains denied',()=>fixture(async({app,matchId,start})=>{
+ const {origin}=await start({browser:true,ancientsBrowserLab:true,revisionPollMs:30});
+ const login=await fetch(origin+'/api/session',{
+  method:'POST',
+  headers:{'content-type':'application/json',origin,'x-ccw-request':'1'},
+  body:JSON.stringify({handle:'alice',password:PASSWORD})
+ });
+ assert.equal(login.status,200);
+ const cookie=login.headers.get('set-cookie').split(';')[0];
+ const token=cookie.split('=')[1];
+ const store=app.getStore(matchId);
+ const setupResult=store.initializeExperimentalSectionHistory({
+  sessionToken:token,trustedSetup:setup()
+ });
+ assert.equal(setupResult.status,201);
+ const generic=await fetch(origin+`/api/matches/${matchId}/updates`,{
+  headers:{cookie}
+ });
+ assert.equal(generic.status,409);
+ const controller=new AbortController();
+ const endpoint=origin+`/api/matches/${matchId}/ancients-lab/updates`;
+ const stream=await fetch(endpoint,{headers:{cookie},signal:controller.signal});
+ assert.equal(stream.status,200);
+ assert.match(stream.headers.get('content-type'),/text\/event-stream/);
+ const reader=stream.body.getReader(),decoder=new TextDecoder();
+ const readUntil=async pattern=>{
+  let output='';
+  for(let i=0;i<8&&!pattern.test(output);i++){
+   const next=await Promise.race([
+    reader.read(),
+    new Promise((_,reject)=>setTimeout(()=>reject(Error('PRIVATE_SSE_TIMEOUT')),2500))
+   ]);
+   if(next.done)throw Error('PRIVATE_SSE_ENDED_UNEXPECTEDLY');
+   output+=decoder.decode(next.value);
+  }
+  assert.match(output,pattern);
+  return output;
+ };
+ try{
+  const initial=await readUntil(/"gameRevision":0/);
+  assert.match(initial,/event: revision/);
+  assert.doesNotMatch(initial,/card_a_left|yourHand|privateJournal|unitId|path/);
+  const own=store.viewExperimentalSectionHistory({sessionToken:token}).view.yourHand[0];
+  const play=store.dispatchExperimentalSectionHistory({
+   sessionToken:token,type:'PLAY_SECTION_CARD',expectedRevision:0,
+   idempotencyKey:'private_sse_play_a_001',cardInstanceId:own.instanceId
+  });
+  assert.equal(play.status,200);
+  const next=await readUntil(/"gameRevision":1/);
+  assert.match(next,/event: revision/);
+  assert.doesNotMatch(next,/card_a_left|yourHand|privateJournal|unitId|path/);
+ }finally{
+  controller.abort();
+ }
 }));

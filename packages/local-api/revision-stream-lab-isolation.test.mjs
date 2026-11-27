@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {setTimeout as sleep} from 'node:timers/promises';
-import {startRevisionStream} from './revision-stream.mjs';
+import {startRevisionStream,startAncientsLabRevisionStream} from './revision-stream.mjs';
 
 const ID='123e4567-e89b-42d3-a456-426614174000';
 const TOKEN='test-authenticated-session-token-001';
@@ -158,4 +158,52 @@ test('SEC-001 SSE: logout during async store lookup closes without revision emis
   await until(()=>res.ended);
   assert.deepEqual(calls,[TOKEN]);
   assert.doesNotMatch(res.text,/event: revision|gameRevision|SECRET/);
+});
+
+test('Ancients private SSE sends revision-only updates and closes on logout',async t=>{
+ const res=new TestResponse();
+ let revision=0,alive=true;
+ const stop=startAncientsLabRevisionStream({
+  res,token:TOKEN,matchId:ID,intervalMs:20,
+  identity:{resolveSession:()=>alive?{handle:'alice'}:null},
+  invitations:{getMatch:()=>({ok:true,status:'READY',revision:3,
+   players:[{handle:'alice',side:'A'},{handle:'bob',side:'B'}]})},
+  getStore:async()=>({
+   viewExperimentalSectionHistory:({sessionToken})=>{
+    assert.equal(sessionToken,TOKEN);
+    return {status:200,view:{matchId:ID,status:'LAB_ONLY',
+     you:'A',revision,yourHand:[{instanceId:'SECRET_CARD_A'}],
+     privateJournal:{deck:'SECRET_DECK'}}};
+   }
+  })
+ });
+ t.after(()=>{stop();if(!res.ended)res.end()});
+ await until(()=>res.text.includes('"gameRevision":0'));
+ revision=1;
+ await until(()=>res.text.includes('"gameRevision":1'));
+ assert.match(res.text,/"lobbyRevision":3/);
+ assert.doesNotMatch(res.text,/SECRET|yourHand|privateJournal|unitId|path/);
+ alive=false;
+ await until(()=>res.ended);
+ const before=res.text;
+ await sleep(50);
+ assert.equal(res.text,before);
+});
+
+test('Ancients private SSE does not publish when authenticated WAL projection belongs to another side',async t=>{
+ const res=new TestResponse();
+ const stop=startAncientsLabRevisionStream({
+  res,token:TOKEN,matchId:ID,intervalMs:20,
+  identity:{resolveSession:()=>({handle:'alice'})},
+  invitations:{getMatch:()=>({ok:true,status:'READY',
+   players:[{handle:'alice',side:'A'},{handle:'bob',side:'B'}]})},
+  getStore:async()=>({
+   viewExperimentalSectionHistory:()=>({status:200,view:{
+    matchId:ID,status:'LAB_ONLY',you:'B',revision:8,
+    yourHand:[{instanceId:'SECRET_FOREIGN_CARD'}]}})
+  })
+ });
+ t.after(()=>{stop();if(!res.ended)res.end()});
+ await until(()=>res.ended);
+ assert.doesNotMatch(res.text,/event: revision|gameRevision|SECRET/);
 });

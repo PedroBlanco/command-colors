@@ -56,7 +56,9 @@ app.listen(port, '127.0.0.1', async () => {
       }
     }
     if (stopping) return;
-    gateway = createAccessGateway({...services, browser: {origin, insecureLoopback: true}});
+    const ancientsBrowserLab=process.env.CCW_ANCIENTS_BROWSER_LAB==='1';
+    gateway = createAccessGateway({...services, browser: {origin, insecureLoopback: true},
+      ancientsBrowserLab});
     // Credentials are shown only after the server has successfully bound its port.
     for (const {handle, password} of temporaryCredentials) {
       console.log(`Cuenta de prueba ${handle}: ${password}`);
@@ -65,6 +67,7 @@ app.listen(port, '127.0.0.1', async () => {
       console.log('Guarda estas contraseñas de prueba: solamente se muestran en esta primera ejecución.');
     }
     console.log(`Laboratorio del navegador: ${origin}`);
+    if(ancientsBrowserLab)console.log('Ancients: demo local opt-in activada (no juego oficial ni Internet).');
     console.log('Solo acceso local. NO PUBLICAR ni abrir a red local. Ctrl+C para terminar.');
     console.log('Abre dos perfiles de navegador distintos: los tabs del mismo perfil comparten sesión.');
   } catch (error) {

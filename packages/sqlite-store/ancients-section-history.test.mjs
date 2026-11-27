@@ -1505,3 +1505,68 @@ test('CCWB V2 private path: failed real event insertion rolls back draft expiry 
   assert.equal(stageV2(store,tokens.A).code,
     'SECTION_LAB_FOOT_PATH_V2_ALREADY_RECORDED');
 }));
+
+/** Opt-in only: strictly open ground, no leaders or special card rules. */
+const footCommittingSetup=()=>{
+ const c=setup();
+ c.sectorCells=Object.fromEntries(Array.from({length:117},(_,i)=>{
+  const col=Math.floor(i/9),row=i%9;
+  return [col+','+row,[col<4?'LEFT':col>8?'RIGHT':'CENTER']];
+ }));
+ c.movementUnitTypes={unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'};
+ return c;
+};
+
+test('CCWB: private V2 draft can be replay-checked and committed only as LAB board movement',
+ ()=>fixture(async({app,connect,matchId,tokens})=>{
+  const store=app.getStore(matchId),db=app.unsafeTestDatabase();
+  assert.equal(store.initializeExperimentalSectionHistory({
+    sessionToken:tokens.A,trustedSetup:footCommittingSetup()
+  }).code,'SECTION_LAB_INITIALIZED');
+  const card=store.view('A').yourHand[0].instanceId;
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,type:'PLAY_SECTION_CARD',expectedRevision:0,
+    idempotencyKey:'foot_commit_card_0001',cardInstanceId:card
+  }).status,200);
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    sessionToken:tokens.A,type:'ASSIGN_SECTION_ORDERS',expectedRevision:1,
+    idempotencyKey:'foot_commit_order_0001',unitIds:['unitA'],leaderIds:[]
+  }).status,200);
+  const staged=v2FootPathStageRequest(tokens.A);
+  assert.equal(store.stageExperimentalSectionFootPathV2Journal(
+    staged,trustedOpenFootScenario()).code,'SECTION_LAB_FOOT_PATH_V2_SAVED');
+  const before=footStageSnapshot(db,matchId);
+  assert.equal(before.match.game_revision,2);
+  // A draft-only write has neither command nor public event.
+  assert.equal(before.events.length,2);
+  const commit={
+    sessionToken:tokens.A,type:'MOVE_SECTION_FOOT_PATH_V2',
+    expectedRevision:2,idempotencyKey:staged.idempotencyKey,
+    unitId:staged.actions[0].id,path:staged.actions[0].path
+  };
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    ...commit,path:[{col:3,row:4}]
+  }).code,'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE');
+  assert.equal(store.dispatchExperimentalSectionHistory({
+    ...commit,actor:'B'
+  }).code,'INVALID_SECTION_LAB_COMMAND');
+  const moved=store.dispatchExperimentalSectionHistory(commit);
+  assert.equal(moved.code,'SECTION_LAB_APPLIED');
+  assert.equal(moved.officialMovementAuthorized,false);
+  assert.equal(moved.movementAppliedInLab,true);
+  assert.equal(moved.view.board.find(u=>u.id==='unitA').col,4);
+  const persisted=JSON.parse(db.prepare('SELECT private_state FROM matches WHERE id=?')
+    .get(matchId).private_state);
+  assert.equal(Object.hasOwn(persisted,'ancientsFootPathJournalV2Lab'),false);
+  assert.equal(persisted.ancientsSectionHistoryLab.state.board.units[0].col,4);
+  const after=footStageSnapshot(db,matchId);
+  assert.equal(after.match.game_revision,3);
+  assert.equal(after.events.length,3);
+  assert.equal(after.commands.length,3);
+  assert.equal(JSON.parse(after.events[2].payload).kind,'SECTION_FOOT_PATH_APPLIED_LAB');
+  const reopened=connect().getStore(matchId);
+  assert.equal(reopened.view('B').board.find(u=>u.id==='unitA').col,4);
+  assert.equal(reopened.dispatchExperimentalSectionHistory(commit).code,'ALREADY_APPLIED');
+  assert.equal(reopened.viewForSession({sessionToken:tokens.A}).code,'SECTION_LAB_INTERNAL_ONLY');
+  assert.equal(reopened.publicEventsForSession({sessionToken:tokens.A}).code,'SECTION_LAB_INTERNAL_ONLY');
+ }));

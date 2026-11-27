@@ -26,6 +26,9 @@ async function withBrowser(run,{owner='alice'}={}) {
     addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
   const window={addEventListener(name,fn){handlers.set(name,fn)},async dispatch(name){await handlers.get(name)?.()}};
   const state={login:false,lobby:'INVITING',revision:0,deckPhase:null,
+    lab:false,labRevision:0,labPhase:'AWAIT_CARD',labTurn:'A',
+    labOrderedLeaderIds:[],labMovedLeaderIds:[],labLeaderAt:{col:2,row:7},
+    labCombatClosed:false,labCombatPlan:null,labHistoryLimit:false,labDice:null,
     board:[{id:'synthetic-a',side:'A',col:2,row:4},
       {id:'synthetic-a2',side:'A',col:3,row:4},
       {id:'synthetic-b',side:'B',col:10,row:4}]};
@@ -42,6 +45,71 @@ async function withBrowser(run,{owner='alice'}={}) {
     else if(path==='/api/session' && options.method==='DELETE'){state.login=false;response={ok:true};status=200;}
     else if(path==='/api/session' && state.login){response={authenticated:true,handle:owner};status=200;}
     else if(path==='/api/matches' && options.method==='POST'){response={matchId:MATCH};status=201;}
+    else if(path===`/api/matches/${MATCH}` && state.login && state.lab){
+      response={code:'SECTION_LAB_INTERNAL_ONLY'};status=409;
+    }
+    else if(path===`/api/matches/${MATCH}/ancients-lab/initialize` &&
+      state.login && options.method==='POST'){
+      if(state.lab){status=409;response={code:'SECTION_LAB_NOT_AVAILABLE'}}
+      else{state.lab=true;status=201;response={code:'SECTION_LAB_INITIALIZED'}}
+    }
+    else if(path===`/api/matches/${MATCH}/ancients-lab` && state.login && state.lab){
+      const own=[{instanceId:'card_left_A',definitionId:'ORDER_2_LEFT'}];
+      response={matchId:MATCH,status:'READY',
+        players:[{side:'A',handle:owner},{side:'B',handle:'bob'}],
+        state:{matchId:MATCH,status:'LAB_ONLY',you:'A',turn:state.labTurn,
+          revision:state.labRevision,phase:state.labPhase,yourHand:own,
+          opponentCardCount:2,board:[
+            {id:'unitA',side:'A',col:2,row:7,unitType:'LIGHT_INFANTRY'},
+            {id:'unitB',side:'B',col:10,row:1,unitType:'MEDIUM_CAVALRY'}
+          ],movedUnitIds:[],orderedUnitIds:state.labPhase==='LAB_RESOLUTION_PENDING'?['unitA']:[],
+          leaders:[{id:'leaderA',side:'A',...state.labLeaderAt}],
+          orderedLeaderIds:state.labPhase==='LAB_RESOLUTION_PENDING'?
+            state.labOrderedLeaderIds:[],
+          movedLeaderIds:[...state.labMovedLeaderIds],
+          unitsLockedByLeader:[],terrain:[],
+          ...(state.labHistoryLimit?{historyLimitReached:true}:{}),
+          ...(state.labDice?{diceLab:state.labDice}:{}),
+          combatLab:{movementClosed:state.labCombatClosed,plan:state.labCombatPlan,
+            candidates:state.labCombatClosed&&!state.labCombatPlan&&state.labTurn==='A'
+              ?[{attackerId:'unitA',targetId:'unitB',diceCount:2}]:[]}}};
+      status=200;
+    }
+    else if(path===`/api/matches/${MATCH}/ancients-lab/commands` && state.login){
+      if(!state.lab){status=409;response={code:'SECTION_LAB_NOT_INITIALIZED'}}
+      else{
+        const command=JSON.parse(options.body);
+        if(command.expectedRevision!==state.labRevision){status=409;response={code:'STALE_REVISION'}}
+        else{
+          const phases={PLAY_SECTION_CARD:'ASSIGN_ORDERS',
+            ASSIGN_SECTION_ORDERS:'LAB_RESOLUTION_PENDING',
+            END_EXPERIMENTAL_TURN:'AWAIT_CARD',
+            MOVE_SECTION_LEADER_PATH_V1:'LAB_RESOLUTION_PENDING',
+            FINISH_SECTION_MOVEMENT_LAB:'LAB_RESOLUTION_PENDING',
+            PREPARE_SECTION_RANGED_LAB:'LAB_RESOLUTION_PENDING',
+            CANCEL_SECTION_RANGED_LAB:'LAB_RESOLUTION_PENDING'};
+          if(!Object.hasOwn(phases,command.type)){status=400;response={code:'INVALID_SECTION_LAB_COMMAND'}}
+          else{
+            state.labPhase=phases[command.type];state.labRevision++;
+            if(command.type==='ASSIGN_SECTION_ORDERS')
+              state.labOrderedLeaderIds=[...command.leaderIds];
+            if(command.type==='MOVE_SECTION_LEADER_PATH_V1'){
+              state.labLeaderAt={...command.path.at(-1)};
+              state.labMovedLeaderIds.push(command.leaderId);
+            }
+            if(command.type==='FINISH_SECTION_MOVEMENT_LAB')state.labCombatClosed=true;
+            if(command.type==='PREPARE_SECTION_RANGED_LAB')state.labCombatPlan={
+              attackerId:command.attackerId,targetId:command.targetId,
+              movedSteps:0,distance:2,baseDice:2,diceCount:2};
+            if(command.type==='CANCEL_SECTION_RANGED_LAB')state.labCombatPlan=null;
+            if(command.type==='END_EXPERIMENTAL_TURN'){
+              state.labTurn='B';state.labCombatClosed=false;state.labCombatPlan=null;
+            }
+            status=200;response={code:'SECTION_LAB_APPLIED'};
+          }
+        }
+      }
+    }
     else if(path===`/api/matches/${MATCH}` && state.login){response={matchId:MATCH,status:state.lobby,players:state.lobby==='READY'?[{side:'A',handle:owner},{side:'B',handle:owner==='alice'?'bob':'alice'}]:[{side:'A',handle:owner}],
       ...(state.lobby==='READY'?{state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:state.board,
         ...(state.deckPhase?{phase:state.deckPhase,actingSide:'A',
@@ -256,15 +324,15 @@ test('browser markup: every phase has native details and all unit fields are sel
   const html=readFileSync(new URL('./browser-ui.html',import.meta.url),'utf8');
   for(const id of [
     'login-details','match-details','invite-details','state-details',
-    'deck-details','movement-details'
+    'deck-details','movement-details','ancients-details'
   ]) assert.match(html,new RegExp(`<details id="${id}"`));
   for(const id of ['deck-units','deck-move-unit','deck-target'])
     assert.match(html,new RegExp(`<select id="${id}"`));
   assert.match(html,/<button id="deck-unit-add"/);
   assert.match(html,/<button id="deck-unit-clear"/);
   assert.doesNotMatch(html,/<input id="deck-units"/);
-  assert.equal((html.match(/<details\b/g)||[]).length,6);
-  assert.equal((html.match(/<\/details>/g)||[]).length,6);
+  assert.equal((html.match(/<details\b/g)||[]).length,7);
+  assert.equal((html.match(/<\/details>/g)||[]).length,7);
   assert.equal((html.match(/class="panel-stack"/g)||[]).length,2,
     'two independent vertical columns collapse without shared grid row height');
   assert.match(html,/\.panel-stack\{display:flex;flex-direction:column/);
@@ -329,3 +397,123 @@ test('changing the selected lobby cancels the old recovery timer before a new ma
   await ctx.element('logout').dispatch('click');
   assert.equal(ctx.timerCount(),0);
 },{owner:'bob'}));
+
+test('browser: explicit loopback Ancients mode uses distinct authenticated routes',()=>withBrowser(async(ctx)=>{
+ await ctx.element('login-form').dispatch('submit');
+ await ctx.element('create').dispatch('click');
+ ctx.state.lobby='READY';
+ await ctx.element('refresh').dispatch('click');
+ assert.equal(ctx.element('ancients-start').disabled,false);
+ assert.equal(ctx.element('deck-initialize').disabled,false);
+ await ctx.element('ancients-start').dispatch('click');
+ assert.equal(ctx.state.lab,true);
+ assert.equal(ctx.element('deck-panel').hidden,true);
+ assert.equal(ctx.element('deck-initialize').disabled,true);
+ assert.equal(ctx.element('turn').disabled,true);
+ assert.equal(ctx.element('ancients-controls').hidden,false);
+ assert.equal(ctx.feeds[0].closed,true);
+ assert.equal(ctx.feeds[1].closed,false);
+ assert.equal(ctx.feeds[1].url,`/api/matches/${MATCH}/ancients-lab/updates`);
+ assert.equal(ctx.element('ancients-play').disabled,false);
+ assert.match(ctx.element('ancients-status').textContent,/AWAIT_CARD/);
+ const init=ctx.requests.find(r=>r.path===`/api/matches/${MATCH}/ancients-lab/initialize`);
+ assert.equal(init.method,'POST');
+ assert.deepEqual(JSON.parse(init.body),{});
+ await ctx.element('ancients-play').dispatch('click');
+ assert.equal(ctx.state.labPhase,'ASSIGN_ORDERS');
+ assert.equal(ctx.element('ancients-order').disabled,false);
+ const option=ctx.element('ancients-units').children.find(x=>x.value==='unitA');
+ option.selected=true;
+ await ctx.element('ancients-order').dispatch('click');
+ assert.equal(ctx.state.labPhase,'LAB_RESOLUTION_PENDING');
+ assert.equal(ctx.element('ancients-end').disabled,false);
+ const labCommands=ctx.requests.filter(r=>r.path===
+  `/api/matches/${MATCH}/ancients-lab/commands`);
+ assert.deepEqual(labCommands.map(r=>JSON.parse(r.body).type),[
+  'PLAY_SECTION_CARD','ASSIGN_SECTION_ORDERS'
+ ]);
+ for(const {body} of labCommands){
+  const fields=JSON.parse(body);
+  assert.equal('actor' in fields,false);
+  assert.equal('scenario' in fields,false);
+  assert.equal('trustedSetup' in fields,false);
+  assert.match(fields.idempotencyKey,/^[a-f0-9]{32}$/);
+ }
+ assert.deepEqual(JSON.parse(labCommands[1].body).unitIds,['unitA']);
+ await ctx.element('ancients-end').dispatch('click');
+ assert.equal(ctx.state.labTurn,'B');
+ assert.equal(ctx.element('ancients-play').disabled,true);
+ assert.equal(ctx.requests.filter(r=>r.path===`/api/matches/${MATCH}`).length>2,true);
+ assert.equal(ctx.requests.some(r=>r.path===`/api/matches/${MATCH}/ancients-lab`),true);
+}));
+
+test('browser: optional leader orders appear only in acting side and select an independent leader',()=>withBrowser(async(ctx)=>{
+ await ctx.element('login-form').dispatch('submit');
+ await ctx.element('create').dispatch('click');
+ ctx.state.lobby='READY';
+ await ctx.element('refresh').dispatch('click');
+ await ctx.element('ancients-start').dispatch('click');
+ await ctx.element('ancients-play').dispatch('click');
+ const leaderOption=ctx.element('ancients-leader-orders').children.find(x=>x.value==='leaderA');
+ assert.ok(leaderOption);
+ leaderOption.selected=true;
+ await ctx.element('ancients-order').dispatch('click');
+ const order=ctx.requests.filter(r=>r.path===
+  `/api/matches/${MATCH}/ancients-lab/commands`).at(-1);
+ assert.deepEqual(JSON.parse(order.body).leaderIds,['leaderA']);
+ assert.equal(ctx.element('ancients-select-leader').disabled,false);
+ assert.equal(ctx.element('ancients-leader-choice').value,'leaderA');
+ await ctx.element('ancients-select-leader').dispatch('click');
+ assert.match(ctx.element('ancients-route-status').textContent,/Líder leaderA/);
+ assert.equal(ctx.element('ancients-move').disabled,true);
+ await ctx.element('ancients-clear-path').dispatch('click');
+ assert.equal(ctx.requests.filter(r=>r.path.includes('/ancients-lab/commands')).length,2);
+}));
+
+test('browser: ranged plan uses server candidates, locks movement and displays derived dice',()=>withBrowser(async(ctx)=>{
+ await ctx.element('login-form').dispatch('submit');
+ await ctx.element('create').dispatch('click');
+ ctx.state.lobby='READY';
+ await ctx.element('refresh').dispatch('click');
+ await ctx.element('ancients-start').dispatch('click');
+ await ctx.element('ancients-play').dispatch('click');
+ ctx.element('ancients-units').children.find(x=>x.value==='unitA').selected=true;
+ await ctx.element('ancients-order').dispatch('click');
+ assert.equal(ctx.element('ancients-finish-movement').disabled,false);
+ await ctx.element('ancients-finish-movement').dispatch('click');
+ assert.equal(ctx.element('ancients-combat').hidden,false);
+ assert.equal(ctx.element('ancients-move').disabled,true);
+ assert.match(ctx.element('ancients-ranged-choice').children[0].textContent,/unitA.*unitB.*2 dados/);
+ await ctx.element('ancients-prepare-ranged').dispatch('click');
+ assert.match(ctx.element('ancients-combat-status').textContent,/2 dados/);
+ assert.equal(ctx.element('ancients-end').disabled,true);
+ const attack=JSON.parse(ctx.requests.filter(r=>r.path.endsWith('/ancients-lab/commands')).at(-1).body);
+ assert.equal(attack.type,'PREPARE_SECTION_RANGED_LAB');
+ assert.equal(attack.attackerId,'unitA');
+ assert.equal(attack.targetId,'unitB');
+ assert.equal(Object.hasOwn(attack,'diceCount'),false);
+ await ctx.element('ancients-cancel-ranged').dispatch('click');
+ assert.equal(ctx.element('ancients-end').disabled,false);
+}));
+
+test('browser: history limit and victory block commands, but keep the match readable',()=>withBrowser(async ctx=>{
+ await ctx.element('login-form').dispatch('submit');
+ await ctx.element('create').dispatch('click');
+ ctx.state.lobby='READY';
+ await ctx.element('refresh').dispatch('click');
+ await ctx.element('ancients-start').dispatch('click');
+ const sent=()=>ctx.requests.filter(r=>r.path.endsWith('/ancients-lab/commands')).length;
+ ctx.state.labHistoryLimit=true;ctx.state.labRevision=256;
+ await ctx.element('ancients-refresh').dispatch('click');
+ assert.match(ctx.element('ancients-status').textContent,/Límite de comandos/);
+ assert.equal(ctx.element('ancients-play').disabled,true);
+ await ctx.element('ancients-play').dispatch('click');
+ assert.equal(sent(),0);
+ ctx.state.labHistoryLimit=false;ctx.state.labDice={banners:{A:3,B:1},victory:{winner:'A',targets:{A:3,B:3}}};
+ await ctx.element('ancients-refresh').dispatch('click');
+ assert.match(ctx.element('ancients-status').textContent,/Victoria/);
+ assert.match(ctx.element('ancients-banners').textContent,/A 3\/3.*B 1\/3/);
+ await ctx.element('ancients-play').dispatch('click');
+ assert.equal(sent(),0);
+ assert.equal(ctx.element('ancients-refresh').disabled,false);
+}));

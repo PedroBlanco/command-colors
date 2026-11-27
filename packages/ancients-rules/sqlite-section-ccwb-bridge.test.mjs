@@ -328,3 +328,237 @@ test('CCWB: staged movement screen reads private persisted orders without mutati
  assert.equal(root.bridge.view('A').revision,2);
  assert.equal(root.bridge.view('B').revision,2);
 }));
+
+const footSetup=()=>{
+ const c=setup();
+ c.sectorCells=Object.fromEntries(Array.from({length:117},(_,i)=>{
+  const col=Math.floor(i/9),row=i%9;
+  return [col+','+row,[col<4?'LEFT':col>8?'RIGHT':'CENTER']];
+ }));
+ c.movementUnitTypes={unitA:'LIGHT_INFANTRY',unitB:'HEAVY_INFANTRY'};
+ return c;
+};
+
+test('CCWB: committed LAB foot path atomically updates board, event, key and full replay',()=>fixture(({root,connect})=>{
+ assert.equal(root.bridge.initialize('A',footSetup()).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const move=req('MOVE_SECTION_FOOT_PATH_V2',2,{unitId:'unitA',
+  path:[{col:3,row:4},{col:4,row:4}]},'foot_move_lab_0001');
+ const applied=root.bridge.dispatch(move);
+ assert.equal(applied.code,'SECTION_LAB_APPLIED');
+ assert.equal(applied.movementAppliedInLab,true);
+ assert.equal(applied.officialMovementAuthorized,false);
+ assert.equal(applied.view.revision,3);
+ assert.deepEqual(applied.view.movedUnitIds,['unitA']);
+ assert.equal(applied.view.board.find(u=>u.id==='unitA').col,4);
+ const third=root.db.prepare('SELECT visibility,payload FROM game_events WHERE match_id=? AND sequence=3').get(MATCH);
+ assert.equal(third.visibility,'public');
+ const event=JSON.parse(third.payload);
+ assert.equal(event.kind,'SECTION_FOOT_PATH_APPLIED_LAB');
+ assert.equal(event.unitId,'unitA');
+ assert.equal(Object.hasOwn(event,'unitTypes'),false);
+ assert.equal(JSON.stringify(event).includes('card_'),false);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,3);
+ const other=connect();
+ assert.equal(other.bridge.view('B').board.find(u=>u.id==='unitA').col,4);
+ assert.equal(other.bridge.dispatch(move).code,'ALREADY_APPLIED');
+ assert.equal(other.bridge.dispatch({...move,path:[{col:3,row:4}]}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(other.bridge.dispatch(req('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'unitA',path:[{col:3,row:4}]
+ },'foot_move_lab_0002')).code,'STALE_REVISION');
+ assert.equal(root.getRow(MATCH).game_revision,3);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,3);
+}));
+
+test('CCWB: a rejected laboratory movement writes no event or command',()=>fixture(({root})=>{
+ root.bridge.initialize('A',footSetup());play(root);order(root);
+ const before=root.getRow(MATCH).private_state;
+ const rejected=root.bridge.dispatch(req('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'unitB',path:[{col:9,row:4}]
+ },'foot_move_lab_0003'));
+ assert.equal(rejected.status,409);
+ assert.equal(root.getRow(MATCH).game_revision,2);
+ assert.equal(root.getRow(MATCH).private_state,before);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,2);
+}));
+
+test('CCWB: server-owned forest blocks through-movement without any SQLite write',()=>fixture(({root,connect})=>{
+ const c=footSetup();
+ c.movementTerrain=[{col:3,row:4,kind:'FOREST'}];
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const before=root.getRow(MATCH);
+ const forbidden=root.bridge.dispatch(req('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'unitA',path:[{col:3,row:4},{col:4,row:4}]
+ },'foot_forest_long_0001'));
+ assert.equal(forbidden.code,'MUST_STOP_ON_FOREST_ENTRY');
+ assert.equal(root.getRow(MATCH).private_state,before.private_state);
+ assert.equal(root.getRow(MATCH).game_revision,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,2);
+ const accepted=root.bridge.dispatch(req('MOVE_SECTION_FOOT_PATH_V2',2,{
+  unitId:'unitA',path:[{col:3,row:4}]
+ },'foot_forest_stop_0001'));
+ assert.equal(accepted.code,'SECTION_LAB_APPLIED');
+ assert.equal(accepted.view.board.find(u=>u.id==='unitA').col,3);
+ assert.equal(accepted.view.terrain[0].kind,'FOREST');
+ const second=connect().bridge.view('B');
+ assert.equal(second.board.find(u=>u.id==='unitA').col,3);
+ const last=root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=3').get(MATCH);
+ assert.equal(JSON.parse(last.payload).destinationTerrain,'FOREST');
+}));
+
+test('CCWB: mounted path writes one replayable SQLite event, revision and command',()=>fixture(({root,connect})=>{
+ const c=footSetup();c.movementUnitTypes.unitA='LIGHT_CAVALRY';
+ root.bridge.initialize('A',c);play(root);order(root);
+ const move=req('MOVE_SECTION_MOUNTED_PATH_V1',2,{unitId:'unitA',
+  path:[{col:3,row:4},{col:4,row:4},{col:5,row:4},{col:6,row:4}]
+ },'mounted_path_lab_001');
+ const r=root.bridge.dispatch(move);
+ assert.equal(r.code,'SECTION_LAB_APPLIED');
+ assert.equal(r.movementAppliedInLab,true);
+ assert.equal(r.officialMovementAuthorized,false);
+ assert.equal(r.view.board.find(u=>u.id==='unitA').col,6);
+ assert.deepEqual(r.view.movedUnitIds,['unitA']);
+ assert.equal(root.getRow(MATCH).game_revision,3);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,3);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,3);
+ const event=JSON.parse(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=3')
+  .get(MATCH).payload);
+ assert.equal(event.kind,'SECTION_MOUNTED_PATH_APPLIED_LAB');
+ assert.equal(event.unitId,'unitA');
+ assert.equal(event.battleAfterMovement,'POSSIBLE');
+ const reopened=connect();
+ assert.equal(reopened.bridge.view('B').board.find(u=>u.id==='unitA').col,6);
+ assert.equal(reopened.bridge.dispatch(move).code,'ALREADY_APPLIED');
+ assert.equal(reopened.bridge.dispatch({...move,path:[{col:3,row:4}]}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(reopened.bridge.dispatch(req('MOVE_SECTION_MOUNTED_PATH_V1',2,{
+  unitId:'unitA',path:[{col:3,row:4}]
+ },'mounted_path_lab_002')).code,'STALE_REVISION');
+}));
+
+test('CCWB: mounted terrain rejection preserves all persisted rows',()=>fixture(({root})=>{
+ const c=footSetup();
+ c.movementUnitTypes.unitA='LIGHT_CAVALRY';
+ c.movementTerrain=[{col:3,row:4,kind:'FOREST'}];
+ root.bridge.initialize('A',c);play(root);order(root);
+ const before=root.getRow(MATCH).private_state;
+ const rejected=root.bridge.dispatch(req('MOVE_SECTION_MOUNTED_PATH_V1',2,{
+  unitId:'unitA',path:[{col:3,row:4},{col:4,row:4}]
+ },'mounted_path_lab_003'));
+ assert.equal(rejected.code,'MUST_STOP_ON_FOREST_ENTRY');
+ assert.equal(root.getRow(MATCH).private_state,before);
+ assert.equal(root.getRow(MATCH).game_revision,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands WHERE match_id=?').get(MATCH).n,2);
+}));
+
+test('CCWB: ordered leader move persists atomically and binds idempotent retry',()=>fixture(({root,connect})=>{
+ const c=footSetup();
+ c.enableLeaderLab=true;
+ c.board.leaders=[{id:'leaderA',side:'A',col:2,row:4}];
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);
+ const orderRequest=req('ASSIGN_SECTION_ORDERS',1,{
+  unitIds:['unitA'],leaderIds:['leaderA']
+ },'section_leader_order_0001');
+ assert.equal(root.bridge.dispatch(orderRequest).code,'SECTION_LAB_APPLIED');
+ const command=req('MOVE_SECTION_LEADER_PATH_V1',2,{
+  leaderId:'leaderA',path:[{col:2,row:3}]
+ },'section_leader_move_0001');
+ const applied=root.bridge.dispatch(command);
+ assert.equal(applied.code,'SECTION_LAB_APPLIED');
+ assert.equal(applied.movementAppliedInLab,true);
+ assert.deepEqual(applied.view.movedLeaderIds,['leaderA']);
+ assert.equal(applied.view.leaders[0].row,3);
+ const saved=root.db.prepare('SELECT visibility,payload FROM game_events WHERE match_id=? AND sequence=3')
+  .get(MATCH);
+ assert.equal(saved.visibility,'public');
+ assert.equal(JSON.parse(saved.payload).kind,'SECTION_LEADER_PATH_APPLIED_LAB');
+ assert.equal(JSON.stringify(saved).includes('card_'),false);
+ const next=connect();
+ assert.equal(next.bridge.view('B').leaders[0].row,3);
+ assert.equal(next.bridge.dispatch(command).code,'ALREADY_APPLIED');
+ assert.equal(next.bridge.dispatch({...command,path:[{col:3,row:3}]}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(next.bridge.dispatch(req('MOVE_SECTION_LEADER_PATH_V1',3,{
+  leaderId:'leaderA',path:[{col:3,row:3}]
+ },'section_leader_move_0002')).code,'LEADER_ALREADY_MOVED');
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,3);
+}));
+
+test('CCWB: ranged preparation is replayable, server-derived and idempotent',()=>fixture(({root,connect})=>{
+ const c=footSetup();
+ c.enableCombatLab=true;c.board.units[1].col=4;
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const close=req('FINISH_SECTION_MOVEMENT_LAB',2,{},'section_close_move_001');
+ assert.equal(root.bridge.dispatch(close).code,'SECTION_LAB_APPLIED');
+ assert.deepEqual(root.bridge.view('B').combatLab.candidates,[]);
+ const attack=req('PREPARE_SECTION_RANGED_LAB',3,{
+  attackerId:'unitA',targetId:'unitB'
+ },'section_prepare_shot_001');
+ assert.equal(root.bridge.dispatch({...attack,diceCount:99}).status,400);
+ const before=root.getRow(MATCH);
+ assert.equal(before.game_revision,3);
+ const applied=root.bridge.dispatch(attack);
+ assert.equal(applied.code,'SECTION_LAB_APPLIED');
+ assert.equal(applied.combatResolved,false);
+ assert.equal(applied.view.combatLab.plan.diceCount,2);
+ const second=connect();
+ assert.equal(second.bridge.view('B').combatLab.plan.diceCount,2);
+ assert.equal(second.bridge.dispatch(attack).code,'ALREADY_APPLIED');
+ assert.equal(second.bridge.dispatch({...attack,targetId:'unitA'}).code,'IDEMPOTENCY_KEY_REUSED');
+ assert.equal(second.bridge.dispatch(req('END_EXPERIMENTAL_TURN',4)).code,'COMBAT_PLAN_PENDING');
+ const event=root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=4').get(MATCH);
+ assert.equal(JSON.parse(event.payload).kind,'SECTION_RANGED_PREPARED_LAB');
+ assert.equal(root.getRow(MATCH).game_revision,4);
+}));
+
+test('CCWB dice: physical declaration, opponent review and nonlethal hits survive reopen and idempotent retry',()=>fixture(({root,connect})=>{
+ const c=footSetup();c.enableCombatLab=true;c.enableDiceLab=true;c.board.units[1].col=4;
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const dispatch=(type,revision,fields={},key='dice_'+type+'_'+revision)=>
+   root.bridge.dispatch(req(type,revision,fields,key));
+ assert.equal(dispatch('FINISH_SECTION_MOVEMENT_LAB',2).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('PREPARE_SECTION_RANGED_LAB',3,{attackerId:'unitA',targetId:'unitB'}).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('ROLL_SECTION_RANGED_DIGITAL_LAB',4,{faces:['HEAVY','HEAVY']}).status,400);
+ const declare=req('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']},'dice_physical_001');
+ assert.equal(root.bridge.dispatch(declare).code,'SECTION_LAB_APPLIED');
+ const next=connect();
+ assert.equal(next.bridge.view('B').diceLab.canReview,true);
+ assert.equal(next.bridge.dispatch(declare).code,'ALREADY_APPLIED');
+ assert.equal(next.bridge.dispatch(req('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true},'dice_review_001')).code,'SECTION_LAB_APPLIED');
+ const finish=req('FINALIZE_SECTION_RANGED_LAB',6,{},'dice_finish_001');
+ const applied=next.bridge.dispatch(finish);
+ assert.equal(applied.code,'SECTION_LAB_APPLIED');
+ assert.equal(applied.view.board.find(u=>u.id==='unitB').blocksRemaining,2);
+ assert.equal(root.bridge.dispatch(finish).code,'ALREADY_APPLIED');
+ assert.equal(root.bridge.view('B').diceLab.blocks.unitB,2);
+ assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events WHERE match_id=?').get(MATCH).n,7);
+ const stored=JSON.parse(root.getRow(MATCH).private_state).ancientsSectionHistoryLab.initial.diceLab.key;
+ for(const side of ['A','B'])assert.equal(JSON.stringify(root.bridge.view(side)).includes(stored),false);
+ assert.equal(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=7').get(MATCH).payload.includes(stored),false);
+}));
+
+test('CCWB casualties: elimination and banner survive reopen and do not double award on retry',()=>fixture(({root,connect})=>{
+ const c=footSetup();c.enableCombatLab=true;c.enableDiceLab=true;c.enableCasualtyLab=true;
+ c.board.units[1].col=4;c.movementUnitTypes.unitB='ELEPHANT';
+ assert.equal(root.bridge.initialize('A',c).code,'SECTION_LAB_INITIALIZED');
+ play(root);order(root);
+ const dispatch=(type,revision,fields={})=>root.bridge.dispatch(req(type,revision,fields,'casualty_'+type+'_'+revision));
+ assert.equal(dispatch('FINISH_SECTION_MOVEMENT_LAB',2).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('PREPARE_SECTION_RANGED_LAB',3,{attackerId:'unitA',targetId:'unitB'}).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces:['HEAVY','HEAVY']}).code,'SECTION_LAB_APPLIED');
+ assert.equal(dispatch('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept:true}).code,'SECTION_LAB_APPLIED');
+ const command=req('FINALIZE_SECTION_RANGED_LAB',6,{},'casualty_finish_001');
+ assert.equal(root.bridge.dispatch(command).code,'SECTION_LAB_APPLIED');
+ const other=connect();
+ assert.deepEqual(other.bridge.view('B').diceLab.banners,{A:1,B:0});
+ assert.equal(other.bridge.view('B').board.some(u=>u.id==='unitB'),false);
+ assert.equal(other.bridge.dispatch(command).code,'ALREADY_APPLIED');
+ assert.deepEqual(root.bridge.view('A').diceLab.banners,{A:1,B:0});
+ assert.equal(dispatch('END_EXPERIMENTAL_TURN',7).code,'SECTION_LAB_APPLIED');
+ assert.deepEqual(other.bridge.view('B').diceLab.banners,{A:1,B:0});
+ assert.equal(JSON.parse(root.db.prepare('SELECT payload FROM game_events WHERE match_id=? AND sequence=7').get(MATCH).payload).unitEliminated,true);
+}));

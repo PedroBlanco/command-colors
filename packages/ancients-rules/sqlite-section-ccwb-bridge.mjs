@@ -5,7 +5,7 @@
  * No migration, no rules-authorised combat and NO production scenario data.
  */
 import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
-  assertSectionHistoryLab, projectSectionHistoryLab} from './section-history-journal.mjs';
+  assertSectionHistoryLab, projectSectionHistoryLab, SECTION_HISTORY_MAX_COMMANDS} from './section-history-journal.mjs';
 import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
@@ -20,6 +20,24 @@ const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
   PLAY_SECTION_CARD:['cardInstanceId'],
   ASSIGN_SECTION_ORDERS:['unitIds','leaderIds'],
+  // LAB_ONLY: this is persisted on the lab board, not an official scenario.
+  MOVE_SECTION_FOOT_PATH_V2:['unitId','path'],
+  MOVE_SECTION_MOUNTED_PATH_V1:['unitId','path'],
+  MOVE_SECTION_LEADER_PATH_V1:['leaderId','path'],
+  FINISH_SECTION_MOVEMENT_LAB:[],
+  PREPARE_SECTION_RANGED_LAB:['attackerId','targetId'],
+  CANCEL_SECTION_RANGED_LAB:[],
+  ROLL_SECTION_RANGED_DIGITAL_LAB:[],
+  DECLARE_SECTION_RANGED_PHYSICAL_LAB:['faces'],
+  REVIEW_SECTION_RANGED_PHYSICAL_LAB:['accept'],
+  FINALIZE_SECTION_RANGED_LAB:[],
+  ARCHIVE_SECTION_RANGED_LAB:[],
+  ROLL_SECTION_LEADER_CASUALTY_LAB:[],
+  EVADE_SECTION_LEADER_LAB:['path','exit'],
+  CHOOSE_SECTION_MORALE_LAB:['ignored'],
+  RETREAT_SECTION_UNIT_LAB:['path'],
+  ROLL_SECTION_ELEPHANT_RAMPAGE_LAB:['unitId'],
+  EVADE_SECTION_RAMPAGE_LEADER_LAB:['path','exit'],
   END_EXPERIMENTAL_TURN:[]
 });
 const denied=(status,code)=>Object.freeze({status,code});
@@ -58,7 +76,7 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     const journal=persisted.ancientsSectionHistoryLab;
     if(!record(journal)||Object.hasOwn(persisted,'commandSession')||
        !record(journal.initial)||!Array.isArray(journal.commands)||!record(journal.state)||
-       !Number.isSafeInteger(row.game_revision)||row.game_revision<0||row.game_revision>256)
+       !Number.isSafeInteger(row.game_revision)||row.game_revision<0||row.game_revision>SECTION_HISTORY_MAX_COMMANDS)
       throw new Error('SECTION_CCWB_HISTORY_INVALID');
     assertSectionHistoryLab(journal.initial);
     if(journal.initial.revision!==0||journal.commands.length!==row.game_revision)
@@ -159,8 +177,19 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       });
       if(pathV2.status==='CORRUPT')
         return denied(409,'SECTION_LAB_FOOT_PATH_V2_INTEGRITY_FAILED');
-      if(pathV2.status==='KEY_CONFLICT')
-        return denied(409,'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE');
+      if(pathV2.status==='KEY_CONFLICT'){
+        // A private V2 draft is NEVER movement authority. A matching draft
+        // may reuse its key only for this exact LAB foot command; the reducer
+        // above has already independently validated the current replayed board,
+        // card/orders, type and complete path under this writer lock.
+        const draft=persisted.ancientsFootPathJournalV2Lab?.entries?.[0]?.command;
+        const sameFootRequest=request.type==='MOVE_SECTION_FOOT_PATH_V2'&&
+          record(draft)&&draft.actor===request.actor&&
+          draft.expectedRevision===request.expectedRevision&&
+          draft.unitId===request.unitId&&exact(draft.path,request.path);
+        if(!sameFootRequest)
+          return denied(409,'SECTION_LAB_FOOT_PATH_V2_KEY_IN_USE');
+      }
       if(pathV2.status!=='ABSENT'&&Object.hasOwn(persisted,'ancientsFootMovementJournalLab'))
         return denied(409,'SECTION_LAB_FOOT_STAGE_VERSION_CONFLICT');
       const next=result.nextState;
@@ -175,7 +204,9 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
       keyInsert.run(row.id,request.actor,request.idempotencyKey,signature,next.revision);
       return Object.freeze({status:200,code:'SECTION_LAB_APPLIED',revision:next.revision,
         view:safeView({...row,private_state:JSON.stringify(updated),game_revision:next.revision},request.actor),
-        cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,combatResolved:false});
+        cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,
+        movementAppliedInLab:result.movementAppliedInLab,
+        officialMovementAuthorized:false,combatResolved:false});
     });
   }
   /** Verified, private CCWB snapshot. Caller MUST authenticate actor and hold
