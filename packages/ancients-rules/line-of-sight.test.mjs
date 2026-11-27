@@ -111,7 +111,7 @@ test('opposite edge obstructions may combine different categories',()=>{
 });
 
 test('water terrain and bridges do not obstruct an otherwise clear sightline',()=>{
-  for(const kind of ['RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE'])assert.equal(check(at(2,4),at(6,4),{terrain:terrain(kind,at(4,4))}).status,'VISIBLE');
+  for(const kind of ['RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE','LAKE'])assert.equal(check(at(2,4),at(6,4),{terrain:terrain(kind,at(4,4))}).status,'VISIBLE');
 });
 
 test('camp blocks sight while oriented rampart does not',()=>{
