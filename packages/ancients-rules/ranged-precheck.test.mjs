@@ -137,3 +137,11 @@ test('buildings prohibit ranged attacks at either endpoint and both new terrains
  for(const p of [shooter,target])assert.equal(check({terrain:[{col:p.col,row:p.row,kind:'BUILDING'}]}).reason,'BUILDING_RANGED_FORBIDDEN');
  for(const kind of ['BUILDING','FORTIFIED_CITY_WALL'])assert.equal(check({terrain:[{col:4,row:4,kind}]}).reason,'LINE_OF_SIGHT_BLOCKED');
 });
+
+test('official geometry range and line of sight use same topology',()=>{
+ const geometryId='OFFICIAL_ODD_R_113';
+ const units=[unit('shooter','A','LIGHT_BOW_INFANTRY',4,4),unit('target','B','HEAVY_INFANTRY',3,2)];
+ assert.equal(check({geometryId,units}).distance,2);
+ assert.equal(check({geometryId,units,terrain:[tileForOfficial()]}).status,'BLOCKED');
+ function tileForOfficial(){return {col:3,row:3,kind:'FOREST'};}
+});
