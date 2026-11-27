@@ -386,3 +386,16 @@ test('Ancients board shows leader attached to unit and refuses impossible rival 
   leaders:[{id:'leaderX',side:'B',col:3,row:4}]
  }),/INVALID_MOVEMENT_LEADER_VIEW/);
 });
+
+test('official SVG: 113 cells, canonical selection, B rotation and missing short-row cell',()=>{
+ const {svg}=fixture(),picked=[],geometryId='OFFICIAL_ODD_R_113';
+ const units=[{id:'A1',side:'A',col:4,row:6},{id:'B1',side:'B',col:4,row:2}];
+ const a=renderMovementBoard(svg,units,null,c=>picked.push(c),'A',{geometryId});
+ assert.equal(a.cells,113);assert.equal(cell(svg,12,1),undefined);
+ const polygonA=cell(svg,4,6).children[0].attrs.points;
+ cell(svg,4,6).dispatch('click');assert.deepEqual(picked,[{col:4,row:6}]);
+ const b=renderMovementBoard(svg,units,null,c=>picked.push(c),'B',{geometryId});
+ assert.equal(b.cells,113);assert.notEqual(cell(svg,4,6).children[0].attrs.points,polygonA);
+ cell(svg,4,6).dispatch('click');assert.deepEqual(picked[1],{col:4,row:6});
+ assert.throws(()=>renderMovementBoard(svg,[{...units[0],col:12,row:1}],null,()=>{},'A',{geometryId}),/INVALID_MOVEMENT_BOARD_VIEW/);
+});
