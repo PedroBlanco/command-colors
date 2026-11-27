@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {OFFICIAL_BOARD_GEOMETRY,officialSectorCells} from '../hex-grid/hex.mjs';
 import {createAncientsScenarioSetup,listAncientsScenarios,createAncientsBaseDeck,BASE_DECK_COUNTS,createAncientsScenarioCatalog,LAB_SCENARIO_GEOMETRY} from './scenario-catalog.mjs';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply,
  replaySectionHistoryLab as replay,projectSectionHistoryLab as project,
@@ -2179,4 +2180,37 @@ test('external scenario import: schema, provenance, authority, isolation and rep
  assert.throws(()=>createAncientsScenarioCatalog([{...doc,geometry:'OFFICIAL_ODD_R_113'}]),/UNSUPPORTED_SCENARIO_GEOMETRY/);
  assert.throws(()=>createAncientsScenarioCatalog([doc,doc]),/DUPLICATE_SCENARIO_ID/);
  assert.equal(catalog.setup('__proto__'),null);
+});
+
+test('official geometry journal: legal diagonal, forbidden short-row cell, close combat and replay',()=>{
+ const setup=createAncientsScenarioSetup('open-field-v1');
+ setup.scenario={id:'geometry-test-v1',title:'Original geometry fixture',deckId:'ancients-base-2009',
+  geometry:OFFICIAL_BOARD_GEOMETRY,provenance:{kind:'ORIGINAL',source:'test'},factions:{A:'South',B:'North'}};
+ setup.sectorCells=officialSectorCells();setup.startingSide='A';
+ setup.board={units:[{id:'a1',side:'A',col:4,row:4},{id:'a2',side:'A',col:8,row:4},{id:'b1',side:'B',col:4,row:2}],
+  leaders:[]};
+ setup.movementUnitTypes={a1:'LIGHT_INFANTRY',a2:'LIGHT_CAVALRY',b1:'HEAVY_INFANTRY'};
+ const selected=setup.cardInstances.findIndex(c=>c.definitionId==='ORDER_2_CENTER');
+ const end=setup.cardInstances.length-1;
+ [setup.cardInstances[selected],setup.cardInstances[end]]=[setup.cardInstances[end],setup.cardInstances[selected]];
+ const initial=init({...setup,randomIndex:n=>n-1});let s=initial;const log=[];
+ const run=(type,fields={},actor=s.turn)=>{const c=cmd(type,s.revision,{actor,...fields}),r=apply(s,c);assert.equal(r.accepted,true,r.code);log.push(c);s=r.nextState;return r.publicEvent;};
+ assert.equal(project(s,'A').scenario.geometry,OFFICIAL_BOARD_GEOMETRY);
+ run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A[0].instanceId});
+ run('ASSIGN_SECTION_ORDERS',{unitIds:['a1','a2'],leaderIds:[]});
+ assert.equal(apply(s,cmd('MOVE_SECTION_FOOT_PATH_V2',s.revision,{unitId:'a1',path:[{col:5,row:3}]})).accepted,false);
+ assert.equal(apply(s,cmd('MOVE_SECTION_FOOT_PATH_V2',s.revision,{unitId:'a2',path:[{col:8,row:3}]})).accepted,false);
+ run('MOVE_SECTION_FOOT_PATH_V2',{unitId:'a1',path:[{col:3,row:3}]});
+ run('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'a2',path:[{col:7,row:3}]});
+ run('FINISH_SECTION_MOVEMENT_LAB');
+ run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+ if(s.diceLab.firstStrike.window)run('DECLINE_SECTION_FIRST_STRIKE_LAB',{},'B');
+ assert.equal(s.combatLab.plan.distance,1);
+ run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:Array(s.combatLab.plan.diceCount).fill('FLAG')});
+ run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true},'B');
+ run('FINALIZE_SECTION_RANGED_LAB');
+ assert.ok(s.diceLab.last||s.diceLab.pending);
+ assert.deepEqual(replay(initial,log),s);
+ const bad=structuredClone(setup);bad.board.units[0].col=12;bad.board.units[0].row=3;
+ assert.throws(()=>init({...bad,randomIndex:n=>n-1}),/INVALID_SECTION_HISTORY_BOARD/);
 });
