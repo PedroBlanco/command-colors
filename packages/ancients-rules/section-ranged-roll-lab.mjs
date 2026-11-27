@@ -7,7 +7,7 @@
 import {randomBytes,createHmac} from 'node:crypto';
 import {effectiveSectionCard} from './section-card-order-screen.mjs';
 import {neighbors,distance,inBounds} from '../hex-grid/hex.mjs';
-import {assessAncientsTerrainMovement,isImpassableHex,fortificationProtects,isMarshHex,pathHasMarsh,isRetreatBlockedHex} from './terrain-movement.mjs';
+import {assessAncientsTerrainMovement,fortificationProtects,isMarshHex,pathHasMarsh,isRetreatBlockedHex} from './terrain-movement.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS,captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice,interpretBaseAncientsCloseDice} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS,previewBaseAncientsRangedBlockLoss} from './block-loss-preview.mjs';
@@ -108,7 +108,7 @@ export function sectionMomentumOptions(state){
     !state.board.leaders.some(l=>l.id!==attached?.id&&hex(l)===hex(c)&&
       (l.side!==unit.side||!!attached));
   // A normal move that entered forest must end there for this turn.
-  if(state.combatLab.movement[unit.id]?.buildingMove||last.attackKind==='BONUS_CLOSE'&&terrainAt(unit)==='BUILDING')return [];
+  if(state.combatLab.movement[unit.id]?.buildingMove||last.attackKind==='BONUS_CLOSE'&&(last.buildingMomentum||terrainAt(unit)==='BUILDING'))return [];
   if((state.combatLab.movement[unit.id]?.steps||last.attackKind==='BONUS_CLOSE'&&last.forestEntered)&&['FOREST','FORDABLE_RIVER'].includes(terrainAt(unit)))return [];
   const first={col:m.hex.col,row:m.hex.row};
   if(!available(first))return [];
@@ -1178,6 +1178,7 @@ export function applySectionDiceCommand(state,next,command){
       const original=state.board.units.find(u=>u.id===plan.targetId);
       result.attackKind=plan.firstStrike?'FIRST_STRIKE':plan.battleBack?'BATTLE_BACK':plan.bonusClose?'BONUS_CLOSE':'CLOSE';
       if(plan.bonusClose){
+        if(d.last?.momentum?.buildingMove)result.buildingMomentum=true;
         const origin=state.board.units.find(u=>u.id===plan.attackerId);
         result.forestEntered=!!d.last?.momentum?.path?.some(c=>hex(c)===hex(origin)&&
           state.footLab.terrain?.some(t=>hex(t)===hex(c)&&['FOREST','FORDABLE_RIVER'].includes(t.kind)));
