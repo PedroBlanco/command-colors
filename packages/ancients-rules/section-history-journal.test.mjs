@@ -2228,9 +2228,10 @@ test('scenario special rules: Sacred Band, immediate casualty reward, progressiv
  setup.startingSide='A';setup.board={units:[{id:'a1',side:'A',col:5,row:4},{id:'b1',side:'B',col:5,row:3},{id:'b2',side:'B',col:10,row:1}],leaders:[]};
  setup.movementUnitTypes={a1:'HEAVY_INFANTRY',b1:'HEAVY_INFANTRY',b2:'LIGHT_INFANTRY'};
  setup.movementTerrain=[];
+ setup.cardInstances.sort((a,b)=>Number(/^ORDER_[234]_/.test(a.definitionId))-Number(/^ORDER_[234]_/.test(b.definitionId)));
  const selected=setup.cardInstances.findIndex(c=>c.definitionId==='ORDER_2_CENTER'),end=setup.cardInstances.length-1;
  [setup.cardInstances[selected],setup.cardInstances[end]]=[setup.cardInstances[end],setup.cardInstances[selected]];
- const doc={schemaVersion:1,...setup.scenario,geometry:LAB_SCENARIO_GEOMETRY,provenance:{kind:'ORIGINAL',source:'test'},factions:{A:'South',B:'North'},startingSide:'A',handSizes:setup.handSizes,victoryTargets:setup.victoryTargets,
+ const doc={schemaVersion:1,...setup.scenario,id:'special-rule-test-v1',geometry:LAB_SCENARIO_GEOMETRY,provenance:{kind:'ORIGINAL',source:'test'},factions:{A:'South',B:'North'},startingSide:'A',handSizes:setup.handSizes,victoryTargets:setup.victoryTargets,
   units:setup.board.units.map(u=>({...u,type:setup.movementUnitTypes[u.id]})),leaders:[],terrain:[],sectorCells:setup.sectorCells,
   specialRules:{sacredBand:['a1','b1'],handGrowth:[
     {id:'reward',side:'A',trigger:'CASUALTY_BANNERS',threshold:1,cards:2},
