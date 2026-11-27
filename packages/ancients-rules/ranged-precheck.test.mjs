@@ -131,3 +131,9 @@ test('input is not mutated, result is immutable, no physical dice or events are 
   assert.equal(r.scenarioExceptionsChecked,false);
   assert.equal(r.attackAuthorized,false);
 });
+
+
+test('buildings prohibit ranged attacks at either endpoint and both new terrains block LOS',()=>{
+ for(const p of [shooter,target])assert.equal(check({terrain:[{col:p.col,row:p.row,kind:'BUILDING'}]}).reason,'BUILDING_RANGED_FORBIDDEN');
+ for(const kind of ['BUILDING','FORTIFIED_CITY_WALL'])assert.equal(check({terrain:[{col:4,row:4,kind}]}).reason,'LINE_OF_SIGHT_BLOCKED');
+});
