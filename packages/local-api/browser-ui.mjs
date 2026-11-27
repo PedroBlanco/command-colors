@@ -31,6 +31,7 @@ const deckFeedbackSlots=Object.freeze({
   'ancients-dispute-physical':'ancients-combat-feedback',
   'ancients-finalize-ranged':'ancients-combat-feedback',
   'ancients-archive-ranged':'ancients-combat-feedback',
+  'ancients-retry-physical':'ancients-combat-feedback',
   'ancients-decline-battle-back':'ancients-combat-feedback',
   'ancients-accept-battle-back':'ancients-combat-feedback',
   'ancients-confirm-momentum':'ancients-combat-feedback',
@@ -461,7 +462,12 @@ function renderAncients() {
   el('ancients-finalize-ranged').disabled=stopped||!dice?.canFinalize;
   el('ancients-roll-leader').disabled=stopped||!dice?.canRollLeader;
   el('ancients-roll-leader').hidden=!dice?.banners;
-  el('ancients-archive-ranged').disabled=stopped||!dice?.canArchive||!!dice?.leaderEvasionAvailable;
+  el('ancients-retry-physical').hidden=pending?.review!=='DISPUTED';
+  el('ancients-retry-physical').disabled=stopped||marshPending||!dice?.canRetryPhysical;
+  // Retain the historical archive operation only for other unsupported lab
+  // outcomes. The normal response to a physical dispute is a fresh roll.
+  el('ancients-archive-ranged').hidden=pending?.review==='DISPUTED';
+  el('ancients-archive-ranged').disabled=stopped||marshPending||pending?.review==='DISPUTED'||!dice?.canArchive||!!dice?.leaderEvasionAvailable;
   const evadeChoice=el('ancients-evasion-choice'),oldEvasion=evadeChoice.value;
   const evasionOptions=dice?.leaderEvasionOptions??[];
   evadeChoice.replaceChildren();
@@ -1208,6 +1214,7 @@ action('ancients-evade-leader',()=>{
 });
 action('ancients-finalize-ranged',()=>sendAncients('FINALIZE_SECTION_RANGED_LAB'));
 action('ancients-archive-ranged',()=>sendAncients('ARCHIVE_SECTION_RANGED_LAB'));
+action('ancients-retry-physical',()=>sendAncients('RETRY_SECTION_PHYSICAL_LAB'));
 action('ancients-confirm-unit-evade',()=>{
   if(!cached?.diceLab?.canChooseUnitEvade)throw Error('UNIT_EVADE_NOT_AVAILABLE');
   const value=el('ancients-unit-evade-choice').value;

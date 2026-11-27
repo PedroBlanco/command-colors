@@ -107,6 +107,7 @@ const explanations=Object.freeze({
   PHYSICAL_REVIEW_NOT_AVAILABLE:'Solo el adversario puede revisar la tirada física pendiente.',
   PHYSICAL_REVIEW_REQUIRED:'Es necesaria la conformidad del adversario con la tirada física.',
   PHYSICAL_ROLL_DISPUTED:'El adversario no está de acuerdo con los resultados declarados.',
+  PHYSICAL_RETRY_NOT_AVAILABLE:'Solo quien realizó una tirada física rechazada puede solicitar repetirla.',
   RANGED_ROLL_ALREADY_CAPTURED:'La tirada ya está registrada y no se puede repetir ni cancelar.',
   RANGED_ROLL_REQUIRED:'Registra una tirada antes de intentar aplicar los resultados.',
   UNIT_ALREADY_BATTLED:'Esta unidad ya ha efectuado su ataque durante el turno.',

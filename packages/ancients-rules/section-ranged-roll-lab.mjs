@@ -927,7 +927,7 @@ export function assertSectionDiceLab(state){
 export const SECTION_DICE_COMMANDS=Object.freeze([
   'ROLL_SECTION_RANGED_DIGITAL_LAB','DECLARE_SECTION_RANGED_PHYSICAL_LAB',
   'REVIEW_SECTION_RANGED_PHYSICAL_LAB','FINALIZE_SECTION_RANGED_LAB',
-  'ARCHIVE_SECTION_RANGED_LAB','ROLL_SECTION_LEADER_CASUALTY_LAB',
+  'ARCHIVE_SECTION_RANGED_LAB','RETRY_SECTION_PHYSICAL_LAB','ROLL_SECTION_LEADER_CASUALTY_LAB',
   'EVADE_SECTION_LEADER_LAB','CHOOSE_SECTION_ELEPHANT_RED_LAB','CHOOSE_SECTION_MORALE_LAB','RETREAT_SECTION_UNIT_LAB','ROLL_SECTION_ELEPHANT_RAMPAGE_LAB','EVADE_SECTION_RAMPAGE_LEADER_LAB'
 ]);
 
@@ -958,6 +958,14 @@ export function applySectionDiceCommand(state,next,command){
     next.diceLab.pending.review=command.accept?'ACCEPTED':'DISPUTED';
     event={kind:'SECTION_PHYSICAL_ROLL_REVIEWED_LAB',side,rollId:p.roll.rollId,
       review:next.diceLab.pending.review};
+  }else if(command.type==='RETRY_SECTION_PHYSICAL_LAB'){
+    // A disputed declaration has not applied any effects. Keep the exact
+    // combat plan, ordered-battle allowance and defensive reaction in place.
+    // The existing ARCHIVE command retains its historical replay semantics.
+    if(side!==sectionCombatSide(state)||p?.review!=='DISPUTED'||p.roll.source!=='PHYSICAL')
+      return deny('PHYSICAL_RETRY_NOT_AVAILABLE');
+    next.diceLab.pending=null;
+    event={kind:'SECTION_PHYSICAL_ROLL_RETRY_LAB',side,attackerId:plan.attackerId,targetId:plan.targetId,rollId:p.roll.rollId};
   }else if(command.type==='CHOOSE_SECTION_ELEPHANT_RED_LAB'){
     if(side===sectionCombatSide(state)||p?.interpretation.redIgnored!==null||
       !['SERVER_GENERATED','ACCEPTED'].includes(p.review))return deny('ELEPHANT_RED_CHOICE_NOT_AVAILABLE');
@@ -1244,6 +1252,7 @@ export function projectSectionDiceLab(state,side){
     ...(d.version>=31?{firstStrikePending:d.firstStrike.window,canDeclineFirstStrike:side!==state.turn&&d.firstStrike.window,canAcceptFirstStrike:side!==state.turn&&d.firstStrike.window&&state.hands[side].some(c=>c.definitionId==='FIRST_STRIKE'),firstStrikeResumed:d.firstStrike.suppress}:{}),
     pending:p?structuredClone(p):null,last:d.last?structuredClone(d.last):null,
     canReview:side!==sectionCombatSide(state)&&p?.review==='AWAITING_OPPONENT',
+    canRetryPhysical:side===sectionCombatSide(state)&&p?.review==='DISPUTED'&&p.roll.source==='PHYSICAL',
     canFinalize:side===sectionCombatSide(state)&&!!p&&!blocker&&p.review!=='AWAITING_OPPONENT',
     canArchive:side===sectionCombatSide(state)&&!!p&&!!blocker&&blocker!=='ELEPHANT_RED_CHOICE_PENDING'&&
       (!(d.version>=18&&!state.combatLab.plan?.battleBack&&!state.combatLab.plan?.bonusClose&&state.combatLab.movement[state.combatLab.plan?.attackerId]?.battle==='MANDATORY_CLOSE_COMBAT')||p.review==='DISPUTED')&&p.review!=='AWAITING_OPPONENT'&&

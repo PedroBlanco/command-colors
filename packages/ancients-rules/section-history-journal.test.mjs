@@ -625,10 +625,24 @@ test('dice lab: unsupported retreat, leader checks and disputed physical roll ca
   [{leader:true},['HEAVY','SWORDS'],true,'LEADER_CHECK_PENDING'],
   [{},['HEAVY','HEAVY'],false,'PHYSICAL_ROLL_DISPUTED']
  ]){
-  const {prepared}=diceReady(options);
-  const declared=apply(prepared,cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces})).nextState;
-  const reviewed=apply(declared,cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept})).nextState;
+  const {initial,prepared,commands}=diceReady(options);
+  const declaration=cmd('DECLARE_SECTION_RANGED_PHYSICAL_LAB',4,{faces});
+  const declared=apply(prepared,declaration).nextState;
+  const review=cmd('REVIEW_SECTION_RANGED_PHYSICAL_LAB',5,{actor:'B',accept});
+  const reviewed=apply(declared,review).nextState;
+  const retry=cmd('RETRY_SECTION_PHYSICAL_LAB',6);
   assert.equal(apply(reviewed,cmd('FINALIZE_SECTION_RANGED_LAB',6)).code,code);
+  assert.equal(project(reviewed,'B').diceLab.canRetryPhysical,false);
+  assert.equal(project(reviewed,'A').diceLab.canRetryPhysical,!accept);
+  if(!accept){
+    const repeated=apply(reviewed,retry);assert.equal(repeated.accepted,true);
+    assert.deepEqual(repeated.nextState.combatLab.plan,reviewed.combatLab.plan);
+    assert.deepEqual(repeated.nextState.diceLab.resolvedUnitIds,reviewed.diceLab.resolvedUnitIds);
+    assert.deepEqual(repeated.nextState.board,reviewed.board);
+    assert.equal(repeated.nextState.diceLab.pending,null);
+    assert.equal(apply(repeated.nextState,cmd('ROLL_SECTION_RANGED_DIGITAL_LAB',7)).accepted,true);
+    assert.deepEqual(replay(initial,[...commands,declaration,review,retry]),repeated.nextState);
+  }else assert.equal(apply(reviewed,retry).code,'PHYSICAL_RETRY_NOT_AVAILABLE');
   const archived=apply(reviewed,cmd('ARCHIVE_SECTION_RANGED_LAB',6)).nextState;
   assert.equal(archived.diceLab.blocks.b1,4);
   assert.equal(archived.diceLab.last.outcome,'ARCHIVED_WITHOUT_EFFECTS');
@@ -1296,7 +1310,7 @@ test('V18 warrior charge and war machine movement: geometry, obligatory attack, 
     run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
     if(mode==='DISPUTE'){
       run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{actor:'B',accept:false});
-      run('ARCHIVE_SECTION_RANGED_LAB');assert.equal(s.diceLab.pending,null);
+      run('RETRY_SECTION_PHYSICAL_LAB');assert.equal(s.diceLab.pending,null);
       assert.deepEqual(s.diceLab.resolvedUnitIds,[]);
       run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});
     }
