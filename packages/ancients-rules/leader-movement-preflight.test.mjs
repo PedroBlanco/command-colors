@@ -94,3 +94,9 @@ test('leader not originally attached remains unattached when moving to empty hex
   assert.equal(result.detachesFromUnit,false);
   assert.equal(result.attachesToUnit,false);
 });
+
+test('official geometry leader follows odd-r diagonal',()=>{
+ const geometryId='OFFICIAL_ODD_R_113';
+ assert.equal(check({geometryId,path:[at(1,5)]}).status,'CANDIDATE');
+ assert.equal(check({geometryId,path:[at(3,5)]}).reason,'NON_ADJACENT_HEX');
+});
