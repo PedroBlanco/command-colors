@@ -71,6 +71,8 @@ export function precheckAncientsRangedAttack({units, leaders = [], terrain = [],
     throw new TypeError('UNKNOWN_RANGED_UNIT'); // leader-only targets need their own rules
   if (attacker.side === target.side) return result('BLOCKED', 'FRIENDLY_TARGET');
 
+  if([terrainIndex.get(key(attacker)),terrainIndex.get(key(target))].includes('BUILDING'))return result('BLOCKED','BUILDING_RANGED_FORBIDDEN');
+  if([terrainIndex.get(key(attacker)),terrainIndex.get(key(target))].includes('FORTIFIED_CITY_WALL'))return result('BLOCKED','IMPASSABLE_TERRAIN');
   const profile = assessAncientsRangedProfile({
     unitType: attacker.type, movedSteps, targetDistance: distance(attacker, target)
   });
