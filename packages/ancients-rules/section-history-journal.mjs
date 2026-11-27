@@ -5,7 +5,7 @@
  */
 import {validScenarioObjectives,claimScenarioObjectives,projectScenarioObjectives} from './scenario-objectives.mjs';
 import {randomInt} from 'node:crypto';
-import {distance,neighbors} from '../hex-grid/hex.mjs';
+import {getBoardGeometry,LAB_BOARD_GEOMETRY,OFFICIAL_BOARD_GEOMETRY,officialSectorCells} from '../hex-grid/hex.mjs';
 import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS} from './block-loss-preview.mjs';
@@ -41,7 +41,8 @@ const fail=code=>{throw new TypeError(code)};
 const reject=code=>Object.freeze({accepted:false,code});
 const loc=p=>p.col+','+p.row;
 const reversedSection=sector=>sector==='LEFT'?'RIGHT':sector==='RIGHT'?'LEFT':sector;
-const goodLoc=p=>Number.isSafeInteger(p.col)&&p.col>=0&&p.col<13&&Number.isSafeInteger(p.row)&&p.row>=0&&p.row<9;
+const geometryOf=state=>getBoardGeometry(state.scenario?.geometry);
+const goodLoc=(p,geometry)=>geometry.inBounds(p);
 const isCards=(a,version=0)=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecord(c)&&validId(c.instanceId)&&
   (Object.hasOwn(BASE_SECTION_CARD_LIMITS,c.definitionId)||version>=22&&Object.hasOwn(SELECTION_CARD_DEFINITIONS,c.definitionId)||version>=23&&Object.hasOwn(GROUP_CARD_DEFINITIONS,c.definitionId)||version>=24&&Object.hasOwn(ATTACK_CARD_DEFINITIONS,c.definitionId)||version>=25&&Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,c.definitionId)||version>=26&&Object.hasOwn(FIRE_CARD_DEFINITIONS,c.definitionId)||version>=27&&c.definitionId==='MOVE_FIRE_MOVE'||version>=28&&c.definitionId==='RALLY'||version>=29&&c.definitionId==='I_AM_SPARTACUS'||version>=30&&c.definitionId==='COUNTER_ATTACK'||version>=31&&c.definitionId==='FIRST_STRIKE'));
 
@@ -50,19 +51,20 @@ const isCards=(a,version=0)=>Array.isArray(a)&&a.length<=128&&a.every(c=>isRecor
  * with three verified terrain types. No leaders, special cards, charge,
  * battles or scenario exceptions. Full sector lookup survives later turns.
  */
-function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false,allowEmpty=false,allowWarriors=false,allowMachines=false){
+function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false,allowEmpty=false,allowWarriors=false,allowMachines=false,geometry=getBoardGeometry()){
+  const maxCells=geometry.cellCount;
   if(!isRecord(board)||Object.keys(board).length!==2||
      !Array.isArray(board.units)||!Array.isArray(board.leaders)||
-     (!allowEmpty&&board.units.length<1)||board.units.length>117||
-     board.units.length+board.leaders.length>117||
+     (!allowEmpty&&board.units.length<1)||board.units.length>maxCells||
+     board.units.length+board.leaders.length>maxCells||
      (!allowLeaders&&board.leaders.length!==0)||
      !isRecord(types)||Object.keys(types).length!==board.units.length||
-     !isRecord(sectorCells)||Reflect.ownKeys(sectorCells).length!==117||
-     !Array.isArray(terrain)||terrain.length>117)return false;
+     !isRecord(sectorCells)||Reflect.ownKeys(sectorCells).length!==maxCells||
+     !Array.isArray(terrain)||terrain.length>maxCells)return false;
   const hexes=new Set();
   for(const tile of terrain){
     if(!isRecord(tile)||!terrainTileShapeOK(tile,true)||
-       !goodLoc(tile)||!BASE_TERRAIN_TYPES.includes(tile.kind)||
+       !goodLoc(tile,geometry)||!BASE_TERRAIN_TYPES.includes(tile.kind)||
        hexes.has(loc(tile)))return false;
     hexes.add(loc(tile));
   }
@@ -70,7 +72,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
   for(const unit of board.units){
     if(!isRecord(unit)||Object.keys(unit).length!==4||
        !['id','side','col','row'].every(k=>Object.hasOwn(unit,k))||
-       !validId(unit.id)||!SIDES.includes(unit.side)||!goodLoc(unit)||
+       !validId(unit.id)||!SIDES.includes(unit.side)||!goodLoc(unit,geometry)||
        ids.has(unit.id)||positions.has(loc(unit))||isImpassableHex(terrain,unit)||
        !Object.hasOwn(types,unit.id)||types[unit.id]==='HEAVY_WAR_MACHINE'&&isMarshHex(terrain,unit)||
        isBuildingHex(terrain,unit)&&!buildingOccupantAllowed(types[unit.id]))return false;
@@ -85,13 +87,13 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
   for(const leader of board.leaders){
     if(!isRecord(leader)||Object.keys(leader).length!==4||
        !['id','side','col','row'].every(k=>Object.hasOwn(leader,k))||
-       !validId(leader.id)||!SIDES.includes(leader.side)||!goodLoc(leader)||
+       !validId(leader.id)||!SIDES.includes(leader.side)||!goodLoc(leader,geometry)||
        ids.has(leader.id)||leaderCells.has(loc(leader))||isImpassableHex(terrain,leader))return false;
     const occupant=board.units.find(u=>loc(u)===loc(leader));
     if(occupant&&occupant.side!==leader.side)return false;
     ids.add(leader.id);leaderCells.add(loc(leader));
   }
-  for(let col=0;col<13;col++)for(let row=0;row<9;row++){
+  for(const {col,row} of geometry.allCells()){
     const sectors=sectorCells[col+','+row];
     if(!Array.isArray(sectors)||sectors.length<1||sectors.length>2||
        !sectors.every(x=>['LEFT','CENTER','RIGHT'].includes(x))||
@@ -100,6 +102,10 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
          (sectors.includes('LEFT')&&sectors.includes('CENTER'))||
          (sectors.includes('CENTER')&&sectors.includes('RIGHT'))
        )))return false;
+  }
+  if(geometry.id===OFFICIAL_BOARD_GEOMETRY){
+    const expected=officialSectorCells();
+    if(Object.entries(expected).some(([k,v])=>v.length!==sectorCells[k].length||v.some(x=>!sectorCells[k].includes(x))))return false;
   }
   return true;
 }
@@ -110,7 +116,7 @@ function validScenarioMetadata(s){
   const short=(x,n)=>typeof x==='string'&&x.trim()===x&&x.length>0&&x.length<=n;
   return isRecord(s)&&validId(s.id)&&validId(s.deckId)&&short(s.title,120)&&
     (Object.keys(s).length===3||
-     (Object.keys(s).length===6&&s.geometry==='LAB_ODD_Q_13X9'&&isRecord(s.provenance)&&Object.keys(s.provenance).length===2&&
+     (Object.keys(s).length===6&&[LAB_BOARD_GEOMETRY,OFFICIAL_BOARD_GEOMETRY].includes(s.geometry)&&isRecord(s.provenance)&&Object.keys(s.provenance).length===2&&
       ['OFFICIAL','COMMUNITY','ORIGINAL'].includes(s.provenance.kind)&&short(s.provenance.source,500)&&
       isRecord(s.factions)&&Object.keys(s.factions).length===2&&SIDES.every(side=>short(s.factions[side],80))));
 }
@@ -120,11 +126,13 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
   movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false,enableDeckRecycleLab=false,enableLongHistoryLab=false,enableSelectionCardsLab=false,enableGroupCardsLab=false,enableAttackCardsLab=false,enableLeadershipCardsLab=false,enableFireCardsLab=false,enableMoveFireMoveLab=false,enableRallyLab=false,enableSpartacusLab=false,enableCounterAttackLab=false,enableFirstStrikeLab=false}={}) {
   if(scenario!==undefined&&!validScenarioMetadata(scenario))fail('INVALID_SECTION_SCENARIO_METADATA');
+  const geometry=getBoardGeometry(scenario?.geometry);
+  if(geometry.id===OFFICIAL_BOARD_GEOMETRY&&(!movementUnitTypes||!enableFirstStrikeLab||sectorPerspective!=='PLAYER_RELATIVE'))fail('OFFICIAL_GEOMETRY_REQUIRES_FULL_LAB');
   if(!isCards(cardInstances,enableFirstStrikeLab===true?31:enableCounterAttackLab===true?30:enableSpartacusLab===true?29:enableRallyLab===true?28:enableMoveFireMoveLab===true?27:enableFireCardsLab===true?26:enableLeadershipCardsLab===true?25:enableAttackCardsLab===true?24:enableGroupCardsLab===true?23:enableSelectionCardsLab===true?22:0)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
     !SIDES.includes(startingSide)||!isRecord(board)||!Array.isArray(board.units)||
-    !Array.isArray(board.leaders)||board.units.length+board.leaders.length>117||
+    !Array.isArray(board.leaders)||board.units.length+board.leaders.length>geometry.cellCount||
     !isRecord(sectorCells)||typeof randomIndex!=='function'||
     !['FIXED','PLAYER_RELATIVE'].includes(sectorPerspective)||
     (typeof enableLeaderLab!=='boolean'||typeof enableCombatLab!=='boolean'||
@@ -160,7 +168,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
       typeof enableCounterAttackLab!=='boolean'||(enableCounterAttackLab&&!enableSpartacusLab)||
       typeof enableFirstStrikeLab!=='boolean'||(enableFirstStrikeLab&&!enableCounterAttackLab)))fail('INVALID_SECTION_HISTORY_SETUP');
   const pieces=[...board.units.map(x=>({...x,kind:'UNIT'})),...board.leaders.map(x=>({...x,kind:'LEADER'}))];
-  if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x))||
+  if(!pieces.every(x=>isRecord(x)&&validId(x.id)&&SIDES.includes(x.side)&&goodLoc(x,geometry))||
     !same(pieces.map(x=>x.id))||!same(board.units.map(loc))||!same(board.leaders.map(loc))||
     pieces.some(x=>!Array.isArray(sectorCells[loc(x)])||
       sectorCells[loc(x)].length<1||sectorCells[loc(x)].length>2||
@@ -183,7 +191,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     ...(sectorPerspective==='PLAYER_RELATIVE'?{sectorPerspective}: {})};
   if(movementUnitTypes!==undefined){
     if(Array.isArray(movementTerrain)&&movementTerrain.some(t=>t?.kind==='MARSH')&&(!enableFirstStrikeLab||!enableDiceLab))fail('MARSH_REQUIRES_FULL_COMBAT_LAB');
-    if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain,enableLeaderLab,false,enableElephantCloseLab,enableSpecialCloseLab))
+    if(!validFootLabSetup(board,sectorCells,movementUnitTypes,movementTerrain,enableLeaderLab,false,enableElephantCloseLab,enableSpecialCloseLab,geometry))
       fail('INVALID_FOOT_LAB_SETUP');
     state.footLab={unitTypes:copy(movementUnitTypes),movedUnitIds:[],
       terrain:copy(movementTerrain)};
@@ -195,7 +203,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
   }
   if(scenarioObjectives!==undefined){
     const objectives={rules:copy(scenarioObjectives),claimed:[]};
-    if(!state.diceLab?.victoryTargets||!validScenarioObjectives(objectives,state.footLab.terrain))fail('INVALID_SECTION_SCENARIO_OBJECTIVES');
+    if(!state.diceLab?.victoryTargets||!validScenarioObjectives(objectives,state.footLab.terrain,geometry.id))fail('INVALID_SECTION_SCENARIO_OBJECTIVES');
     state.victoryObjectives=objectives;
     claimScenarioObjectives(state,true);
     if(sectionVictory(state).winner)fail('SCENARIO_ALREADY_WON');
@@ -221,7 +229,7 @@ function rallySelection(state,side){
   if(!leaders.length)return {family:'RALLY',fallback:true,maximumOrders:1,unitIds:own.map(u=>u.id),leaderIds:[]};
   const eligible=own.filter(u=>{
     const type=state.footLab.unitTypes[u.id];
-    return !['ELEPHANT','HEAVY_CHARIOT'].includes(type)&&state.diceLab.blocks[u.id]<BASE_UNIT_STARTING_BLOCKS[type]&&leaders.some(l=>distance(l,u)<=1);
+    return !['ELEPHANT','HEAVY_CHARIOT'].includes(type)&&state.diceLab.blocks[u.id]<BASE_UNIT_STARTING_BLOCKS[type]&&leaders.some(l=>geometryOf(state).distance(l,u)<=1);
   });
   const rallyOptions=state.diceLab.rallyFaces.map((face,dieIndex)=>({face,dieIndex,
     unitIds:eligible.filter(u=>face==='LEADER'||BASE_UNIT_DIE_SYMBOLS[state.footLab.unitTypes[u.id]]===face).map(u=>u.id)}));
@@ -261,11 +269,11 @@ function counteredDefinition(definition){
     return definition.replace(/LEFT|RIGHT/,reversedSection);
   return definition;
 }
-function leadershipSection(selection,pieces,sectors){
+function leadershipSection(selection,pieces,sectors,geometryId){
   // Use the first valid anchor/sector in stable board order; a single-unit
   // alternative uses that unit's sector. An empty selection has no anchor.
   const anchor=selection.leadershipAnchors.find(a=>pieces.some(p=>p.id===a.orderId)&&
-    screenSelectionCardOrders({...selection,leadershipAnchors:[a]},pieces,sectors));
+    screenSelectionCardOrders({...selection,leadershipAnchors:[a]},pieces,sectors,geometryId));
   const cell=anchor??pieces[0];
   return cell?sectors[loc(cell)]?.[0]??null:null;
 }
@@ -276,7 +284,7 @@ function currentSelectionCard(state,side,sectors=relativeSectors(state,side)){
   const definition=effectiveSectionCard(state);
   if(definition==='FIRST_STRIKE')return {family:'FIRST_STRIKE',maximumOrders:0,unitIds:[],leaderIds:[]};
   const selection=selectionCardOptions({definitionId:definition,side,
-    command:state.handAtPlay.cards.length,board:state.board,unitTypes:state.footLab.unitTypes,sectorCells:sectors});
+    command:state.handAtPlay.cards.length,board:state.board,unitTypes:state.footLab.unitTypes,sectorCells:sectors,geometryId:state.scenario?.geometry});
   if(definition==='LEADERSHIP_ANY_SECTION'&&state.diceLab?.counter?.section&&selection){
     const section=state.diceLab.counter.section;
     return {...selection,section,leadershipAnchors:selection.leadershipAnchors.filter(a=>sectors[loc(a)]?.includes(section))};
@@ -308,9 +316,10 @@ function previewSpecialFootMove(state,command){
     !state.orderSnapshot.pieces.some(p=>p.kind==='UNIT'&&p.id===piece.id))return {reason:'UNIT_NOT_ORDERED'};
   if(state.footLab.movedUnitIds.includes(piece.id))return {reason:'UNIT_ALREADY_MOVED'};
   const type=state.footLab.unitTypes[piece.id];
+  if(geometryOf(state).id===OFFICIAL_BOARD_GEOMETRY&&BASE_MOUNTED_TYPES.includes(type))return {reason:'UNSUPPORTED_FOOT_UNIT'};
   const path=command.path,group=groupFootCard(state,piece.id);
   if(!Array.isArray(path)||!path.length||path.length>(group==='DOUBLE_TIME'?3:2)||
-     !path.every(c=>isRecord(c)&&Object.keys(c).length===2&&goodLoc(c)))return {reason:'INVALID_PATH_CORE_ACTION'};
+     !path.every(c=>isRecord(c)&&Object.keys(c).length===2&&goodLoc(c,geometryOf(state))))return {reason:'INVALID_PATH_CORE_ACTION'};
   let profile=assessBaseMovement({unitType:type,steps:path.length});
   if(group==='LINE_COMMAND'&&path.length>1)return {reason:'LINE_COMMAND_MOVEMENT_EXCEEDED'};
   if(group==='DOUBLE_TIME'&&type!=='HEAVY_WAR_MACHINE'){
@@ -324,9 +333,9 @@ function previewSpecialFootMove(state,command){
   const transit=canPass?loc(path[0]):null;
   const geometry=assessOpenHexPathGeometry({from,path,occupiedCells:[
     ...state.board.units.filter(u=>!(canPass&&u.side===piece.side&&loc(u)===transit)),...state.board.leaders.filter(l=>l.side!==piece.side&&!state.board.units.some(u=>loc(u)===loc(l)))
-  ]});
+  ]},state.scenario?.geometry);
   if(geometry.status!=='CANDIDATE_PATH_GEOMETRY')return {reason:geometry.reason};
-  if(profile.battle==='MANDATORY_CLOSE_COMBAT'&&!combatTargets(state).some(u=>u.side!==piece.side&&distance(u,geometry.destination)===1))
+  if(profile.battle==='MANDATORY_CLOSE_COMBAT'&&!combatTargets(state).some(u=>u.side!==piece.side&&geometryOf(state).distance(u,geometry.destination)===1))
     return {reason:'WARRIOR_CHARGE_TARGET_REQUIRED'};
   const board=copy(state.board);
   Object.assign(board.units.find(u=>u.id===piece.id),geometry.destination);
@@ -342,7 +351,7 @@ function pendingWarriorCharges(state){
   return Object.entries(state.combatLab.movement).filter(([id,m])=>{
     if(m.battle!=='MANDATORY_CLOSE_COMBAT'||state.diceLab.resolvedUnitIds.includes(id))return false;
     const unit=state.board.units.find(u=>u.id===id&&u.side===state.turn);
-    return !!unit&&combatTargets(state).some(u=>u.side!==state.turn&&distance(unit,u)===1);
+    return !!unit&&combatTargets(state).some(u=>u.side!==state.turn&&geometryOf(state).distance(unit,u)===1);
   }).map(([id])=>id);
 }
 
@@ -396,7 +405,7 @@ function screenRangedPlan(state,attackerId,targetId){
   const units=state.board.units.map(u=>({...u,type:state.footLab.unitTypes[u.id]}));
   const checked=precheckAncientsRangedAttack({units,leaders:state.board.leaders,
     terrain:state.footLab.terrain??[],attackerId,targetId,movedSteps:gate.movedSteps,
-    allowLoneLeader:state.diceLab?.version>=19});
+    allowLoneLeader:state.diceLab?.version>=19,geometryId:state.scenario?.geometry});
   if(checked.status!=='CANDIDATE')return reject(checked.reason);
   const cardBonusDice=spartacusBonus(state);
   const diceCount=checked.diceAfterTerrain+cardBonusDice;
@@ -425,7 +434,7 @@ function unitEvadePaths(state,attacker,target){
     (footAttackers.includes(at)||['HEAVY_CAVALRY','HEAVY_CHARIOT','ELEPHANT'].includes(at)))&&
     !(tt==='HEAVY_CAVALRY'&&(footAttackers.includes(at)||at==='ELEPHANT'))&&
     !(state.diceLab.version>=17&&(tt==='HEAVY_WAR_MACHINE'||tt==='HEAVY_CHARIOT'&&(footAttackers.includes(at)||at==='ELEPHANT'))))return [];
-  const depth=c=>2*c.row+(c.col&1),sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
+  const {depth,neighbors}=geometryOf(state),sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
   const attached=state.board.leaders.some(l=>l.side===target.side&&loc(l)===loc(target));
   const leaderAt=c=>state.board.leaders.find(l=>loc(l)===loc(c));
   const available=c=>!isRetreatBlockedHex(state.footLab.terrain??[],c)&&!(tt==='HEAVY_WAR_MACHINE'&&isMarshHex(state.footLab.terrain??[],c))&&!state.board.units.some(u=>loc(u)===loc(c))&&
@@ -463,7 +472,7 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
   const attacker=state.board.units.find(u=>u.id===attackerId);
   const target=combatTargets(state).find(u=>u.id===targetId);
   if(!validId(attackerId)||!validId(targetId)||!attacker||!target||
-     (battleBack?attacker.side===state.turn||target.side!==state.turn:attacker.side!==state.turn||target.side===state.turn)||distance(attacker,target)!==1)
+     (battleBack?attacker.side===state.turn||target.side!==state.turn:attacker.side!==state.turn||target.side===state.turn)||geometryOf(state).distance(attacker,target)!==1)
     return reject('INVALID_CLOSE_TARGET');
   const ordered=state.orderSnapshot.pieces.filter(p=>p.kind==='UNIT'&&p.side===state.turn).map(p=>p.id);
   const movedStepsByUnit=Object.fromEntries(ordered.map(id=>[id,state.combatLab.movement[id]?.steps??0]));
@@ -502,10 +511,10 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
   const cardBonusDice=attackCard==='MOUNTED_CHARGE'?1:attackCard==='CLASH_OF_SHIELDS'&&!bonusClose?2:battleBack?0:spartacusBonus(state);
   const diceCount=Math.max(0,Math.min(baseDice-dicePenalty,maxDice??baseDice))+cardBonusDice;
   if(diceCount<=0)return reject('NO_COMBAT_DICE');
-  const fortificationDefense=fortificationProtects(state.footLab.terrain??[],attacker,target,targetUnitType);
+  const fortificationDefense=fortificationProtects(state.footLab.terrain??[],attacker,target,targetUnitType,state.scenario?.geometry);
   const swordsHit=!loneLeader&&!elephantTarget&&!['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY',
     'LIGHT_CAVALRY','HEAVY_WAR_MACHINE'].includes(attackerType);
-  const leaderHit=loneLeader||!elephantAttack&&state.board.leaders.some(l=>l.side===attacker.side&&distance(l,attacker)<=1);
+  const leaderHit=loneLeader||!elephantAttack&&state.board.leaders.some(l=>l.side===attacker.side&&geometryOf(state).distance(l,attacker)<=1);
   const evadeOptions=state.diceLab.version>=12&&!battleBack&&!loneLeader?unitEvadePaths(state,attacker,target):[];
   const choice=evadePath===undefined?(evadeOptions.length?null:[]):evadePath;
   if(state.diceLab.version>=12&&!(choice===null&&evadeOptions.length||
@@ -544,6 +553,7 @@ export function assertSectionHistoryLab(s){
      (Object.hasOwn(s,'scenario')&&!validScenarioMetadata(s.scenario))||
      (Object.hasOwn(s,'sectorPerspective')&&s.sectorPerspective!=='PLAYER_RELATIVE'))
      fail('INVALID_SECTION_HISTORY_STATE');
+  if(s.scenario?.geometry===OFFICIAL_BOARD_GEOMETRY&&(!s.footLab||s.diceLab?.version<31||s.sectorPerspective!=='PLAYER_RELATIVE'))fail('OFFICIAL_GEOMETRY_REQUIRES_FULL_LAB');
   const all=[...s.drawPile,...s.discardPile,...s.hands.A,...s.hands.B,
     ...(s.activeCard?[s.activeCard]:[])];
   if(all.length!==s.totalCards||!same(all.map(c=>c.instanceId)))fail('SECTION_CARD_CONSERVATION_FAILED');
@@ -554,7 +564,7 @@ export function assertSectionHistoryLab(s){
          (Object.keys(info).length===3&&Object.hasOwn(info,'terrain')))||
        !isRecord(info.unitTypes)||!Array.isArray(info.movedUnitIds)||
        !validFootLabSetup(s.board,s.sectorCells,info.unitTypes,
-         Object.hasOwn(info,'terrain')?info.terrain:[],Object.hasOwn(s,'leaderLab'),s.diceLab?.version>=10&&s.revision>0,s.diceLab?.version>=16,s.diceLab?.version>=17)||
+         Object.hasOwn(info,'terrain')?info.terrain:[],Object.hasOwn(s,'leaderLab'),s.diceLab?.version>=10&&s.revision>0,s.diceLab?.version>=16,s.diceLab?.version>=17,geometryOf(s))||
        info.movedUnitIds.length>117||
        !info.movedUnitIds.every(validId)||!same(info.movedUnitIds)||
        (s.phase!=='LAB_RESOLUTION_PENDING'&&info.movedUnitIds.length>0)||
@@ -620,7 +630,7 @@ export function assertSectionHistoryLab(s){
       (s.phase!=='LAB_RESOLUTION_PENDING'&&(f.window||f.original!==null||f.prior!==null||f.suppress||f.replacements)))fail('INVALID_FIRST_STRIKE_STATE');
   }
   if(s.footLab?.terrain?.some(t=>t.kind==='MARSH')&&s.diceLab?.version!==32)fail('MARSH_REQUIRES_FULL_COMBAT_LAB');
-  if(Object.hasOwn(s,'victoryObjectives')&&(!s.diceLab?.victoryTargets||!validScenarioObjectives(s.victoryObjectives,s.footLab.terrain)))fail('INVALID_SECTION_SCENARIO_OBJECTIVES');
+  if(Object.hasOwn(s,'victoryObjectives')&&(!s.diceLab?.victoryTargets||!validScenarioObjectives(s.victoryObjectives,s.footLab.terrain,s.scenario?.geometry)))fail('INVALID_SECTION_SCENARIO_OBJECTIVES');
   if(Object.hasOwn(s,'diceLab'))assertSectionDiceLab(s);
   if((s.phase==='AWAIT_CARD')!== (s.activeCard===null)||
      (s.phase==='AWAIT_CARD'&&(s.cardPlay!==null||s.handAtPlay!==null||s.orderSnapshot!==null))||
@@ -719,17 +729,17 @@ export function applySectionHistoryLabCommand(state,command={}){
     const proof={side,revision:state.revision+1,pieces,
       sectorCells:perspective};
     const selection=currentSelectionCard(state,side,perspective);
-    const screened=selection?{status:screenSelectionCardOrders(selection,pieces,perspective)?'CANDIDATE':'BLOCKED'}:screenBaseAncientsSectionCardOrders({
+    const screened=selection?{status:screenSelectionCardOrders(selection,pieces,perspective,state.scenario?.geometry)?'CANDIDATE':'BLOCKED'}:screenBaseAncientsSectionCardOrders({
       turnState:{schemaVersion:1,ruleset:'ancients-base-3e-2009',status:'ACTIVE',
         phase:'COMBAT',turn:side,revision:state.revision+1,
         orderedUnitIds:[...unitIds],orderedLeaderIds:[...leaderIds]},
       sessionSide:side,expectedRevision:state.revision+1,
-      handAtPlay:state.handAtPlay,cardPlay:state.cardPlay,orderSnapshot:proof,effectiveDefinitionId:effectiveSectionCard(state)
+      handAtPlay:state.handAtPlay,cardPlay:state.cardPlay,orderSnapshot:proof,effectiveDefinitionId:effectiveSectionCard(state),geometryId:state.scenario?.geometry
     });
     if(screened.status!=='CANDIDATE'||selection?.family==='SPARTACUS'&&!spartacusOrdersFit(state,selection,pieces))return reject('ORDERS_NOT_ELIGIBLE');
     next.orderSnapshot=proof;
     if(next.diceLab?.counter&&effectiveSectionCard(state)==='LEADERSHIP_ANY_SECTION'&&!next.diceLab.counter.section)
-      next.diceLab.counter.section=leadershipSection(selection,pieces,perspective);
+      next.diceLab.counter.section=leadershipSection(selection,pieces,perspective,state.scenario?.geometry);
     if(selection?.family==='SPARTACUS')next.diceLab.spartacusFaces=null;
     if(recovered){next.diceLab.blocks=recovered.blocks;next.diceLab.rallyFaces=null;}
     if(selection?.family==='DARKEN'&&!selection.fallback)next.diceLab.darken={twice:[]};
@@ -759,7 +769,7 @@ export function applySectionHistoryLabCommand(state,command={}){
       cardFamily:'ORDINARY_SECTION',terrain:[],scenarioExceptions:[],
       unitTypes:copy(state.footLab.unitTypes)
     };
-    const special=state.diceLab?.version>=18&&(['WARRIOR_INFANTRY','HEAVY_WAR_MACHINE'].includes(state.footLab.unitTypes[command.unitId])||mayPassFriendlyFoot(state,command.unitId)||groupFootCard(state,command.unitId));
+    const special=state.diceLab?.version>=18&&(geometryOf(state).id===OFFICIAL_BOARD_GEOMETRY||['WARRIOR_INFANTRY','HEAVY_WAR_MACHINE'].includes(state.footLab.unitTypes[command.unitId])||mayPassFriendlyFoot(state,command.unitId)||groupFootCard(state,command.unitId));
     const result=special?previewSpecialFootMove(state,command):reduceCoreOpenFootPath({
       state:coreState,policy,
       action:{actor:side,expectedRevision:state.revision,
@@ -787,7 +797,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     const terrain=assessAncientsTerrainMovement({
       unitType:state.footLab.unitTypes[command.unitId],
       origin:{col:moving.col,row:moving.row},
-      path:command.path,terrain:state.footLab.terrain??[]
+      path:command.path,terrain:state.footLab.terrain??[],geometryId:state.scenario?.geometry
     });
     if(terrain.status!=='CANDIDATE')
       return reject(terrain.reason??'FOOT_LAB_TERRAIN_BLOCKED');
@@ -847,7 +857,7 @@ export function applySectionHistoryLabCommand(state,command={}){
       from:{col:piece.col,row:piece.row},
       path:command.path,occupiedCells:state.board.units,
       terrain:state.footLab.terrain??[]
-    },{mountedCharge:attackCardEffect(state,piece.id)==='MOUNTED_CHARGE'});
+    },{mountedCharge:attackCardEffect(state,piece.id)==='MOUNTED_CHARGE',geometryId:state.scenario?.geometry});
     if(checked.status!=='MOUNTED_PATH_PROPOSAL')
       return reject(checked.reason??'MOUNTED_LAB_MOVE_REJECTED');
     const target=next.board.units.find(u=>u.id===piece.id);
@@ -890,7 +900,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     try{
       candidate=precheckAncientsLeaderPath({
         units:state.board.units,leaders:state.board.leaders,
-        leaderId:leader.id,path:command.path,terrain:state.footLab.terrain??[]
+        leaderId:leader.id,path:command.path,terrain:state.footLab.terrain??[],geometryId:state.scenario?.geometry
       });
     }catch{
       return reject('INVALID_LEADER_PATH');
@@ -970,7 +980,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     if(side===state.turn||plan?.kind!=='CLOSE_PREVIEW'||plan.evadePath!==null||
        !plan.evadeOptions?.length||state.diceLab?.pending)return reject('UNIT_EVADE_NOT_AVAILABLE');
     if(!Array.isArray(command.path)||command.path.length>2||
-       !command.path.every(c=>isRecord(c)&&Object.keys(c).length===2&&goodLoc(c)))
+       !command.path.every(c=>isRecord(c)&&Object.keys(c).length===2&&goodLoc(c,geometryOf(state))))
       return reject('INVALID_UNIT_EVADE_PATH');
     const path=command.path.map(c=>({col:c.col,row:c.row}));
     const checked=screenClosePlan(state,plan.attackerId,plan.targetId,path,false,plan.bonusClose===true);
@@ -998,7 +1008,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     if(!(state.diceLab?.version>=14)||!last?.momentum?.pending||side!==state.turn||state.combatLab.plan)
       return reject('MOMENTUM_NOT_AVAILABLE');
     if(!Array.isArray(command.path)||command.path.length>2||
-      !command.path.every(c=>isRecord(c)&&Object.keys(c).length===2&&goodLoc(c)))
+      !command.path.every(c=>isRecord(c)&&Object.keys(c).length===2&&goodLoc(c,geometryOf(state))))
       return reject('INVALID_MOMENTUM_PATH');
     const path=command.path.map(c=>({col:c.col,row:c.row}));
     const option=path.length?sectionMomentumOptions(state).find(o=>JSON.stringify(o.path)===JSON.stringify(path)):null;
@@ -1090,7 +1100,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     reaction.original=null;reaction.prior=null;
     const attacker=next.board.units.find(u=>u.id===original.attackerId),defender=next.board.units.find(u=>u.id===original.targetId);
     const retreated=next.diceLab.last?.retreat?.path?.length>0;
-    const stopped=sectionVictory(next)?.winner||!attacker||!defender||retreated||distance(attacker,defender)!==1;
+    const stopped=sectionVictory(next)?.winner||!attacker||!defender||retreated||geometryOf(next).distance(attacker,defender)!==1;
     const strike=next.diceLab.last;
     if(!stopped){
       if(original.bonusClose)next.diceLab.last=prior;
