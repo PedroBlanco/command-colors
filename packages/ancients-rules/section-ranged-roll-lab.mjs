@@ -762,6 +762,8 @@ export function settleSectionVictory(next,event){
     if(source!==next){
       next.board=source.board;next.footLab.unitTypes=source.footLab.unitTypes;
       d.blocks=source.diceLab.blocks;d.casualties=source.diceLab.casualties;
+      const marshChecks=d.version>=32&&d.elephantRetreatPending&&pathHasMarsh(next.footLab.terrain,d.elephantRetreatPending.choice.path)?source.diceLab.marshLast:null;
+      if(marshChecks)d.marshLast=marshChecks;
       markSectionBattle(d,plan);
       d.last={attackerId:plan.attackerId,targetId:plan.targetId,roll:p.roll,review:p.review,
         interpretation:p.interpretation,loss:p.loss,outcome:'DIRECT_HITS_APPLIED',reason:null,
@@ -770,6 +772,7 @@ export function settleSectionVictory(next,event){
         ...(plan.loneLeader?{loneLeader:true,leaderEliminated:p.loss.leaderWouldBeEliminated}:{}),
         ...(plan.battleBack?{attackKind:plan.firstStrike?'FIRST_STRIKE':'BATTLE_BACK',battleBackPending:false}:plan.bonusClose?{attackKind:'BONUS_CLOSE',battleBackPending:false}:{}),
         leaderCheck:structuredClone(effectiveLeaderCheck(d)),morale:structuredClone(d.morale),
+        ...(marshChecks?{marshChecks}:{}),
         ...(d.rampage.length?{rampage:structuredClone(d.rampage)}:{}),
         ...(d.elephantRetreatPending?{retreat:d.elephantRetreatPending.choice,elephantChecks:d.elephantRetreatPending.checks,elephantEvasions:d.elephantRetreatPending.evasions}:
           d.retreatPending?{retreat:d.retreatPending.choice}:{})};
@@ -1120,8 +1123,8 @@ export function applySectionDiceCommand(state,next,command){
           const amount=Math.min(next.diceLab.blocks[target.id],retreatChoice.blocksLost);
           applyRampageUnitLoss(next,target.id,amount,state.revision+1);
           if(leader&&!sectionVictory(next)?.winner){
-            const faces=d.leaderCheck?[]:Array.from({length:remaining===0?1:2},()=>0);
-            if(faces.length){const draw=sectionRollIndex(d.key,'section_blocker_'+(state.revision+1));for(let i=0;i<faces.length;i++)faces[i]=ANCIENTS_BATTLE_DIE_FACES[draw(6)];}
+            const draw=sectionRollIndex(d.key,'section_blocker_'+(state.revision+1));
+            const faces=d.leaderCheck?[]:Array.from({length:remaining===0?1:2},()=>ANCIENTS_BATTLE_DIE_FACES[draw(6)]);
             const leaderEliminated=faces.length>0&&faces.every(f=>f==='LEADER');
             retreatLeaderCheck={leaderId:leader.id,faces,leaderEliminated,reused:!!d.leaderCheck};
             if(leaderEliminated)rampageLeaderLoss(next,leader,state.revision+1);
@@ -1160,7 +1163,7 @@ export function applySectionDiceCommand(state,next,command){
       ...(marshChecks.length?{marshChecks}:{}),...(retreatLeaderCheck?{retreatLeaderCheck}:{}),
       blocksRemaining:next.diceLab.blocks[plan.targetId]??0,
       ...(d.version>=2?{leaderCheck:structuredClone(effectiveLeaderCheck(d)),
-        unitEliminated:finalize&&(p.loss.unitWouldBeEliminated||!!retreatChoice&&retreatChoice.blocksLost===p.loss.remainingBlocks||marshChecks.length>0&&!Object.hasOwn(next.diceLab.blocks,plan.targetId)),
+        unitEliminated:finalize&&(marshChecks.length?!Object.hasOwn(next.diceLab.blocks,plan.targetId):p.loss.unitWouldBeEliminated||!!retreatChoice&&retreatChoice.blocksLost===p.loss.remainingBlocks),
         leaderEliminated:finalize&&(!!p.loss.leaderWouldBeEliminated||!!effectiveLeaderCheck(d)?.outcome.leaderWouldBeEliminated||!!escape?.eliminated||marshChecks.some(c=>c.leaderEliminated)||!!retreatLeaderCheck?.leaderEliminated),
         ...(plan.loneLeader?{loneLeader:true}:{}),
         banners:banners(next.diceLab)}:{}),
@@ -1257,8 +1260,8 @@ export function projectSectionDiceLab(state,side){
     ...(d.version>=15?{bonusClosePending:!!d.last?.momentum?.bonusPending,
       canDeclineBonusClose:side===state.turn&&!!d.last?.momentum?.bonusPending}:{}),
     ...(d.version>=14?{momentumPending:!!d.last?.momentum?.pending,
-      canChooseMomentum:side===state.turn&&!!d.last?.momentum?.pending,
-      momentumOptions:side===state.turn?sectionMomentumOptions(state):[]}:{}),
+      canChooseMomentum:side===state.turn&&!d.marshPending&&!!d.last?.momentum?.pending,
+      momentumOptions:side===state.turn&&!d.marshPending?sectionMomentumOptions(state):[]}:{}),
     ...(d.version>=13?{combatSide:sectionCombatSide(state),canAcceptBattleBack:side!==state.turn&&!!d.last?.battleBackPending}:{}),
     ...(d.version>=11?{battleBackPending:!!d.last?.battleBackPending,canDeclineBattleBack:side!==state.turn&&!!d.last?.battleBackPending}:{}),
     blocker};
