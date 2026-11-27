@@ -157,7 +157,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const position = display(geometry.pixelCenter(cell,RADIUS,OX,OY));
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
-      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}${blocks!==null?`, ${blocks} bloques restantes`:''}` : leader ? ', sin unidad' : ', vacía'}${leader ? `, líder ${leader.id} del bando ${leader.side}`:''}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${objectives.has(key(cell))?', objetivo de victoria':''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
+      'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}${unit.sacredBand?', Banda Sagrada':''}${blocks!==null?`, ${blocks} bloques restantes`:''}` : leader ? ', sin unidad' : ', vacía'}${leader ? `, líder ${leader.id} del bando ${leader.side}`:''}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${objectives.has(key(cell))?', objetivo de victoria':''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
       'aria-pressed':String(Boolean(origin || step)),
       'data-col':cell.col,'data-row':cell.row
     });
@@ -192,7 +192,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     if (unit) {
       const badge = svgNode(doc,'circle',{cx:position.x,cy:position.y,r:15,class:unit.side==='A'?'unit-a':'unit-b','pointer-events':'none'});
       const text = svgNode(doc,'text',{x:position.x,y:position.y+4,'text-anchor':'middle',class:'unit-label','pointer-events':'none'});
-      text.textContent=unitType?unitType[0]:unit.side;
+      text.textContent=(unitType?unitType[0]:unit.side)+(unit.sacredBand?'★':'');
       hex.append(badge,text);
       if(blocks!==null){
         const counter=svgNode(doc,'text',{x:position.x,y:position.y+24,
