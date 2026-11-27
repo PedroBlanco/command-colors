@@ -3,7 +3,7 @@
  * Visual decisions are reversible previews; only a confirmed request reaches
  * the server, which remains authoritative. No licensed assets or game rules.
  */
-import {allCells, pixelCenter, polygonPoints} from '../hex-grid/hex.mjs';
+import {getBoardGeometry,OFFICIAL_BOARD_GEOMETRY} from '../hex-grid/hex.mjs';
 import {deckActions} from './deck-controls.mjs';
 import {describeCommandError} from './command-feedback.mjs';
 import {beginMovementDraft, appendMovementHex, undoMovementHex, movementDraftFields,
@@ -15,12 +15,11 @@ const RADIUS = 24, OX = 35, OY = 34;
 // LANDSCAPE 13 × 9 board. Rotate only the B viewer 180 degrees; do not
 // transform stored odd-q coordinates or the server's authoritative moves.
 const DISPLAY_WIDTH = 510, DISPLAY_HEIGHT = 430;
-function displayPoint(point, viewer) {
+function displayPoint(point, viewer,width=DISPLAY_WIDTH,height=DISPLAY_HEIGHT) {
   return viewer === 'B'
-    ? {x:DISPLAY_WIDTH-point.x,y:DISPLAY_HEIGHT-point.y}
+    ? {x:width-point.x,y:height-point.y}
     : point;
 }
-const boardCells = allCells();
 const key = ({col,row}) => `${col},${row}`;
 // Reusable presentation of base-edition unit classes; never grants movement,
 // battle permission or eligibility. No game art or card text is embedded.
@@ -63,8 +62,13 @@ function svgNode(doc, name, attrs = {}) {
 /** Render public cells/units with keyboard and pointer selection. */
 export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   {nextCells=[], selectableUnitIds=[], combatTargetIds=[], selectedTargetId=null,
-    terrain=[],leaders=[],objectiveCells=[]}={}) {
-  if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > 117 ||
+    terrain=[],leaders=[],objectiveCells=[],geometryId}={}) {
+  const geometry=getBoardGeometry(geometryId),boardCells=geometry.allCells();
+  const official=geometry.id===OFFICIAL_BOARD_GEOMETRY;
+  const width=official?2*OX+12*Math.sqrt(3)*RADIUS:DISPLAY_WIDTH;
+  const height=official?2*OY+12*RADIUS:DISPLAY_HEIGHT;
+  const display=p=>displayPoint(p,viewer,width,height);
+  if (!svg?.ownerDocument?.createElementNS || !Array.isArray(board) || board.length > geometry.cellCount ||
       !['A','B'].includes(viewer)) {
     throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
   }
@@ -73,7 +77,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   const units = new Map();
   for (const unit of board) {
     if (!unit || !Number.isSafeInteger(unit.col) || !Number.isSafeInteger(unit.row)
-      || unit.col < 0 || unit.col > 12 || unit.row < 0 || unit.row > 8
+      || !geometry.inBounds(unit)
       || typeof unit.id !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(unit.id)
       || !['A','B'].includes(unit.side) || units.has(unit.id) || cellsById.has(key(unit))) {
       throw new TypeError('INVALID_MOVEMENT_BOARD_VIEW');
@@ -81,7 +85,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     units.set(unit.id,unit);
     cellsById.set(key(unit),unit);
   }
-  if(!Array.isArray(leaders)||leaders.length+board.length>117)
+  if(!Array.isArray(leaders)||leaders.length+board.length>geometry.cellCount)
     throw new TypeError('INVALID_MOVEMENT_LEADER_VIEW');
   const leadersByCell=new Map(),leaderIds=new Set();
   for(const leader of leaders){
@@ -89,7 +93,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
        !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(leader.id)||
        !['A','B'].includes(leader.side)||
        !Number.isSafeInteger(leader.col)||!Number.isSafeInteger(leader.row)||
-       leader.col<0||leader.col>12||leader.row<0||leader.row>8||
+       !geometry.inBounds(leader)||
        leaderIds.has(leader.id)||units.has(leader.id)||
        leadersByCell.has(key(leader))||
        (cellsById.has(key(leader))&&
@@ -100,23 +104,22 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   }
   // Terrain comes only from an authorized server view. Presentation is inert:
   // never infer the legality of an action from a color, label or SVG class.
-  if(!Array.isArray(terrain)||terrain.length>117||
+  if(!Array.isArray(terrain)||terrain.length>geometry.cellCount||
      terrain.some(t=>!t||typeof t!=='object'||Array.isArray(t)||
        Object.keys(t).length!==(t.kind==='RAMPART'?4:3)||
        (t.kind==='RAMPART'&&(!Array.isArray(t.sides)||![2,3].includes(t.sides.length)||new Set(t.sides).size!==t.sides.length||t.sides.some(i=>!Number.isInteger(i)||i<0||i>5)))||
        !Number.isSafeInteger(t.col)||!Number.isSafeInteger(t.row)||
-       t.col<0||t.col>=13||t.row<0||t.row>=9||
+       !geometry.inBounds(t)||
        !Object.hasOwn(TERRAIN_LABELS,t.kind))||
      new Set(terrain.map(key)).size!==terrain.length)
     throw new TypeError('INVALID_MOVEMENT_TERRAIN_VIEW');
   const terrainByCell=new Map(terrain.map(t=>[key(t),t]));
-  if(!Array.isArray(objectiveCells)||objectiveCells.length>13689||objectiveCells.some(c=>!c||!Number.isSafeInteger(c.col)||!Number.isSafeInteger(c.row)||c.col<0||c.col>12||c.row<0||c.row>8))throw new TypeError('INVALID_MOVEMENT_OBJECTIVE_VIEW');
+  if(!Array.isArray(objectiveCells)||objectiveCells.length>13689||objectiveCells.some(c=>!c||!Number.isSafeInteger(c.col)||!Number.isSafeInteger(c.row)||!geometry.inBounds(c)))throw new TypeError('INVALID_MOVEMENT_OBJECTIVE_VIEW');
   const objectives=new Set(objectiveCells.map(key));
   // Presentational hints cannot grant permission; validate their bounded shape.
   if (!Array.isArray(nextCells) || nextCells.length>6 ||
       nextCells.some(cell => !cell || !Number.isSafeInteger(cell.col) ||
-        !Number.isSafeInteger(cell.row) || cell.col<0 || cell.col>12 ||
-        cell.row<0 || cell.row>8) ||
+        !Number.isSafeInteger(cell.row) || !geometry.inBounds(cell)) ||
       !Array.isArray(selectableUnitIds) || selectableUnitIds.length>117 ||
       selectableUnitIds.some(id => typeof id!=='string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id)))
     throw new TypeError('INVALID_MOVEMENT_BOARD_HINTS');
@@ -132,7 +135,9 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   // One Tab stop on the board; arrow keys navigate cells. Preserve DOM focus
   // through redraws, otherwise Enter would strand keyboard players after
   // selecting their first unit or hexagon.
-  const focusKey = svg.dataset?.focusedCell ?? '0,0';
+  const storedFocus=svg.dataset?.focusedCell;
+  const focusKey=boardCells.some(c=>key(c)===storedFocus)?storedFocus:'0,0';
+  if(svg.dataset)svg.dataset.focusedCell=focusKey;
   const hadBoardFocus = !!doc.activeElement && !!svg.contains?.(doc.activeElement);
   const focusable = new Map();
   const group = svgNode(doc,'g',{'aria-label':'Tablero hexagonal de laboratorio'});
@@ -149,7 +154,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     const selectableOwn = unit?.side===viewer && selectable.has(unit.id);
     const rivalTarget=unit?.side!==viewer && combatTargets.has(unit?.id);
     const chosenTarget=rivalTarget && selectedTargetId===unit.id;
-    const position = displayPoint(pixelCenter(cell,RADIUS,OX,OY),viewer);
+    const position = display(geometry.pixelCenter(cell,RADIUS,OX,OY));
     const hex = svgNode(doc,'g',{
       role:'button',tabindex:key(cell)===focusKey ? '0' : '-1',
       'aria-label':`Columna ${cell.col+1}, fila ${cell.row+1}${unit ? `, unidad ${unit.id} del bando ${unit.side}${unitType ? `, ${unitType[1]}` : ''}${blocks!==null?`, ${blocks} bloques restantes`:''}` : leader ? ', sin unidad' : ', vacía'}${leader ? `, líder ${leader.id} del bando ${leader.side}`:''}${terrainLabel ? `, ${terrainLabel[1]}` : ''}${objectives.has(key(cell))?', objetivo de victoria':''}${origin ? ', origen elegido' : ''}${step ? `, paso ${step}; pulsa para volver a este paso` : ''}${next ? ', siguiente hexágono candidato geométrico' : ''}${selectableOwn ? ', propia sin mover' : ''}${rivalTarget ? ', rival seleccionable para decisión defensiva sintética' : ''}${chosenTarget ? ', objetivo elegido' : ''}`,
@@ -164,12 +169,12 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
     if (next) hex.classList.add('hex-next');
     if (origin) hex.classList.add('hex-origin');
     if (step) hex.classList.add('hex-route');
-    const points = polygonPoints(cell,RADIUS,OX,OY)
-      .map(p=>displayPoint(p,viewer))
+    const points = geometry.polygonPoints(cell,RADIUS,OX,OY)
+      .map(display)
       .map(p=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
     hex.append(svgNode(doc,'polygon',{points,class:'hex-shape'}));
     if(terrainTile?.kind==='RAMPART'){
-      const vertices=polygonPoints(cell,RADIUS,OX,OY).map(p=>displayPoint(p,viewer));
+      const vertices=geometry.polygonPoints(cell,RADIUS,OX,OY).map(display);
       for(const i of terrainTile.sides){const a=vertices[i],b=vertices[(i+1)%6];hex.append(svgNode(doc,'line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'rampart-edge','pointer-events':'none'}));}
     }
     if(terrainLabel){
@@ -233,7 +238,9 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
       const delta=deltas[event.key];
       if (!delta) return;
       event.preventDefault();
-      const target=focusable.get(`${Math.max(0,Math.min(12,cell.col+delta[0]))},${Math.max(0,Math.min(8,cell.row+delta[1]))}`);
+      const targetRow=Math.max(0,Math.min(8,cell.row+delta[1]));
+      const targetCol=Math.max(0,Math.min(official&&targetRow%2?11:12,cell.col+delta[0]));
+      const target=focusable.get(`${targetCol},${targetRow}`);
       if (!target || target===hex) return;
       hex.setAttribute('tabindex','-1');
       target.setAttribute('tabindex','0');
@@ -245,7 +252,7 @@ export function renderMovementBoard(svg, board, draft, onSelect, viewer='A',
   }
   svg.replaceChildren(group);
   if (hadBoardFocus) focusable.get(svg.dataset?.focusedCell ?? focusKey)?.focus?.();
-  svg.setAttribute('viewBox',`0 0 ${DISPLAY_WIDTH} ${DISPLAY_HEIGHT}`);
+  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
   return {cells:boardCells.length,units:board.length,selectedSteps:draft?.path.length ?? 0};
 }
 
