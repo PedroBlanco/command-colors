@@ -41,8 +41,28 @@ Ejemplo completo: [ford-example-v1.json](../scenarios/examples/ford-example-v1.j
 | terrain | lista de objetos col, row, kind; RAMPART admite la orientación validada por el motor |
 | sectorCells | mapa de las 117 o 113 coordenadas col,row (base cero), según geometry, a uno o dos sectores adyacentes LEFT, CENTER, RIGHT; para geometría oficial usar officialSectorCells() |
 | objectives | lista opcional de objetos id, side, mode, cells, minUnits, banners; omitir si no hay objetivos especiales |
+| specialRules | objeto opcional con listas sacredBand y handGrowth; solo excepciones implementadas |
 
 Solo se admiten campos conocidos. Se comprueba la configuración con el inicializador real del diario, incluyendo tipos, coordenadas, ocupación, líderes, sectores, cartas y objetivos. No se admiten funciones, flags de motor, cartas arbitrarias, reglas sin soporte, fuerzas iniciales reducidas ni salidas puntuables. No omitir o simular una regla especial para hacer pasar un escenario oficial como compatible.
+
+## Excepciones declarativas (juego base)
+
+`specialRules` permite identificar unidades de infantería pesada con la capacidad de Banda Sagrada y definir aumentos permanentes de la mano de mando. No depende del nombre de la batalla. Ejemplo de sintaxis original:
+
+```json
+{
+  "sacredBand": ["elite1"],
+  "handGrowth": [
+    {"id":"turn1","side":"A","trigger":"OWN_TURN_END","threshold":1,"cards":1},
+    {"id":"turn2","side":"A","trigger":"OWN_TURN_END","threshold":2,"cards":1},
+    {"id":"reward","side":"B","trigger":"CASUALTY_BANNERS","threshold":3,"cards":2}
+  ]
+}
+```
+
+El campo `sacredBand` contiene identificadores de unidades de infantería pesada presentes al inicio. Suma aciertos por símbolo de líder en cuerpo a cuerpo aunque no haya líder próximo y permite ignorar una bandera adicional. El rasgo se muestra en el tablero y persiste hasta la eliminación. No se aplica al fuego a distancia. Para el segundo caso, OWN_TURN_END cuenta turnos propios terminados y roba las cartas extra tras el robo ordinario; CASUALTY_BANNERS cuenta medallas por bajas de unidades o líderes y concede la recompensa al confirmar la resolución que alcanza el umbral. No incluye medallas territoriales. No se roba si la partida ya terminó. Cada recompensa se registra una sola vez. Los eventos públicos solo revelan la cantidad, nunca la identidad de las cartas nuevas. Se conserva el máximo de 20 cartas por bando y se reserva al menos una carta fuera de las manos. Las partidas anteriores no adquieren excepciones retroactivamente.
+
+Fuentes de requisitos: [Crimissos](https://www.commandsandcolors.net/ancients/scenario-list/sicilian-wars-600-265-bc/002-crimissos-river-341-bc.html), [Lago Trasimeno](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/006-lake-trasimenus-217-bc.html), [Beneventum II](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/009-2nd-beneventum-214-bc.html). Pendientes para Trasimeno: tipos específicos de lago y colina escarpada; para Trebbia: reserva fuera del tablero y entrada autorizada por carta de liderazgo. No se certifica una batalla solo por disponer de una excepción.
 
 ## Tablero físico: geometría versionada
 
@@ -55,16 +75,16 @@ Fuente: [índice de escenarios básicos](https://www.commandsandcolors.net/ancie
 | N.º | Batalla | Estado |
 |---|---|---|
 | 001 | Akragas (406 a. C.) | Primer escenario para importación local: sin terreno ni reglas especiales, Siracusa comienza con 6 cartas, Cartago 5, objetivo 5 medallas; geometría habilitada, despliegue local pendiente de validación integral |
-| 002 | Crimissos River (341 a. C.) | Pendiente |
-| 003 | Bagradas (253 a. C.) | Pendiente |
-| 004 | Ticinus River (218 a. C.) | Pendiente |
-| 005 | Trebbia (218 a. C.) | Pendiente |
-| 006 | Lake Trasimenus (217 a. C.) | Pendiente |
+| 002 | Crimissos River (341 a. C.) | Banda Sagrada y vados implementados; falta preparar y verificar despliegue |
+| 003 | Bagradas (253 a. C.) | Preparar despliegue; verificar elefantes |
+| 004 | Ticinus River (218 a. C.) | Río infranqueable disponible; preparar despliegue |
+| 005 | Trebbia (218 a. C.) | Falta emboscada y entrada de reservas |
+| 006 | Lake Trasimenus (217 a. C.) | Crecimiento de mano implementado; falta terreno específico y despliegue |
 | 007 | Cannae (216 a. C.) | Pendiente |
 | 008 | Dertosa (215 a. C.) | Pendiente |
-| 009 | 2nd Beneventum (214 a. C.) | Pendiente; incluye cambio de tamaño de mano al alcanzar una puntuación |
+| 009 | 2nd Beneventum (214 a. C.) | Crecimiento por medallas y río infranqueable implementados; falta despliegue |
 | 010 | Castulo (211 a. C.) | Pendiente |
-| 011 | Baecula (208 a. C.) | Pendiente |
+| 011 | Baecula (208 a. C.) | Objetivos CAPTURE disponibles; falta despliegue |
 | 012 | Metaurus (207 a. C.) | Pendiente |
 | 013 | Ilipa (206 a. C.) | Pendiente |
 | 014 | Great Plains (203 a. C.) | Pendiente |
