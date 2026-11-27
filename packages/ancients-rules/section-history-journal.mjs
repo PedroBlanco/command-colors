@@ -107,8 +107,12 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
 // Optional public metadata is persisted in the initial snapshot, not resolved
 // against a mutable catalog during replay. Older journals have no scenario field.
 function validScenarioMetadata(s){
-  return isRecord(s)&&Object.keys(s).length===3&&validId(s.id)&&validId(s.deckId)&&
-    typeof s.title==='string'&&s.title.trim()===s.title&&s.title.length>0&&s.title.length<=120;
+  const short=(x,n)=>typeof x==='string'&&x.trim()===x&&x.length>0&&x.length<=n;
+  return isRecord(s)&&validId(s.id)&&validId(s.deckId)&&short(s.title,120)&&
+    (Object.keys(s).length===3||
+     (Object.keys(s).length===5&&isRecord(s.provenance)&&Object.keys(s.provenance).length===2&&
+      ['OFFICIAL','COMMUNITY','ORIGINAL'].includes(s.provenance.kind)&&short(s.provenance.source,500)&&
+      isRecord(s.factions)&&Object.keys(s.factions).length===2&&SIDES.every(side=>short(s.factions[side],80))));
 }
 
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
