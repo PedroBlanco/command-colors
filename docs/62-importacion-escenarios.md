@@ -27,7 +27,7 @@ Ejemplo completo: [ford-example-v1.json](../scenarios/examples/ford-example-v1.j
 | Campo | Formato |
 |---|---|
 | schemaVersion | 1 |
-| geometry | LAB_ODD_Q_13X9 (actual); OFFICIAL_ODD_R_113 se rechaza hasta completar el soporte |
+| geometry | LAB_ODD_Q_13X9 (diarios antiguos); OFFICIAL_ODD_R_113 (tablero físico, filas alternas) |
 | id | identificador único versionado en minúsculas, p. ej. my-battle-v1, máximo 64 caracteres |
 | title | nombre, hasta 120 caracteres |
 | deckId | ancients-base-2009 |
@@ -39,14 +39,14 @@ Ejemplo completo: [ford-example-v1.json](../scenarios/examples/ford-example-v1.j
 | units | lista de objetos id, side, col, row, type; al menos una unidad por bando |
 | leaders | lista de objetos id, side, col, row |
 | terrain | lista de objetos col, row, kind; RAMPART admite la orientación validada por el motor |
-| sectorCells | mapa de las 117 coordenadas col,row (base cero) a uno o dos sectores adyacentes LEFT, CENTER, RIGHT |
+| sectorCells | mapa de las 117 o 113 coordenadas col,row (base cero), según geometry, a uno o dos sectores adyacentes LEFT, CENTER, RIGHT; para geometría oficial usar officialSectorCells() |
 | objectives | lista opcional de objetos id, side, mode, cells, minUnits, banners; omitir si no hay objetivos especiales |
 
 Solo se admiten campos conocidos. Se comprueba la configuración con el inicializador real del diario, incluyendo tipos, coordenadas, ocupación, líderes, sectores, cartas y objetivos. No se admiten funciones, flags de motor, cartas arbitrarias, reglas sin soporte, fuerzas iniciales reducidas ni salidas puntuables. No omitir o simular una regla especial para hacer pasar un escenario oficial como compatible.
 
-## Tablero físico: bloqueo detectado
+## Tablero físico: geometría versionada
 
-La página 2 del [libro oficial de escenarios de GMT (2006)](https://www.gmtgames.com/cca/CCScenarioBook0906.pdf) muestra el tablero real: nueve filas alternas de 13 y 12 celdas, 113 hexágonos, orientación de filas desplazadas. El laboratorio usa odd-q (columnas desplazadas), 13 × 9 = 117 celdas. La diferencia afecta a vecinos, distancias, LOS, retiradas, posiciones de borde, sectores y representación. No basta con copiar las coordenadas del mapa. Debe incorporarse una geometría oficial versionada, sin reinterpretar los diarios anteriores. El importador falla explícitamente con UNSUPPORTED_SCENARIO_GEOMETRY.
+La página 2 del [libro oficial de escenarios de GMT (2006)](https://www.gmtgames.com/cca/CCScenarioBook0906.pdf) muestra el tablero real: nueve filas alternas de 13 y 12 celdas, 113 hexágonos, orientación de filas desplazadas. El laboratorio usa odd-q (columnas desplazadas), 13 × 9 = 117 celdas. La diferencia afecta a vecinos, distancias, LOS, retiradas, posiciones de borde, sectores y representación. No basta con copiar las coordenadas del mapa. Se ha añadido la geometría versionada OFFICIAL_ODD_R_113 y propagado por el diario, movimiento, combate, retirada, LOS, sectores y SVG. Los diarios anteriores siguen usando odd-q. Se rechazan geometrías desconocidas y documentos marcados OFFICIAL con topología antigua; la configuración debe incluir el mapa de sectores exacto. En filas pares (base cero), los hexágonos de columnas 4 y 8 pertenecen a dos sectores. En filas impares, las fronteras coinciden con aristas, de modo que las columnas 0–3 son LEFT, 4–7 CENTER, 8–11 RIGHT. Fuente: página 2 del [libro de escenarios de GMT, 2.ª edición](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-201.pdf). Falta regresión nativa y validación de una partida oficial completa.
 
 ## Inventario oficial base (pendiente de importación exacta)
 
@@ -54,7 +54,7 @@ Fuente: [índice de escenarios básicos](https://www.commandsandcolors.net/ancie
 
 | N.º | Batalla | Estado |
 |---|---|---|
-| 001 | Akragas (406 a. C.) | Primer objetivo: sin terreno ni reglas especiales, Siracusa comienza con 6 cartas, Cartago 5, objetivo 5 medallas |
+| 001 | Akragas (406 a. C.) | Primer escenario para importación local: sin terreno ni reglas especiales, Siracusa comienza con 6 cartas, Cartago 5, objetivo 5 medallas; geometría habilitada, despliegue local pendiente de validación integral |
 | 002 | Crimissos River (341 a. C.) | Pendiente |
 | 003 | Bagradas (253 a. C.) | Pendiente |
 | 004 | Ticinus River (218 a. C.) | Pendiente |
@@ -70,4 +70,4 @@ Fuente: [índice de escenarios básicos](https://www.commandsandcolors.net/ancie
 | 014 | Great Plains (203 a. C.) | Pendiente |
 | 015 | Zama (202 a. C.) | Pendiente |
 
-Orden de trabajo: corregir geometría y sectores; preparar Akragas a partir de una copia local legítima; comprobar despliegue y reglas; importar el resto de escenarios base según sus dependencias. Más adelante, expansiones y escenarios comunitarios con el mismo formato y filtros de catálogo. Un importador directo de formatos de terceros (p. ej. Vassal) será un adaptador separado, nunca un ejecutor de reglas arbitrarias.
+Orden de trabajo: geometría y sectores implementados; preparar Akragas a partir de una copia local legítima, validar despliegue y partida completa; importar el resto de escenarios base según sus dependencias. Más adelante, expansiones y escenarios comunitarios con el mismo formato y filtros de catálogo. Un importador directo de formatos de terceros (p. ej. Vassal) será un adaptador separado, nunca un ejecutor de reglas arbitrarias.
