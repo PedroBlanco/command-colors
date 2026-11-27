@@ -42,7 +42,10 @@ export function projectScenarioObjectives(state){
 }
 export function scenarioObjectiveBanners(state){
   const banners={A:0,B:0};
-  for(const o of projectScenarioObjectives(state))if(o.active)banners[o.side]+=o.banners;
+  const config=state.victoryObjectives;
+  if(config)for(const o of config.rules){
+    if(config.claimed.includes(o.id)||(o.mode!=='START_TURN_CAPTURE'&&occupied(state,o)>=o.minUnits))banners[o.side]+=o.banners;
+  }
   return banners;
 }
 export function claimScenarioObjectives(state,startTurn=false){
