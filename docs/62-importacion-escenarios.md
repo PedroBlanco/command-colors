@@ -41,7 +41,7 @@ Ejemplo completo: [ford-example-v1.json](../scenarios/examples/ford-example-v1.j
 | terrain | lista de objetos col, row, kind; RAMPART admite la orientación validada por el motor |
 | sectorCells | mapa de las 117 o 113 coordenadas col,row (base cero), según geometry, a uno o dos sectores adyacentes LEFT, CENTER, RIGHT; para geometría oficial usar officialSectorCells() |
 | objectives | lista opcional de objetos id, side, mode, cells, minUnits, banners; omitir si no hay objetivos especiales |
-| specialRules | objeto opcional con listas sacredBand y handGrowth, y leaderLoss opcional; solo excepciones implementadas |
+| specialRules | objeto opcional con listas sacredBand y handGrowth, y campos opcionales leaderLoss, unitExit y reserve; solo excepciones implementadas |
 
 Solo se admiten campos conocidos. Se comprueba la configuración con el inicializador real del diario, incluyendo tipos, coordenadas, ocupación, líderes, sectores, cartas y objetivos. No se admiten funciones, flags de motor, cartas arbitrarias, reglas sin soporte, fuerzas iniciales reducidas ni salidas puntuables. No omitir o simular una regla especial para hacer pasar un escenario oficial como compatible.
 
@@ -62,11 +62,18 @@ Solo se admiten campos conocidos. Se comprueba la configuración con el iniciali
 
 El campo `sacredBand` contiene identificadores de unidades de infantería pesada presentes al inicio. Suma aciertos por símbolo de líder en cuerpo a cuerpo aunque no haya líder próximo y permite ignorar una bandera adicional. El rasgo se muestra en el tablero y persiste hasta la eliminación. No se aplica al fuego a distancia. Para el segundo caso, OWN_TURN_END cuenta turnos propios terminados y roba las cartas extra tras el robo ordinario; CASUALTY_BANNERS cuenta medallas por bajas de unidades o líderes y concede la recompensa al confirmar la resolución que alcanza el umbral. No incluye medallas territoriales. No se roba si la partida ya terminó. Cada recompensa se registra una sola vez. Los eventos públicos solo revelan la cantidad, nunca la identidad de las cartas nuevas. Se conserva el máximo de 20 cartas por bando y se reserva al menos una carta fuera de las manos. Las partidas anteriores no adquieren excepciones retroactivamente.
 
-Fuentes de requisitos: [Crimissos](https://www.commandsandcolors.net/ancients/scenario-list/sicilian-wars-600-265-bc/002-crimissos-river-341-bc.html), [Lago Trasimeno](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/006-lake-trasimenus-217-bc.html), [Beneventum II](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/009-2nd-beneventum-214-bc.html). Para Trasimeno se admiten LAKE y STEEP_HILL: ambos infranqueables; el lago no bloquea la línea de visión, conforme a la regla de costa; la colina escarpada la bloquea (interpretación conservadora de elevación, a validar). Para Trebbia sigue pendiente la reserva fuera del tablero y la entrada autorizada por carta de liderazgo. No se certifica una batalla solo por disponer de una excepción.
+Fuentes de requisitos: [Crimissos](https://www.commandsandcolors.net/ancients/scenario-list/sicilian-wars-600-265-bc/002-crimissos-river-341-bc.html), [Lago Trasimeno](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/006-lake-trasimenus-217-bc.html), [Beneventum II](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/009-2nd-beneventum-214-bc.html). Para Trasimeno se admiten LAKE y STEEP_HILL: ambos infranqueables; el lago no bloquea la línea de visión, conforme a la regla de costa; la colina escarpada la bloquea (interpretación conservadora de elevación, a validar). Para Trebbia se admite el mecanismo de reserva descrito más abajo. No se certifica una batalla solo por disponer de una excepción.
 
 ### Victoria por pérdida de un líder designado
 
-El objeto `specialRules` admite adicionalmente `leaderLoss`, una lista de objetos `{leaderId,winner,mode}`. El líder debe estar presente al comenzar la partida y pertenecer al adversario del vencedor configurado. ELIMINATED exige una baja registrada; REMOVED considera también la evasión fuera del tablero. Al cumplirse la condición, termina inmediatamente la partida con motivo DESIGNATED_LEADER_LOST, sin modificar artificialmente las medallas. Si dos condiciones decisivas se cumplen simultáneamente, el resultado es empate. La interfaz indica el motivo de victoria. La ausencia de este campo conserva las reglas antiguas. Fuente: [Castulo](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/010-castulo-211-bc.html), que establece victoria cartaginesa si se pierde Escipión. Interpretar "perdido" como REMOVED (también evacuación sin baja) es una decisión provisional; contrastar con una aclaración específica. No se ha habilitado aún el escenario: falta el mecanismo de salida puntuable de unidades desde el borde enemigo en centro o derecha romana.
+El objeto `specialRules` admite adicionalmente `leaderLoss`, una lista de objetos `{leaderId,winner,mode}`. El líder debe estar presente al comenzar la partida y pertenecer al adversario del vencedor configurado. ELIMINATED exige una baja registrada; REMOVED considera también la evasión fuera del tablero. Al cumplirse la condición, termina inmediatamente la partida con motivo DESIGNATED_LEADER_LOST, sin modificar artificialmente las medallas. Si dos condiciones decisivas se cumplen simultáneamente, el resultado es empate. La interfaz indica el motivo de victoria. La ausencia de este campo conserva las reglas antiguas. Fuente: [Castulo](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/010-castulo-211-bc.html), que establece victoria cartaginesa si se pierde Escipión. Interpretar "perdido" como REMOVED (también evacuación sin baja) es una decisión provisional; contrastar con una aclaración específica. Se ha habilitado el mecanismo de salida puntuable de unidades desde el borde enemigo en centro o derecha romana.
+
+### Salida ordenada y reservas fuera del tablero
+
+- `specialRules.unitExit`: objeto `{side,sectors,banners}`. Los sectores son relativos al jugador. La unidad debe recibir orden, no haber agotado su movimiento y disponer de un paso para salir del borde enemigo; la ruta interna se valida antes de la salida. Se admite ruta vacía si ya está en el borde y puede moverse. El servidor elimina la unidad del tablero sin registrarla como baja del enemigo, suma las medallas configuradas y comprueba la victoria inmediatamente. En el navegador se selecciona la unidad, se traza la ruta hasta el borde y se pulsa «Salir por borde enemigo». El líder adjunto sale con la unidad, sin medalla adicional; si es el líder decisivo, se aplica leaderLoss. Esta interpretación y los casos de salida durante un avance de ímpetu quedan pendientes de contraste reglamentario.
+- `specialRules.reserve`: objeto `{side,units:[{id,type},...],leaderId}`. En la versión actual admite exactamente una caballería media, dos guerreros y un líder, como en Trebbia. Las piezas no están inicialmente en el tablero. Tras el primer turno propio, al jugar una carta de liderazgo real puede sustituirse la orden habitual por desplegar las tres unidades en hexágonos libres distintos del borde enemigo del sector de la carta (o del sector elegido con Leadership Any Section). El líder acompaña a la unidad elegida. Se considera consumido un paso de movimiento; la caballería puede continuar hasta dos hexágonos y los guerreros uno si satisfacen la obligación de combate. Las restricciones del terreno siguen vigentes. Las retiradas de los refuerzos siguen la dirección del bando de origen. Se conserva el registro de la entrada para impedir repetirla. La interfaz presenta el sector, las columnas posibles y la elección de líder. No se admiten reservas arbitrarias ni se interpretan scripts del escenario.
+
+Los comandos EXIT_SCENARIO_UNIT y DEPLOY_SCENARIO_RESERVE son transacciones del diario experimental, sujetos a actor autenticado, revisión, idempotencia y validaciones del servidor. No hay nuevas rutas HTTP. Fuentes: [Castulo](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/010-castulo-211-bc.html) y [Trebbia](https://www.commandsandcolors.net/ancients/scenario-list/second-punic-war-218-202-bc/005-trebbia-218-bc.html); diagramas GMT, parte 2 p. 5 y parte 1 p. 6.
 
 ## Tablero físico: geometría versionada
 
@@ -74,7 +81,7 @@ La página 2 del [libro oficial de escenarios de GMT (2006)](https://www.gmtgame
 
 ## Inventario oficial base
 
-Fuentes: [índice de escenarios básicos](https://www.commandsandcolors.net/ancients/the-game/main/base-game-official-scenarios.html) y libro de GMT, 2.ª edición, [parte 1](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-201.pdf) [parte 2](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-202.pdf) y [parte 3](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-203.pdf). Los despliegues oficiales se preparan como datos locales del propietario, sin publicar mapas, ilustraciones ni textos de escenarios en GitHub. El ZIP actualizado de entrega al propietario contiene trece documentos JSON v1; no se instala automáticamente en el servidor.
+Fuentes: [índice de escenarios básicos](https://www.commandsandcolors.net/ancients/the-game/main/base-game-official-scenarios.html) y libro de GMT, 2.ª edición, [parte 1](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-201.pdf) [parte 2](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-202.pdf) y [parte 3](https://www.gmtgames.com/living_rules/CC%20Scenario2ndEd-203.pdf). Los despliegues oficiales se preparan como datos locales del propietario, sin publicar mapas, ilustraciones ni textos de escenarios en GitHub. El ZIP actualizado de entrega al propietario contiene quince documentos JSON v1; no se instala automáticamente en el servidor.
 
 | N.º | Batalla | Estado |
 |---|---|---|
@@ -82,12 +89,12 @@ Fuentes: [índice de escenarios básicos](https://www.commandsandcolors.net/anci
 | 002 | Crimissos River (341 a. C.) | JSON local, 22/3, cinco vados y Banda Sagrada, inicialización correcta |
 | 003 | Bagradas (253 a. C.) | JSON local, 37/5, incluye elefantes, inicialización correcta |
 | 004 | Ticinus River (218 a. C.) | JSON local, 24/4, río infranqueable, inicialización correcta |
-| 005 | Trebbia (218 a. C.) | Falta emboscada y entrada de reservas |
+| 005 | Trebbia (218 a. C.) | JSON local, 30/3 iniciales, tres unidades y Magón en reserva, siete vados, inicialización correcta |
 | 006 | Lake Trasimenus (217 a. C.) | JSON local, 35/5, lago y colinas escarpadas, mano romana 2→3→4, inicialización correcta |
 | 007 | Cannae (216 a. C.) | JSON local, 32/6, inicialización correcta |
 | 008 | Dertosa (215 a. C.) | JSON local, 29/3, inicialización correcta |
 | 009 | 2nd Beneventum (214 a. C.) | JSON local, 29/4, mano romana +2 al alcanzar tres medallas, inicialización correcta |
-| 010 | Castulo (211 a. C.) | Victoria inmediata por líder designado disponible; falta salida puntuable por sectores |
+| 010 | Castulo (211 a. C.) | JSON local, 34/4, ocho bosques, salida puntuable y victoria por pérdida de Escipión, inicialización correcta |
 | 011 | Baecula (208 a. C.) | JSON local, 31/4, tres campamentos CAPTURE, inicialización correcta |
 | 012 | Metaurus (207 a. C.) | JSON local, 32/4, dos cursos vadeables, colinas y terreno accidentado, inicialización correcta |
 | 013 | Ilipa (206 a. C.) | JSON local, 37/3, inicialización correcta |
@@ -119,4 +126,11 @@ great-plains-v1    cd35cdb3
 zama-v1           cf40c5b0
 ```
 
-Próximos pasos: salida puntuable de unidades de Castulo; reservas de Trebbia; validar nativamente el conjunto de trece (más dos cuando estén listos), SQLite/HTTP y navegador. Escenarios comunitarios y expansiones posteriores emplearán el mismo formato.
+Los dos últimos documentos se han inicializado correctamente y se incluyen con los trece anteriores, conservados byte a byte, en `ccw-ancients-escenarios-base-15.zip`. Huellas FNV-1a del JSON completo canónico con claves ordenadas:
+
+```text
+trebbia-v1  71f121b4
+castulo-v1  1ea17a0c
+```
+
+SHA-256 del ZIP: `2c0a5b950da6b5b8726b477e1c32d1770ca74c07364496ed542051baa95c085b`. La entrega se realiza fuera de GitHub. Todos los escenarios están preparados para importar; todavía no equivalen a escenarios certificados ni instalados. Pendientes: comprobar la inicialización de los quince archivos reales conjuntamente mediante Node/SQLite/HTTP, cotejar despliegues con el ejemplar físico, probar combinaciones de reglas y navegador, consolidar la rama. Escenarios comunitarios y expansiones posteriores emplearán el mismo formato.
