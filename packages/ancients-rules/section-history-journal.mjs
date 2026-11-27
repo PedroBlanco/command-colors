@@ -103,10 +103,18 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
   return true;
 }
 
+// Optional public metadata is persisted in the initial snapshot, not resolved
+// against a mutable catalog during replay. Older journals have no scenario field.
+function validScenarioMetadata(s){
+  return isRecord(s)&&Object.keys(s).length===3&&validId(s.id)&&validId(s.deckId)&&
+    typeof s.title==='string'&&s.title.trim()===s.title&&s.title.length>0&&s.title.length<=120;
+}
+
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
-export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,
+export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,scenario,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
   movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false,enableDeckRecycleLab=false,enableLongHistoryLab=false,enableSelectionCardsLab=false,enableGroupCardsLab=false,enableAttackCardsLab=false,enableLeadershipCardsLab=false,enableFireCardsLab=false,enableMoveFireMoveLab=false,enableRallyLab=false,enableSpartacusLab=false,enableCounterAttackLab=false,enableFirstStrikeLab=false}={}) {
+  if(scenario!==undefined&&!validScenarioMetadata(scenario))fail('INVALID_SECTION_SCENARIO_METADATA');
   if(!isCards(cardInstances,enableFirstStrikeLab===true?31:enableCounterAttackLab===true?30:enableSpartacusLab===true?29:enableRallyLab===true?28:enableMoveFireMoveLab===true?27:enableFireCardsLab===true?26:enableLeadershipCardsLab===true?25:enableAttackCardsLab===true?24:enableGroupCardsLab===true?23:enableSelectionCardsLab===true?22:0)||cardInstances.length<2||!same(cardInstances.map(c=>c.instanceId))||
     !isRecord(handSizes)||!SIDES.every(s=>Number.isSafeInteger(handSizes[s])&&
       handSizes[s]>=1&&handSizes[s]<=20)||handSizes.A+handSizes.B>cardInstances.length||
@@ -166,6 +174,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     drawPile,hands,discardPile:[],activeCard:null,
     handAtPlay:null,cardPlay:null,orderSnapshot:null,
     board:copy(board),sectorCells:copy(sectorCells),
+    ...(scenario!==undefined?{scenario:copy(scenario)}:{}),
     ...(sectorPerspective==='PLAYER_RELATIVE'?{sectorPerspective}: {})};
   if(movementUnitTypes!==undefined){
     if(Array.isArray(movementTerrain)&&movementTerrain.some(t=>t?.kind==='MARSH')&&(!enableFirstStrikeLab||!enableDiceLab))fail('MARSH_REQUIRES_FULL_COMBAT_LAB');
@@ -520,6 +529,7 @@ export function assertSectionHistoryLab(s){
      !SIDES.every(side=>isCards(s.hands[side],s.diceLab?.version))||
      !(s.activeCard===null||isCards([s.activeCard],s.diceLab?.version))||
      !isRecord(s.board)||!isRecord(s.sectorCells)||
+     (Object.hasOwn(s,'scenario')&&!validScenarioMetadata(s.scenario))||
      (Object.hasOwn(s,'sectorPerspective')&&s.sectorPerspective!=='PLAYER_RELATIVE'))
      fail('INVALID_SECTION_HISTORY_STATE');
   const all=[...s.drawPile,...s.discardPile,...s.hands.A,...s.hands.B,
@@ -1108,6 +1118,7 @@ export function projectSectionHistoryLab(state,side){
   const other=side==='A'?'B':'A';
   return Object.freeze({revision:state.revision,you:side,turn:state.turn,
     phase:state.phase, yourHand:copy(state.hands[side]),
+    ...(state.scenario?{scenario:copy(state.scenario)}:{}),
     ...(state.revision>=sectionHistoryCommandLimit(state)?{historyLimitReached:true}:{}),
     opponentCardCount:state.hands[other].length,
     drawPileCount:state.drawPile.length,
