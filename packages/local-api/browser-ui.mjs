@@ -209,6 +209,9 @@ function renderAncients() {
       ?cached.terrain.map(x=>`${terrainNames[x.kind]??'desconocido'} (${x.col+1},${x.row+1})`).join('; ')
       :'solo hexágonos despejados')+'.';
   if(cached.diceLab?.marshLast?.length)el('ancients-terrain-info').textContent+=' Última comprobación de marisma: '+cached.diceLab.marshLast.map(c=>(c.unitId??c.leaderId)+' ('+(c.cell.col+1)+','+(c.cell.row+1)+'): '+c.face+(c.blocksLost?' · un bloque perdido':'')+(c.unitEliminated?' · unidad eliminada':'')+(c.leaderFaces?.length?' · líder: '+c.leaderFaces.join(', '):'')+(c.leaderEliminated?' · líder eliminado':'')).join('; ')+'.';
+  const objectives=cached.victoryObjectives??[];
+  const modes={OCCUPY:'ocupación temporal',CAPTURE:'captura permanente',START_TURN_CAPTURE:'captura al inicio del turno'};
+  el('ancients-objectives').textContent=objectives.length?'Objetivos: '+objectives.map(o=>`${o.side}: ${o.cells.map(c=>`(${c.col+1},${c.row+1})`).join(', ')} · ${o.banners} med. · ${modes[o.mode]} · ${o.claimed?'conquistado':o.active?'activo':`${o.occupied}/${o.minUnits} unidades`}`).join('; '):'';
   const selection=cached.selectionCard;
   const clash=(cached.effectiveCardInPlay??cached.cardInPlay)==='CLASH_OF_SHIELDS',darken=!!cached.diceLab?.darken,noMove=clash||darken;
   const cardNames={ORDER_LIGHT_TROOPS:'Orden a tropas ligeras',ORDER_MEDIUM_TROOPS:'Orden a tropas medias',ORDER_HEAVY_TROOPS:'Orden a tropas pesadas',ORDER_MOUNTED_TROOPS:'Orden a tropas montadas',COORDINATED_ATTACK:'Ataque coordinado',OUT_FLANKED:'Ataque por los flancos',LINE_COMMAND:'Orden en línea',DOUBLE_TIME:'Paso acelerado',MOUNTED_CHARGE:'Carga de tropas montadas',CLASH_OF_SHIELDS:'Choque de escudos',LEADERSHIP_ANY_SECTION:'Liderazgo en cualquier sección',INSPIRED_LEFT_LEADERSHIP:'Liderazgo inspirado izquierdo',INSPIRED_CENTER_LEADERSHIP:'Liderazgo inspirado central',INSPIRED_RIGHT_LEADERSHIP:'Liderazgo inspirado derecho',DARKEN_THE_SKY:'Oscurecer el cielo',MOVE_FIRE_MOVE:'Mover, disparar y mover',RALLY:'Reagrupar',I_AM_SPARTACUS:'Yo soy Espartaco',COUNTER_ATTACK:'Contraataque',FIRST_STRIKE:'Primer golpe'};
@@ -511,7 +514,8 @@ function renderAncients() {
     renderMovementBoard(svg,cached.board??[],ancientsDraft,selectAncientsHex,cached.you,{
       terrain:Array.isArray(cached.terrain)?cached.terrain:[],
       selectableUnitIds:selectable,
-      leaders:Array.isArray(cached.leaders)?cached.leaders:[]
+      leaders:Array.isArray(cached.leaders)?cached.leaders:[],
+      objectiveCells:(cached.victoryObjectives??[]).filter(o=>!o.claimed).flatMap(o=>o.cells)
     });
   }
 }
