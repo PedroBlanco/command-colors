@@ -2300,3 +2300,55 @@ test('scenario decisive leader: elimination, evacuation, distinct score and repl
   }
  }
 });
+
+test('scenario exit and ambush: authenticated orders, movement budget, victory and replay',()=>{
+ const setup=()=>{const c=createAncientsScenarioSetup('open-field-v1');
+  c.scenario={id:'final-scenarios-test-v1',title:'Fixture',deckId:'ancients-base-2009',geometry:OFFICIAL_BOARD_GEOMETRY,provenance:{kind:'ORIGINAL',source:'test'},factions:{A:'South',B:'North'}};
+  c.sectorCells=officialSectorCells();c.startingSide='A';c.handSizes={A:4,B:5};
+  c.board={units:[{id:'a1',side:'A',col:5,row:1},{id:'a2',side:'A',col:1,row:0},{id:'b1',side:'B',col:10,row:2}],leaders:[]};
+  c.movementUnitTypes={a1:'MEDIUM_CAVALRY',a2:'HEAVY_INFANTRY',b1:'HEAVY_INFANTRY'};c.movementTerrain=[];
+  return c;};
+ const pick=(c,definition,index)=>{const i=c.cardInstances.findIndex(x=>x.definitionId===definition);[c.cardInstances[i],c.cardInstances[index]]=[c.cardInstances[index],c.cardInstances[i]];};
+ const exercise=(initial,fn)=>{let s=initial;const log=[];
+  const run=(type,fields={},actor=s.turn)=>{const command=cmd(type,s.revision,{actor,...fields}),r=apply(s,command);assert.equal(r.accepted,true,type+': '+r.code);log.push(command);s=r.nextState;return r.publicEvent;};
+  const get=()=>s;const deny=(type,fields,code,actor=s.turn)=>assert.equal(apply(s,cmd(type,s.revision,{actor,...fields})).code,code);
+  fn(run,get,deny);assert.deepEqual(replay(initial,log),s);
+ };
+ const x=setup();x.victoryTargets={A:1,B:5};x.scenarioRules={sacredBand:[],handGrowth:[],unitExit:{side:'A',sectors:['CENTER','RIGHT'],banners:1}};
+ pick(x,'OUT_FLANKED',59);
+ // A2 is on the left; order both via separate sections using a broad card instead.
+ pick(x,'ORDER_MOUNTED_TROOPS',59);
+ exercise(init({...x,randomIndex:n=>n-1}),(run,get,deny)=>{
+  run('PLAY_SECTION_CARD',{cardInstanceId:get().hands.A[0].instanceId});run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});
+  deny('EXIT_SCENARIO_UNIT',{unitId:'a2',path:[]},'INVALID_SCENARIO_EXIT');
+  deny('EXIT_SCENARIO_UNIT',{unitId:'a1',path:[]},'INVALID_SCENARIO_EXIT');
+  deny('EXIT_SCENARIO_UNIT',{unitId:'a1',path:[{col:12,row:0}]},'INVALID_SCENARIO_EXIT');
+  run('EXIT_SCENARIO_UNIT',{unitId:'a1',path:[{col:5,row:0}]});
+  assert.equal(get().diceLab.casualties.length,0);assert.equal(project(get(),'B').diceLab.banners.A,1);assert.equal(project(get(),'B').diceLab.victory.winner,'A');
+ });
+ const y=setup();y.scenarioRules={sacredBand:[],handGrowth:[],reserve:{side:'B',units:[{id:'reserve_c',type:'MEDIUM_CAVALRY'},{id:'reserve_w1',type:'WARRIOR_INFANTRY'},{id:'reserve_w2',type:'WARRIOR_INFANTRY'}],leaderId:'reserve_l'}};
+ pick(y,'ORDER_2_CENTER',59);pick(y,'INSPIRED_LEFT_LEADERSHIP',55);pick(y,'LEADERSHIP_ANY_SECTION',54);
+ exercise(init({...y,randomIndex:n=>n-1}),(run,get,deny)=>{
+  const pass=()=>{const s=get(),card=s.hands[s.turn].find(c=>/^ORDER_[234]_/.test(c.definitionId));assert.ok(card);
+   run('PLAY_SECTION_CARD',{cardInstanceId:card.instanceId});run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});run('END_EXPERIMENTAL_TURN');};
+  pass();
+  run('PLAY_SECTION_CARD',{cardInstanceId:get().hands.B.find(c=>c.definitionId==='INSPIRED_LEFT_LEADERSHIP').instanceId});
+  assert.equal(project(get(),'B').scenarioReserveOptions,undefined);
+  run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});run('END_EXPERIMENTAL_TURN');pass();
+  run('PLAY_SECTION_CARD',{cardInstanceId:get().hands.B.find(c=>c.definitionId==='LEADERSHIP_ANY_SECTION').instanceId});
+  const options=project(get(),'B').scenarioReserveOptions;assert.ok(options);
+  const option=options.options.find(o=>o.section==='CENTER'),placements=options.units.map((u,i)=>({unitId:u.id,col:option.cells[i].col}));
+  const fields={section:'CENTER',placements,leaderUnitId:'reserve_c'};
+  deny('DEPLOY_SCENARIO_RESERVE',{...fields,placements:placements.map(p=>({...p,col:placements[0].col}))},'INVALID_SCENARIO_RESERVE');
+  run('DEPLOY_SCENARIO_RESERVE',fields);
+  assert.equal(get().board.units.length,6);assert.equal(get().combatLab.movement.reserve_c.steps,1);
+  assert.equal(get().scenarioRules.reserve.enteredTurn,1);
+  const col=placements[0].col;
+  deny('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'reserve_c',path:[{col,row:7},{col,row:6},{col,row:5}]},'INVALID_RESERVE_CONTINUATION');
+  run('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'reserve_c',path:[{col,row:7},{col,row:6}]});
+  assert.equal(get().combatLab.movement.reserve_c.steps,3);assert.equal(get().board.leaders.find(l=>l.id==='reserve_l').row,6);
+  assert.equal(project(get(),'B').scenarioReserveMovableIds.includes('reserve_c'),false);
+  deny('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'reserve_c',path:[{col,row:5}]},'UNIT_ALREADY_MOVED');
+  run('FINISH_SECTION_MOVEMENT_LAB');run('END_EXPERIMENTAL_TURN');
+ });
+});
