@@ -5,6 +5,7 @@ import {randomBytes} from 'node:crypto';
 import {createServer} from 'node:http';
 import {openSqliteComposition} from '../packages/sqlite-store/sqlite.mjs';
 import {createAccessGateway} from '../packages/local-api/gateway.mjs';
+import {loadAncientsScenarioDirectory} from './scenario-import.mjs';
 
 const port = Number(process.env.CCW_LAB_PORT || 8788);
 if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
@@ -43,6 +44,10 @@ app.once('error', error => {
 
 app.listen(port, '127.0.0.1', async () => {
   try {
+    const ancientsBrowserLab=process.env.CCW_ANCIENTS_BROWSER_LAB==='1';
+    const scenarioDir=process.env.CCW_ANCIENTS_SCENARIO_DIR;
+    if(scenarioDir&&!ancientsBrowserLab)throw Error('CCW_ANCIENTS_SCENARIO_DIR requiere CCW_ANCIENTS_BROWSER_LAB=1');
+    const ancientsScenarioCatalog=ancientsBrowserLab?loadAncientsScenarioDirectory(scenarioDir):undefined;
     mkdirSync(dirname(file), {recursive: true});
     const isNew = !existsSync(file);
     services = openSqliteComposition({file});
@@ -56,9 +61,9 @@ app.listen(port, '127.0.0.1', async () => {
       }
     }
     if (stopping) return;
-    const ancientsBrowserLab=process.env.CCW_ANCIENTS_BROWSER_LAB==='1';
     gateway = createAccessGateway({...services, browser: {origin, insecureLoopback: true},
-      ancientsBrowserLab});
+      ancientsBrowserLab,ancientsScenarioCatalog});
+    if(ancientsScenarioCatalog)console.log('Escenarios disponibles: '+ancientsScenarioCatalog.list().length);
     // Credentials are shown only after the server has successfully bound its port.
     for (const {handle, password} of temporaryCredentials) {
       console.log(`Cuenta de prueba ${handle}: ${password}`);
