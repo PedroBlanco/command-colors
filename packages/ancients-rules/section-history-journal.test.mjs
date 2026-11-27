@@ -2269,3 +2269,34 @@ test('scenario special rules: Sacred Band, immediate casualty reward, progressiv
  }
  assert.throws(()=>createAncientsScenarioCatalog([{...doc,specialRules:{...doc.specialRules,sacredBand:['b2']}}]),/INVALID_SCENARIO_RULES/);
 });
+
+test('scenario decisive leader: elimination, evacuation, distinct score and replay',()=>{
+ for(const mode of ['ELIMINATED','REMOVED']){
+  for(const hit of [true,false]){
+   const c=createAncientsScenarioSetup('open-field-v1');
+   c.startingSide='A';c.board={units:[{id:'a1',side:'A',col:5,row:1},{id:'b1',side:'B',col:10,row:2}],
+    leaders:[{id:'decisive',side:'B',col:5,row:0}]};c.movementUnitTypes={a1:'HEAVY_INFANTRY',b1:'LIGHT_INFANTRY'};
+   c.victoryTargets={A:5,B:5};c.scenarioRules={sacredBand:[],handGrowth:[],leaderLoss:[{leaderId:'decisive',winner:'A',mode}]};
+   const idx=c.cardInstances.findIndex(x=>x.definitionId==='ORDER_2_CENTER'),last=c.cardInstances.length-1;
+   [c.cardInstances[idx],c.cardInstances[last]]=[c.cardInstances[last],c.cardInstances[idx]];
+   const initial=init({...c,randomIndex:n=>n-1});let s=initial;const log=[];
+   const run=(type,fields={},actor=s.turn)=>{const command=cmd(type,s.revision,{actor,...fields}),r=apply(s,command);assert.equal(r.accepted,true,type+': '+r.code);log.push(command);s=r.nextState;return r.publicEvent;};
+   assert.equal(project(s,'B').scenarioLeaderLoss[0].leaderId,'decisive');
+   run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A[0].instanceId});
+   run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});
+   run('FINISH_SECTION_MOVEMENT_LAB');run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'decisive'});
+   run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:Array(s.combatLab.plan.diceCount).fill(hit?'LEADER':'FLAG')});
+   run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true},'B');
+   if(!hit){
+    const option=project(s,'B').diceLab.leaderEvasionOptions.find(o=>o.exit);assert.ok(option);
+    run('EVADE_SECTION_LEADER_LAB',{path:option.path,exit:true},'B');
+   }
+   const victory=project(s,'A').diceLab.victory;
+   assert.equal(victory.winner,hit||mode==='REMOVED'?'A':null);
+   assert.equal(victory.banners.A,hit?1:0);
+   if(victory.winner){assert.equal(victory.reason,'DESIGNATED_LEADER_LOST');assert.equal(apply(s,cmd('END_EXPERIMENTAL_TURN',s.revision)).code,'MATCH_FINISHED');}
+   assert.deepEqual(replay(initial,log),s);
+   assert.throws(()=>init({...c,scenarioRules:{...c.scenarioRules,leaderLoss:[{leaderId:'unknown',winner:'A',mode}]} }),/INVALID_SCENARIO_RULES/);
+  }
+ }
+});
