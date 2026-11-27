@@ -172,6 +172,12 @@ function renderAncients() {
   el('ancients-details').hidden=!ready;
   el('ancients-start').disabled=!ready||lab||cached?.you!=='A'||
     cached?.revision!==0||Boolean(cached?.phase);
+  const available=Array.isArray(cached?.ancientsScenarios)?cached.ancientsScenarios:[];
+  const scenarioSelect=el('ancients-scenario'),selectedScenario=scenarioSelect.value;
+  scenarioSelect.replaceChildren();
+  for(const entry of available){const option=document.createElement('option');option.value=entry.id;option.textContent=entry.title;scenarioSelect.appendChild(option);}
+  if(available.some(e=>e.id===selectedScenario))scenarioSelect.value=selectedScenario;
+  el('ancients-scenario-label').hidden=el('ancients-start').disabled||!available.length;
   el('ancients-refresh').disabled=!ready;
   el('ancients-controls').hidden=!lab;
   if(!lab){
@@ -195,7 +201,7 @@ function renderAncients() {
   el('ancients-status').textContent=
     finished?`Partida terminada · ${victory.winner==='DRAW'?'Empate':victory.winner===cached.you?'Victoria':'Derrota'} · revisión ${cached.revision}`:
     cached.historyLimitReached?'Límite de comandos del laboratorio alcanzado. Consulta disponible; partida sin resolución.':
-    `Ancients experimental · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
+    `${cached.scenario?.title??'Ancients experimental'} · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
   const terrainNames={FOREST:'bosque',HILL:'colina',
     BROKEN_GROUND:'terreno accidentado',RIVER:'río infranqueable',FORDABLE_RIVER:'río vadeable',SEACOAST:'costa',BRIDGE:'puente',FORTIFIED_CAMP:'campamento fortificado',RAMPART:'empalizada',MARSH:'marisma',BUILDING:'edificio',FORTIFIED_CITY_WALL:'muralla infranqueable'};
   el('ancients-terrain-info').textContent='Terreno del escenario: '+
@@ -805,7 +811,7 @@ async function inspect() {
   subscribeTo(id,lobby.state?.status==='LAB_ONLY'?'ancients':'synthetic');
   el('lobby').textContent=JSON.stringify({status:lobby.status,players:lobby.players},null,2);
   lobbyStatus = lobby.status;
-  cached=lobby.state??null;
+  cached=lobby.state?{...lobby.state,...(Array.isArray(lobby.ancientsScenarios)?{ancientsScenarios:lobby.ancientsScenarios}: {})}:null;
   renderDeck();
   stateText(cached ? (deckSummary(cached) ?? {tuBando:cached.you,turno:cached.turn,revision:cached.revision,
     tuMano:cached.yourHand,cartasDelRival:cached.opponentCardCount,unidadesPublicas:cached.board})
@@ -964,8 +970,9 @@ action('ancients-start',async()=>{
   const id=cached?.matchId,ticket=privateScope.capture();
   if(!id||cached.you!=='A'||cached.revision!==0||cached.phase)
     throw Error('INICIALIZACION_NO_DISPONIBLE');
+  const scenarioId=el('ancients-scenario').value;
   if(!await confirmCurrentSession(ticket,id))return false;
-  await api('POST',`/api/matches/${id}/ancients-lab/initialize`,{});
+  await api('POST',`/api/matches/${id}/ancients-lab/initialize`,scenarioId&&scenarioId!=='demo-v1'?{scenarioId}:{});
   if(!privateScope.isCurrent(ticket,id))return false;
   await inspect();
   return privateScope.isCurrent(ticket,id);
