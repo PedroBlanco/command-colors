@@ -105,7 +105,7 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
   }
   if(geometry.id===OFFICIAL_BOARD_GEOMETRY){
     const expected=officialSectorCells();
-    if(Object.entries(expected).some(([k,v])=>v.length!==sectorCells[k].length||v.some(x=>!sectorCells[k].includes(x))))return false;
+    if(Object.entries(expected).some(([k,v])=>JSON.stringify(v)!==JSON.stringify(sectorCells[k])))return false;
   }
   return true;
 }
@@ -553,7 +553,7 @@ export function assertSectionHistoryLab(s){
      (Object.hasOwn(s,'scenario')&&!validScenarioMetadata(s.scenario))||
      (Object.hasOwn(s,'sectorPerspective')&&s.sectorPerspective!=='PLAYER_RELATIVE'))
      fail('INVALID_SECTION_HISTORY_STATE');
-  if(s.scenario?.geometry===OFFICIAL_BOARD_GEOMETRY&&(!s.footLab||s.diceLab?.version<31||s.sectorPerspective!=='PLAYER_RELATIVE'))fail('OFFICIAL_GEOMETRY_REQUIRES_FULL_LAB');
+  if(s.scenario?.geometry===OFFICIAL_BOARD_GEOMETRY&&(!s.footLab||!s.diceLab||s.diceLab.version<31||s.sectorPerspective!=='PLAYER_RELATIVE'))fail('OFFICIAL_GEOMETRY_REQUIRES_FULL_LAB');
   const all=[...s.drawPile,...s.discardPile,...s.hands.A,...s.hands.B,
     ...(s.activeCard?[s.activeCard]:[])];
   if(all.length!==s.totalCards||!same(all.map(c=>c.instanceId)))fail('SECTION_CARD_CONSERVATION_FAILED');
