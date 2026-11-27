@@ -19,7 +19,7 @@ export function initializeScenarioRules(config,state,handSizes){
     turns:{A:0,B:0},granted:[],...(Object.hasOwn(config,'leaderLoss')?{leaderLoss:structuredClone(config.leaderLoss)}:{}),
     ...(Object.hasOwn(config,'unitExit')?{unitExit:{rule:structuredClone(config.unitExit),exited:[]}}:{}),
     ...(Object.hasOwn(config,'reserve')?{reserve:{rule:structuredClone(config.reserve),enteredTurn:null}}:{})};
-  if(!validScenarioRules(rules,state)||rules.reserve&&(!validReserveConfig(rules.reserve.rule)||[...rules.reserve.rule.units.map(u=>u.id),rules.reserve.rule.leaderId].some(id=>[...state.board.units,...state.board.leaders].some(p=>p.id===id)))||rules.leaderLoss?.some(r=>!state.board.leaders.some(l=>l.id===r.leaderId&&l.side!==r.winner))||rules.sacredBand.some(id=>state.footLab.unitTypes[id]!=='HEAVY_INFANTRY')||
+  if(!validScenarioRules(rules,state)||rules.reserve&&(!validReserveConfig(rules.reserve.rule)||state.board.units.length+state.board.leaders.length+4>Object.keys(state.sectorCells).length||[...rules.reserve.rule.units.map(u=>u.id),rules.reserve.rule.leaderId].some(id=>[...state.board.units,...state.board.leaders].some(p=>p.id===id)))||rules.leaderLoss?.some(r=>!state.board.leaders.some(l=>l.id===r.leaderId&&l.side!==r.winner))||rules.sacredBand.some(id=>state.footLab.unitTypes[id]!=='HEAVY_INFANTRY')||
      SIDES.some(side=>handSizes[side]+rules.handGrowth.filter(r=>r.side===side).reduce((n,r)=>n+r.cards,0)>20)||
      handSizes.A+handSizes.B+rules.handGrowth.reduce((n,r)=>n+r.cards,0)>=state.totalCards)
     throw Error('INVALID_SCENARIO_RULES');
@@ -33,7 +33,7 @@ export function validScenarioRules(rules,state){
      !Array.isArray(rules.sacredBand)||rules.sacredBand.length>20||
      new Set(rules.sacredBand).size!==rules.sacredBand.length||
      !rules.sacredBand.every(id=>idOK(id)&&(state.footLab.unitTypes[id]==='HEAVY_INFANTRY'||
-       state.diceLab.casualties.some(c=>c.id===id&&c.kind==='UNIT')))||
+       state.diceLab.casualties.some(c=>c.id===id&&c.kind==='UNIT')||rules.unitExit?.exited?.includes(id)))||
      !Array.isArray(rules.handGrowth)||rules.handGrowth.length>20||
      !exact(rules.turns,SIDES)||!SIDES.every(side=>Number.isSafeInteger(rules.turns[side])&&rules.turns[side]>=0&&rules.turns[side]<=state.revision)||
      !Array.isArray(rules.granted)||new Set(rules.granted).size!==rules.granted.length)return false;
