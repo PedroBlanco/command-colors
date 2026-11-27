@@ -988,7 +988,8 @@ export function applySectionHistoryLabCommand(state,command={}){
       if(attached)Object.assign(attached,path.at(-1));
     }
     next.diceLab.last.momentum={hex:copy(last.momentum.hex),pending:false,path,
-      bonusEligible:option?.bonusEligible??false};
+      bonusEligible:option?.bonusEligible??false,
+      ...(option&&(isBuildingHex(state.footLab.terrain??[],from)||isBuildingHex(state.footLab.terrain??[],path.at(-1)))?{buildingMove:true}:{})};
     if(state.diceLab.version>=15&&option?.bonusEligible){
       next.diceLab.last.momentum.bonusPending=true;
       if(!bonusCloseCandidates(next).length)next.diceLab.last.momentum.bonusPending=false;
