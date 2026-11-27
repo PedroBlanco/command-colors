@@ -74,7 +74,7 @@ function scenarioSetup(s){
   return {
     ...createAncientsLoopbackSetup(),
     scenario:{id:s.id,title:s.title,deckId:s.deckId,
-      ...(s.provenance?{provenance:structuredClone(s.provenance),factions:structuredClone(s.factions)}:{})},
+      ...(s.provenance?{geometry:s.geometry,provenance:structuredClone(s.provenance),factions:structuredClone(s.factions)}:{})},
     cardInstances:createAncientsBaseDeck(),startingSide:s.startingSide,
     handSizes:{...s.handSizes},victoryTargets:{...s.victoryTargets},
     board:{units:s.units.map(piece),leaders:s.leaders.map(piece)},
@@ -119,7 +119,7 @@ export function createAncientsScenarioCatalog(documents=[]){
     list:()=>[
       {id:'demo-v1',title:'Demostración original (38 cartas)',deckId:'demo-38'},
       ...Array.from(scenarios.values(),s=>({id:s.id,title:s.title+' (60 cartas)',deckId:s.deckId,
-        ...(s.provenance?{provenance:structuredClone(s.provenance),factions:structuredClone(s.factions)}:{})}))
+        ...(s.provenance?{geometry:s.geometry,provenance:structuredClone(s.provenance),factions:structuredClone(s.factions)}:{})}))
     ],
     setup:(id='demo-v1')=>id==='demo-v1'?createAncientsLoopbackSetup():
       scenarios.has(id)?scenarioSetup(scenarios.get(id)):null
