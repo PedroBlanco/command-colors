@@ -118,3 +118,10 @@ test('camp blocks sight while oriented rampart does not',()=>{
  assert.equal(check(at(2,4),at(6,4),{terrain:terrain('FORTIFIED_CAMP',at(4,4))}).status,'BLOCKED');
  assert.equal(check(at(2,4),at(6,4),{terrain:[{...at(4,4),kind:'RAMPART',sides:[5,0]}]}).status,'VISIBLE');
 });
+
+test('official odd-r LOS crosses intervening cells and rejects missing edge cells',()=>{
+ const geometryId='OFFICIAL_ODD_R_113';
+ assert.equal(check(at(1,4),at(4,4),{geometryId}).status,'VISIBLE');
+ assert.equal(check(at(1,4),at(4,4),{geometryId,terrain:terrain('FOREST',at(2,4))}).status,'BLOCKED');
+ assert.throws(()=>check(at(12,1),at(4,4),{geometryId}),/INVALID_LOS_ENDPOINTS/);
+});
