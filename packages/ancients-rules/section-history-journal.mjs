@@ -1156,6 +1156,7 @@ export function projectSectionHistoryLab(state,side){
     phase:state.phase, yourHand:copy(state.hands[side]),
     ...(state.scenario?{scenario:copy(state.scenario)}:{}),
     ...(state.victoryObjectives?{victoryObjectives:projectScenarioObjectives(state)}:{}),
+    ...(state.scenarioRules?.leaderLoss?{scenarioLeaderLoss:copy(state.scenarioRules.leaderLoss)}:{}),
     ...(state.scenarioRules?{scenarioHandGrowth:state.scenarioRules.handGrowth.map(rule=>({...copy(rule),granted:state.scenarioRules.granted.includes(rule.id)}))}:{}),
     ...(state.revision>=sectionHistoryCommandLimit(state)?{historyLimitReached:true}:{}),
     opponentCardCount:state.hands[other].length,
