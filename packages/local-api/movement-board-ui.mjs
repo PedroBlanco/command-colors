@@ -49,7 +49,9 @@ const TERRAIN_LABELS=Object.freeze({
   BRIDGE:['P','puente','terrain-bridge'],
   FORTIFIED_CAMP:['F','campamento fortificado','terrain-camp'],
   RAMPART:['E','empalizada','terrain-rampart'],
-  MARSH:['M','marisma','terrain-marsh']
+  MARSH:['M','marisma','terrain-marsh'],
+  BUILDING:['ED','edificio','terrain-camp'],
+  FORTIFIED_CITY_WALL:['MU','muralla infranqueable','terrain-rampart']
 });
 
 function svgNode(doc, name, attrs = {}) {
