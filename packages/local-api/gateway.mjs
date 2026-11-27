@@ -271,7 +271,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
           const result=store.viewExperimentalSectionHistory({sessionToken:token});
           if(result.status!==200)
             return reply(res,result.status,{code:result.code});
-          if(result.view?.matchId!==matchId||result.view.status!=='LAB_ONLY')
+          if(result.view?.matchId!==matchId||result.view.status!=='LAB_ONLY'||result.view.you!==actor)
             return reply(res,503,{code:'SERVICE_UNAVAILABLE'});
           return reply(res,200,{matchId,status:lobby.status,
             players:lobby.players,state:result.view});

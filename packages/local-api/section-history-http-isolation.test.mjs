@@ -12,6 +12,7 @@ import {createServer as netServer} from 'node:net';
 import {openSqliteComposition} from '../sqlite-store/sqlite.mjs';
 import {createAccessGateway} from './gateway.mjs';
 import {loadAncientsScenarioDirectory} from '../../scripts/scenario-import.mjs';
+import {createAncientsScenarioCatalog} from '../ancients-rules/scenario-catalog.mjs';
 import {fileURLToPath} from 'node:url';
 
 const PASSWORD='CCW-local-HTTP-lab-test-only-password-2026';
@@ -398,7 +399,16 @@ test('Ancients HTTP: opt-in cannot be enabled without explicit loopback browser'
 }));
 
 test('Ancients HTTP: own hand, ordered movement and SQLite replay through explicit opt-in',()=>fixture(async({app,matchId,start})=>{
- const {origin}=await start({browser:true,ancientsBrowserLab:true});
+ // This particular movement walkthrough needs ordinary section cards for
+ // both players. Keep the production shuffle unchanged; fix only the fixture.
+ const realCatalog=createAncientsScenarioCatalog();
+ const deterministicCatalog={list:()=>realCatalog.list(),setup:id=>{
+  const config=realCatalog.setup(id);
+  if(!config)return null;
+  config.cardInstances.sort((a,b)=>Number(/^ORDER_[234]_/.test(a.definitionId))-Number(/^ORDER_[234]_/.test(b.definitionId)));
+  return {...config,randomIndex:n=>n-1};
+ }};
+ const {origin}=await start({browser:true,ancientsBrowserLab:true,ancientsScenarioCatalog:deterministicCatalog});
  const login=async(handle)=>{
   const res=await fetch(origin+'/api/session',{
    method:'POST',headers:{origin,'x-ccw-request':'1','content-type':'application/json'},
@@ -440,6 +450,14 @@ test('Ancients HTTP: own hand, ordered movement and SQLite replay through explic
  assert.equal(a.body.state.opponentCardCount,3);
  assert.equal(JSON.stringify(a.body).includes(b.body.state.yourHand[0].instanceId),false);
  assert.equal(JSON.stringify(b.body).includes(a.body.state.yourHand[0].instanceId),false);
+ // A corrupted or miswired adapter must not leak the other side's private
+ // projection, even if its match ID and laboratory status are correct.
+ const wrong=await start({browser:true,ancientsBrowserLab:true,storeFactory:()=>({
+  viewExperimentalSectionHistory:()=>({status:200,view:b.body.state})
+ })});
+ const rejected=await fetch(wrong.origin+endpoint,{headers:{cookie:cookies.alice}});
+ assert.equal(rejected.status,503);
+ assert.deepEqual(await rejected.json(),{code:'SERVICE_UNAVAILABLE'});
  assert.equal((await fetch(origin+`/api/matches/${matchId}`,{
   headers:{cookie:cookies.alice}
  })).status,409);
