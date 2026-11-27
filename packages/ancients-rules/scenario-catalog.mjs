@@ -81,20 +81,22 @@ function scenarioSetup(s){
     board:{units:s.units.map(piece),leaders:s.leaders.map(piece)},
     movementUnitTypes:Object.fromEntries(s.units.map(([id,,,,type])=>[id,type])),
     movementTerrain:structuredClone(s.terrain),sectorCells:s.sectorCells?structuredClone(s.sectorCells):sharedSectorCells(),
-    ...(s.objectives?{scenarioObjectives:structuredClone(s.objectives)}:{})
+    ...(s.objectives?{scenarioObjectives:structuredClone(s.objectives)}:{}),
+    ...(s.specialRules?{scenarioRules:structuredClone(s.specialRules)}:{})
   };
 }
 
 // A portable, versioned data format, not a way of injecting arbitrary setup
 // options. The engine is the final authority for geometry and supported rules.
 export function importAncientsScenario(doc){
-  if(!exact(doc,['schemaVersion','geometry','id','title','deckId','provenance','factions','startingSide','handSizes','victoryTargets','units','leaders','terrain','sectorCells'],['objectives'])||
+  if(!exact(doc,['schemaVersion','geometry','id','title','deckId','provenance','factions','startingSide','handSizes','victoryTargets','units','leaders','terrain','sectorCells'],['objectives','specialRules'])||
      doc.schemaVersion!==1||!validId(doc.id)||!short(doc.title,120)||doc.deckId!==BASE_DECK_ID||
      !exact(doc.provenance,['kind','source'])||!['OFFICIAL','COMMUNITY','ORIGINAL'].includes(doc.provenance.kind)||!short(doc.provenance.source,500)||
      !pair(doc.factions)||!['A','B'].every(side=>short(doc.factions[side],80))||!['A','B'].includes(doc.startingSide)||
      !pair(doc.handSizes)||!pair(doc.victoryTargets)||!Array.isArray(doc.units)||doc.units.length<2||doc.units.length>117||
      !Array.isArray(doc.leaders)||doc.leaders.length>117||!Array.isArray(doc.terrain)||doc.terrain.length>117||
      !record(doc.sectorCells)||
+     (Object.hasOwn(doc,'specialRules')&&!record(doc.specialRules))||
      (Object.hasOwn(doc,'objectives')&&(!Array.isArray(doc.objectives)||doc.objectives.length<1||doc.objectives.length>117))||
      !doc.units.every(u=>exact(u,[...unitKeys,'type'])&&typeof u.type==='string')||
      !doc.leaders.every(l=>exact(l,unitKeys))||
