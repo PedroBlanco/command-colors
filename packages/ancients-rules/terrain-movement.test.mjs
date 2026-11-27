@@ -155,3 +155,10 @@ test('building entry and exit are single-step; mounted, machines and fortified w
   assert.equal(check(type,[at(5,4)],terrain).reason,'UNIT_CANNOT_ENTER_BUILDING');
  assert.equal(check('LIGHT_INFANTRY',[at(6,4)],terrain,at(5,4)).reason,'IMPASSABLE_TERRAIN');
 });
+
+test('official geometry admits diagonal across alternating rows, not a missing edge',()=>{
+ const from=at(4,4),geometryId='OFFICIAL_ODD_R_113',unitType='LIGHT_INFANTRY';
+ assert.equal(assess({unitType,origin:from,path:[at(3,3)],geometryId}).status,'CANDIDATE');
+ assert.equal(assess({unitType,origin:from,path:[at(5,3)],geometryId}).reason,'NON_ADJACENT_HEX');
+ assert.throws(()=>assess({unitType,origin:at(12,0),path:[at(12,1)],geometryId}),/INVALID_BASE_TERRAIN_PATH/);
+});
