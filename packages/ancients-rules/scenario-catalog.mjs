@@ -5,8 +5,9 @@
  */
 import {createAncientsLoopbackSetup} from './loopback-demo-setup.mjs';
 import {initializeSectionHistoryLab} from './section-history-journal.mjs';
+import {getBoardGeometry,LAB_BOARD_GEOMETRY,OFFICIAL_BOARD_GEOMETRY} from '../hex-grid/hex.mjs';
 
-export const LAB_SCENARIO_GEOMETRY='LAB_ODD_Q_13X9';
+export const LAB_SCENARIO_GEOMETRY=LAB_BOARD_GEOMETRY;
 export const BASE_DECK_ID='ancients-base-2009';
 export const BASE_DECK_COUNTS=Object.freeze({
   ORDER_2_LEFT:3,ORDER_2_CENTER:4,ORDER_2_RIGHT:3,
@@ -93,12 +94,15 @@ export function importAncientsScenario(doc){
      !pair(doc.factions)||!['A','B'].every(side=>short(doc.factions[side],80))||!['A','B'].includes(doc.startingSide)||
      !pair(doc.handSizes)||!pair(doc.victoryTargets)||!Array.isArray(doc.units)||doc.units.length<2||doc.units.length>117||
      !Array.isArray(doc.leaders)||doc.leaders.length>117||!Array.isArray(doc.terrain)||doc.terrain.length>117||
-     !record(doc.sectorCells)||Object.keys(doc.sectorCells).length!==117||
+     !record(doc.sectorCells)||
      (Object.hasOwn(doc,'objectives')&&(!Array.isArray(doc.objectives)||doc.objectives.length<1||doc.objectives.length>117))||
      !doc.units.every(u=>exact(u,[...unitKeys,'type'])&&typeof u.type==='string')||
      !doc.leaders.every(l=>exact(l,unitKeys))||
      !['A','B'].every(side=>doc.units.some(u=>u.side===side)))fail();
-  if(doc.geometry!==LAB_SCENARIO_GEOMETRY)throw Error('UNSUPPORTED_SCENARIO_GEOMETRY');
+  if(![LAB_BOARD_GEOMETRY,OFFICIAL_BOARD_GEOMETRY].includes(doc.geometry))throw Error('UNSUPPORTED_SCENARIO_GEOMETRY');
+  const geometry=getBoardGeometry(doc.geometry);
+  if(Object.keys(doc.sectorCells).length!==geometry.cellCount)fail();
+  if(doc.provenance.kind==='OFFICIAL'&&doc.geometry!==OFFICIAL_BOARD_GEOMETRY)throw Error('OFFICIAL_SCENARIO_REQUIRES_OFFICIAL_GEOMETRY');
   const normalized={...structuredClone(doc),units:doc.units.map(u=>[u.id,u.side,u.col,u.row,u.type]),
     leaders:doc.leaders.map(l=>[l.id,l.side,l.col,l.row])};
   // Validate exactly the same setup accepted by live initialization; no
