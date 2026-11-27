@@ -328,7 +328,7 @@ function scenarioPath(state,piece,path,steps,exit=false){
     attackCardEffect(state,piece.id)==='MOUNTED_CHARGE'&&['HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT'].includes(type)?3:BASE_MOVEMENT_PROFILES[type].maxSteps;
   if(steps>max)return false;
   const terrain=state.footLab.terrain??[],at=c=>terrain.find(t=>loc(t)===loc(c))?.kind??'CLEAR';
-  if(exit&&['FOREST','FORDABLE_RIVER','MARSH','BUILDING'].includes(at(path.at(-1)??piece)))return false;
+  if(exit&&path.length&&['FOREST','FORDABLE_RIVER','MARSH','BUILDING'].includes(at(path.at(-1))))return false;
   if(path.length){
     const checked=assessOpenHexPathGeometry({from:{col:piece.col,row:piece.row},path,
       occupiedCells:[...state.board.units.filter(u=>!(mayPassFriendlyFoot(state,piece.id)&&path.length===2&&u.side===piece.side&&loc(u)===loc(path[0]))),
@@ -790,7 +790,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     for(const p of placements){
       const u=available.units.find(x=>x.id===p.unitId),unit={id:u.id,side,col:p.col,row};
       next.board.units.push(unit);next.footLab.unitTypes[u.id]=u.type;next.diceLab.blocks[u.id]=BASE_UNIT_STARTING_BLOCKS[u.type];
-      next.footLab.movedUnitIds.push(u.id);next.combatLab.movement[u.id]={steps:1,battle:'POSSIBLE'};
+      next.footLab.movedUnitIds.push(u.id);next.combatLab.movement[u.id]={steps:1,battle:next.footLab.terrain.some(t=>loc(t)===loc(unit)&&t.kind==='FOREST')?'UNAVAILABLE':'POSSIBLE'};
       pieces.push({...unit,kind:'UNIT'});
     }
     const host=placements.find(p=>p.unitId===command.leaderUnitId);
@@ -803,7 +803,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     publicEvent={kind:'SCENARIO_RESERVE_DEPLOYED',side,section:command.section,placements:copy(placements),leaderUnitId:command.leaderUnitId};
   }else if(['MOVE_SECTION_FOOT_PATH_V2','MOVE_SECTION_MOUNTED_PATH_V1'].includes(command.type)&&reserveCanContinue(state,command.unitId)){
     const piece=state.board.units.find(u=>u.id===command.unitId),path=command.path;
-    if(!piece||state.phase!=='LAB_RESOLUTION_PENDING'||state.combatLab.movementClosed||!Array.isArray(path)||!path.length||
+    if(!piece||piece.side!==side||state.phase!=='LAB_RESOLUTION_PENDING'||state.combatLab.movementClosed||!Array.isArray(path)||!path.length||
        !scenarioPath(state,piece,path,path.length+1))return reject('INVALID_RESERVE_CONTINUATION');
     const type=state.footLab.unitTypes[piece.id];
     if((command.type==='MOVE_SECTION_MOUNTED_PATH_V1')!==BASE_MOUNTED_TYPES.includes(type))return reject('INVALID_RESERVE_CONTINUATION');
