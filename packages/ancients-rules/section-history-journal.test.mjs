@@ -2195,7 +2195,10 @@ test('official geometry journal: legal diagonal, forbidden short-row cell, close
  const selected=setup.cardInstances.findIndex(c=>c.definitionId==='ORDER_2_CENTER');
  const end=setup.cardInstances.length-1;
  [setup.cardInstances[selected],setup.cardInstances[end]]=[setup.cardInstances[end],setup.cardInstances[selected]];
- const initial=init({...setup,randomIndex:n=>n-1});let s=initial;const log=[];
+ const doc={schemaVersion:1,...setup.scenario,startingSide:setup.startingSide,handSizes:setup.handSizes,victoryTargets:setup.victoryTargets,
+  units:setup.board.units.map(u=>({...u,type:setup.movementUnitTypes[u.id]})),leaders:setup.board.leaders,terrain:[],sectorCells:setup.sectorCells};
+ const imported=createAncientsScenarioCatalog([doc]).setup(doc.id);
+ const initial=init({...imported,cardInstances:setup.cardInstances,randomIndex:n=>n-1});let s=initial;const log=[];
  const run=(type,fields={},actor=s.turn)=>{const c=cmd(type,s.revision,{actor,...fields}),r=apply(s,c);assert.equal(r.accepted,true,r.code);log.push(c);s=r.nextState;return r.publicEvent;};
  assert.equal(project(s,'A').scenario.geometry,OFFICIAL_BOARD_GEOMETRY);
  run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A[0].instanceId});
