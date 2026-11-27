@@ -4,6 +4,7 @@
  * come from a trusted server setup, never a request. NOT an official game turn.
  */
 import {validScenarioObjectives,claimScenarioObjectives,projectScenarioObjectives} from './scenario-objectives.mjs';
+import {initializeScenarioRules,validScenarioRules,isSacredBand,applyScenarioHandGrowth} from './scenario-special-rules.mjs';
 import {randomInt} from 'node:crypto';
 import {getBoardGeometry,LAB_BOARD_GEOMETRY,OFFICIAL_BOARD_GEOMETRY,officialSectorCells} from '../hex-grid/hex.mjs';
 import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
@@ -122,7 +123,7 @@ function validScenarioMetadata(s){
 }
 
 /** Lab-only setup: server determines shuffled card inventory and scenario metadata. */
-export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,scenario,scenarioObjectives,
+export function initializeSectionHistoryLab({cardInstances,handSizes,board,sectorCells,scenario,scenarioObjectives,scenarioRules,
   startingSide='A',randomIndex=randomInt,movementUnitTypes=undefined,
   movementTerrain=[],sectorPerspective='FIXED',enableLeaderLab=false,enableCombatLab=false,enableDiceLab=false,enableCasualtyLab=false,enableMoraleLab=false,enableRetreatLab=false,enableRetreatLeaderLab=false,enableLeaderEscapeLab=false,enableRampageLab=false,enableRampageLeaderLab=false,enableElephantRetreatLeaderLab=false,victoryTargets=null,enableCloseCombatLab=false,enableUnitEvadeLab=false,enableBattleBackLab=false,enableMomentumLab=false,enableBonusCloseLab=false,enableElephantCloseLab=false,enableSpecialCloseLab=false,enableSpecialFootLab=false,enableLoneLeaderCombatLab=false,enableDeckRecycleLab=false,enableLongHistoryLab=false,enableSelectionCardsLab=false,enableGroupCardsLab=false,enableAttackCardsLab=false,enableLeadershipCardsLab=false,enableFireCardsLab=false,enableMoveFireMoveLab=false,enableRallyLab=false,enableSpartacusLab=false,enableCounterAttackLab=false,enableFirstStrikeLab=false}={}) {
   if(scenario!==undefined&&!validScenarioMetadata(scenario))fail('INVALID_SECTION_SCENARIO_METADATA');
@@ -208,6 +209,7 @@ export function initializeSectionHistoryLab({cardInstances,handSizes,board,secto
     claimScenarioObjectives(state,true);
     if(sectionVictory(state).winner)fail('SCENARIO_ALREADY_WON');
   }
+  if(scenarioRules!==undefined)state.scenarioRules=initializeScenarioRules(scenarioRules,state,handSizes);
   assertSectionHistoryLab(state);
   return state;
 }
@@ -514,7 +516,7 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
   const fortificationDefense=fortificationProtects(state.footLab.terrain??[],attacker,target,targetUnitType,state.scenario?.geometry);
   const swordsHit=!loneLeader&&!elephantTarget&&!['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY',
     'LIGHT_CAVALRY','HEAVY_WAR_MACHINE'].includes(attackerType);
-  const leaderHit=loneLeader||!elephantAttack&&state.board.leaders.some(l=>l.side===attacker.side&&geometryOf(state).distance(l,attacker)<=1);
+  const leaderHit=loneLeader||!elephantAttack&&(isSacredBand(state,attacker.id)||state.board.leaders.some(l=>l.side===attacker.side&&geometryOf(state).distance(l,attacker)<=1));
   const evadeOptions=state.diceLab.version>=12&&!battleBack&&!loneLeader?unitEvadePaths(state,attacker,target):[];
   const choice=evadePath===undefined?(evadeOptions.length?null:[]):evadePath;
   if(state.diceLab.version>=12&&!(choice===null&&evadeOptions.length||
@@ -631,6 +633,7 @@ export function assertSectionHistoryLab(s){
   }
   if(s.footLab?.terrain?.some(t=>t.kind==='MARSH')&&s.diceLab?.version!==32)fail('MARSH_REQUIRES_FULL_COMBAT_LAB');
   if(Object.hasOwn(s,'victoryObjectives')&&(!s.diceLab?.victoryTargets||!validScenarioObjectives(s.victoryObjectives,s.footLab.terrain,s.scenario?.geometry)))fail('INVALID_SECTION_SCENARIO_OBJECTIVES');
+  if(Object.hasOwn(s,'scenarioRules')&&!validScenarioRules(s.scenarioRules,s))fail('INVALID_SCENARIO_RULES');
   if(Object.hasOwn(s,'diceLab'))assertSectionDiceLab(s);
   if((s.phase==='AWAIT_CARD')!== (s.activeCard===null)||
      (s.phase==='AWAIT_CARD'&&(s.cardPlay!==null||s.handAtPlay!==null||s.orderSnapshot!==null))||
@@ -1093,6 +1096,16 @@ export function applySectionHistoryLabCommand(state,command={}){
   }
   next.revision=state.revision+1;
   publicEvent=settleSectionVictory(next,publicEvent,command.type==='END_EXPERIMENTAL_TURN');
+  if(next.scenarioRules&&!sectionVictory(next)?.winner){
+    const growth=applyScenarioHandGrowth(next,command.type==='END_EXPERIMENTAL_TURN'?side:null,beneficiary=>{
+      recycleSectionDeck(next,next.revision);
+      if(!next.drawPile.length)return false;
+      next.hands[beneficiary].push(next.drawPile.pop());
+      recycleSectionDeck(next,next.revision);
+      return true;
+    });
+    if(growth.length)publicEvent={...publicEvent,scenarioHandGrowth:growth};
+  }
   // A defensive strike spends no ordered battle unless it stops the original attack.
   const reaction=next.diceLab?.firstStrike;
   if(reaction?.original&&!next.combatLab.plan){
@@ -1143,6 +1156,7 @@ export function projectSectionHistoryLab(state,side){
     phase:state.phase, yourHand:copy(state.hands[side]),
     ...(state.scenario?{scenario:copy(state.scenario)}:{}),
     ...(state.victoryObjectives?{victoryObjectives:projectScenarioObjectives(state)}:{}),
+    ...(state.scenarioRules?{scenarioHandGrowth:state.scenarioRules.handGrowth.map(rule=>({...copy(rule),granted:state.scenarioRules.granted.includes(rule.id)}))}:{}),
     ...(state.revision>=sectionHistoryCommandLimit(state)?{historyLimitReached:true}:{}),
     opponentCardCount:state.hands[other].length,
     drawPileCount:state.drawPile.length,
@@ -1155,6 +1169,7 @@ export function projectSectionHistoryLab(state,side){
       board:state.board.units.map(u=>({
         id:u.id,side:u.side,col:u.col,row:u.row,
         unitType:state.footLab.unitTypes[u.id],
+        ...(isSacredBand(state,u.id)?{sacredBand:true}:{}),
         ...(state.diceLab?{blocksRemaining:state.diceLab.blocks[u.id]}:{})
       })),
       movedUnitIds:[...state.footLab.movedUnitIds],
