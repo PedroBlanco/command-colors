@@ -816,7 +816,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     publicEvent={kind:'SCENARIO_RESERVE_MOVED',side,unitId:piece.id,path:copy(path),to:copy(to)};
   }else if(command.type==='EXIT_SCENARIO_UNIT'){
     const piece=state.board.units.find(u=>u.id===command.unitId&&u.side===side),path=command.path;
-    if(!piece||state.phase!=='LAB_RESOLUTION_PENDING'||state.combatLab.movementClosed||
+    if(!piece||state.phase!=='LAB_RESOLUTION_PENDING'||(state.combatLab.movementClosed&&state.diceLab?.moveFireMove!=='SECOND')||
        !state.orderSnapshot.pieces.some(p=>p.kind==='UNIT'&&p.id===piece.id)||state.footLab.movedUnitIds.includes(piece.id)||state.leaderLab.joinedUnitIds.includes(piece.id)||
        ['CLASH_OF_SHIELDS','DARKEN_THE_SKY'].includes(effectiveSectionCard(state))||!Array.isArray(path)||
        !exitRule(state,side,path.at(-1)??piece)||!scenarioPath(state,piece,path,path.length+1,true))return reject('INVALID_SCENARIO_EXIT');
