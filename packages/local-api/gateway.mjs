@@ -49,6 +49,7 @@ const ANCIENTS_LAB_COMMAND_FIELDS=Object.freeze({
 const denied = (code, status = 403) => ({status, body: {code}});
 const HTML_FILE = fileURLToPath(new URL('./browser-ui.html',import.meta.url));
 const CLIENT_FILE = fileURLToPath(new URL('./browser-ui.mjs',import.meta.url));
+const COMMAND_FEEDBACK_FILE = fileURLToPath(new URL('./command-feedback.mjs',import.meta.url));
 const DECK_CONTROLS_FILE = fileURLToPath(new URL('./deck-controls.mjs',import.meta.url));
 const HEX_SELECTION_FILE = fileURLToPath(new URL('./hex-selection.mjs',import.meta.url));
 const MOVEMENT_BOARD_FILE = fileURLToPath(new URL('./movement-board-ui.mjs',import.meta.url));
@@ -59,6 +60,7 @@ const HEX_GRID_FILE = fileURLToPath(new URL('../hex-grid/hex.mjs',import.meta.ur
 // Exact same-origin allowlist: never serve arbitrary repository paths.
 const BROWSER_ASSETS = new Map([
   ['/browser-ui.mjs', CLIENT_FILE],
+  ['/command-feedback.mjs', COMMAND_FEEDBACK_FILE],
   ['/deck-controls.mjs', DECK_CONTROLS_FILE],
   ['/hex-selection.mjs', HEX_SELECTION_FILE],
   ['/movement-board-ui.mjs', MOVEMENT_BOARD_FILE],
