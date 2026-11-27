@@ -2025,3 +2025,46 @@ test('marsh terrain: ordinary retreat and unit evade roll per entered marsh hex'
   assert.deepEqual(replay(initial,log),s);
  }
 });
+
+test('marsh retreat: shortfall after terrain, elephant retreat and immediate victory',()=>{
+ for(const mode of ['ATTACHED','VICTORY','ELEPHANT']){
+  const c=tacticalCardSetup('ORDER_2_LEFT',true,4);
+  Object.assign(c,{enableMoveFireMoveLab:true,enableRallyLab:true,enableSpartacusLab:true,enableCounterAttackLab:true,enableFirstStrikeLab:true});
+  c.board.units[0].row=1;c.board.units[1].row=1;
+  c.board.leaders=[{id:'b_leader',side:'B',col:4,row:1}];
+  c.movementUnitTypes.b1=mode==='ELEPHANT'?'ELEPHANT':'LIGHT_CAVALRY';
+  c.movementTerrain=Array.from({length:13},(_,col)=>({col,row:0,kind:'MARSH'}));
+  if(mode==='VICTORY')c.victoryTargets={A:1,B:3};
+  let initial,s,log,route,check;
+  for(let n=0;n<500;n++){
+   initial=init(c);initial.diceLab.key=n.toString(16).padStart(64,'0');
+   s=initial;log=[];
+   const run=(type,fields={},actor='A')=>{const command=cmd(type,s.revision,{actor,...fields}),result=apply(s,command);assert.equal(result.accepted,true,mode+': '+result.code);log.push(command);s=result.nextState;return result;};
+   run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A[0].instanceId});
+   run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});
+   run('FINISH_SECTION_MOVEMENT_LAB');run('PREPARE_SECTION_RANGED_LAB',{attackerId:'a1',targetId:'b1'});
+   run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces:['FLAG','SWORDS']});run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true},'B');
+   if(mode!=='ELEPHANT')run('CHOOSE_SECTION_MORALE_LAB',{ignored:0},'B');
+   for(const u of project(s,'A').diceLab.rampage?.remaining??[])run('ROLL_SECTION_ELEPHANT_RAMPAGE_LAB',{unitId:u.unitId});
+   route=project(s,'B').diceLab.retreat.options.find(o=>o.path.length&&o.path.at(-1).row===0&&(mode==='ELEPHANT'||o.blocksLost>0));
+   assert.ok(route);
+   run('RETREAT_SECTION_UNIT_LAB',{path:route.path},'B');
+   check=s.diceLab.last?.marshChecks?.[0];
+   if(check?.blocksLost===1&&(mode!=='ATTACHED'||s.diceLab.marshPending))break;
+  }
+  assert.equal(check?.blocksLost,1);
+  if(mode==='ELEPHANT')assert.ok(s.diceLab.blocks.b1>0);
+  else{
+   assert.equal(s.diceLab.blocks.b1,undefined);
+   if(mode==='VICTORY'){assert.equal(s.diceLab.last.victory.winner,'A');assert.equal(s.diceLab.marshPending,null);}
+   else{
+    assert.equal(s.diceLab.marshPending.leaderId,'b_leader');
+    const option=project(s,'B').diceLab.leaderEvasionOptions.find(o=>o.exit||!o.trapped);assert.ok(option);
+    const command=cmd('EVADE_SECTION_LEADER_LAB',s.revision,{actor:'B',path:option.path,exit:option.exit});
+    const result=apply(s,command);assert.equal(result.accepted,true,result.code);log.push(command);s=result.nextState;
+    assert.equal(s.diceLab.marshPending,null);
+   }
+  }
+  assert.deepEqual(replay(initial,log),s);
+ }
+});
