@@ -110,7 +110,7 @@ export function assessAncientsLineOfSight({from, to, units = [], leaders = [], t
     }
     return reachable.has(key(to));
   })();
-  const opaque = h => h.occupant || ['FOREST','FORTIFIED_CAMP','BUILDING','FORTIFIED_CITY_WALL'].includes(h.kind) || (h.kind === 'HILL' && !plateau);
+  const opaque = h => h.occupant || ['FOREST','FORTIFIED_CAMP','BUILDING','FORTIFIED_CITY_WALL','STEEP_HILL'].includes(h.kind) || (h.kind === 'HILL' && !plateau);
 
   const insideBlockers = hit.filter(h => h.interior && opaque(h));
   if (insideBlockers.length) {
