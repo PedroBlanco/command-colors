@@ -14,6 +14,8 @@ import {BASE_UNIT_STARTING_BLOCKS,previewBaseAncientsRangedBlockLoss} from './bl
 import {planBaseAncientsRangedResolution,captureBaseAncientsLeaderCasualtyDice,
   previewBaseAncientsLeaderCasualtyCheck} from './ranged-resolution-sequence.mjs';
 
+import {scenarioObjectiveBanners,claimScenarioObjectives} from './scenario-objectives.mjs';
+
 const record=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const keyOK=k=>typeof k==='string'&&/^[a-f0-9]{64}$/.test(k);
@@ -393,7 +395,7 @@ function deriveRampageWithLeader(state,piece,revision){
   const dice=n=>Array.from({length:n},()=>ANCIENTS_BATTLE_DIE_FACES[draw(6)]);
   const results=dice(2),blocksLost=unit?Math.min(d.blocks[unit.id],results.filter(f=>f===BASE_UNIT_DIE_SYMBOLS[state.footLab.unitTypes[unit.id]]).length):0;
   const eliminated=!!unit&&blocksLost===d.blocks[unit.id];
-  const winsOnUnit=!!d.victoryTargets&&eliminated&&banners(d)[unit.side==='A'?'B':'A']+1>=d.victoryTargets[unit.side==='A'?'B':'A'];
+  const winsOnUnit=!!d.victoryTargets&&eliminated&&sectionVictory(state).banners[unit.side==='A'?'B':'A']+1>=d.victoryTargets[unit.side==='A'?'B':'A'];
   const leaderFaces=leader&&!winsOnUnit?(unit?(blocksLost?dice(eliminated?1:2):[]):results):[];
   const leaderEliminated=leaderFaces.length>0&&(unit?leaderFaces.every(f=>f==='LEADER'):leaderFaces.includes('LEADER'));
   return {revision,rollId,unitId:piece.id,side:piece.side,results,blocksLost,
@@ -727,6 +729,7 @@ export function sectionVictory(state){
   const d=state.diceLab;
   if(d?.version<10||!d?.victoryTargets)return null;
   const score=banners(d),targets={...d.victoryTargets};
+  if(state.victoryObjectives){const extra=scenarioObjectiveBanners(state);score.A+=extra.A;score.B+=extra.B;}
   const a=score.A>=targets.A,b=score.B>=targets.B;
   return {targets,banners:score,winner:a&&b?'DRAW':a?'A':b?'B':null};
 }
@@ -734,9 +737,10 @@ export function sectionVictory(state){
 // Called once by the authoritative journal after each accepted command.
 // A pending combat is still on its original board; commit only a winning
 // prefix, never resolve later dice or require another player to confirm it.
-export function settleSectionVictory(next,event){
+export function settleSectionVictory(next,event,startTurn=false){
   const d=next.diceLab;
   if(!(d?.version>=10))return event;
+  const captured=claimScenarioObjectives(next,startTurn);
   let result=sectionVictory(next),source=next;
   const p=d.pending,plan=next.combatLab.plan;
   if(!result.winner&&p&&plan&&p.interpretation.redIgnored!==null&&['ACCEPTED','SERVER_GENERATED'].includes(p.review)){
@@ -763,6 +767,7 @@ export function settleSectionVictory(next,event){
     if(source!==next){
       next.board=source.board;next.footLab.unitTypes=source.footLab.unitTypes;
       d.blocks=source.diceLab.blocks;d.casualties=source.diceLab.casualties;
+      captured.push(...claimScenarioObjectives(next));
       const marshChecks=d.version>=32&&d.elephantRetreatPending&&pathHasMarsh(next.footLab.terrain,d.elephantRetreatPending.choice.path)?source.diceLab.marshLast:null;
       if(marshChecks)d.marshLast=marshChecks;
       markSectionBattle(d,plan);
@@ -789,6 +794,7 @@ export function settleSectionVictory(next,event){
     next.leaderLab.movedLeaderIds=next.leaderLab.movedLeaderIds.filter(id=>next.board.leaders.some(l=>l.id===id));
     next.leaderLab.joinedUnitIds=next.leaderLab.joinedUnitIds.filter(id=>next.board.units.some(u=>u.id===id));
   }
+  if(captured.length)event={...event,objectivesCaptured:captured};
   return result.winner?{...event,victory:result}:event;
 }
 
@@ -908,7 +914,7 @@ export function assertSectionDiceLab(state){
   }
   if(d.version>=9&&d.elephantRetreatPending!==null)elephantStageShadow(state);
   if(d.version>=10&&(!validVictoryTargets(d.victoryTargets)||sectionVictory(state).winner&&
-     (d.pending!==null||state.combatLab.plan!==null||!(d.version>=32&&d.last===null)&&!same(d.last?.victory,sectionVictory(state)))))fail();
+     (d.pending!==null||state.combatLab.plan!==null||!((d.version>=32||state.victoryObjectives)&&d.last===null)&&!same(d.last?.victory,sectionVictory(state)))))fail();
   return true;
 }
 
@@ -1167,7 +1173,7 @@ export function applySectionDiceCommand(state,next,command){
         unitEliminated:finalize&&(marshChecks.length?!Object.hasOwn(next.diceLab.blocks,plan.targetId):p.loss.unitWouldBeEliminated||!!retreatChoice&&retreatChoice.blocksLost===p.loss.remainingBlocks),
         leaderEliminated:finalize&&(!!p.loss.leaderWouldBeEliminated||!!effectiveLeaderCheck(d)?.outcome.leaderWouldBeEliminated||!!escape?.eliminated||marshChecks.some(c=>c.leaderEliminated)||!!retreatLeaderCheck?.leaderEliminated),
         ...(plan.loneLeader?{loneLeader:true}:{}),
-        banners:banners(next.diceLab)}:{}),
+        banners:sectionVictory(next)?.banners??banners(next.diceLab)}:{}),
       ...(evasion?{leaderEvasion:{leaderId:plan.loneLeader?plan.targetId:effectiveLeaderCheck(d).leaderId,...evasion,...(escape?{escape}:{})}}:{}),
       ...(d.version>=3?{morale:structuredClone(d.morale)}:{}),
       ...(retreatChoice?{retreat:{...retreatChoice,required:retreatRequired}}:{}),
@@ -1238,7 +1244,7 @@ export function projectSectionDiceLab(state,side){
       !(d.version>=2&&blocker==='LEADER_CHECK_PENDING')&&
       !(d.version>=3&&(blocker==='MORALE_CHOICE_PENDING'||evasionOptions.length>0))&&
       !retreat?.options.length&&!d.retreatPending&&!d.elephantRetreatPending&&!(elephant&&!elephant.leaderPending&&!(d.version>=8&&retreat?.reason==='ELEPHANT_BLOCKER_LEADERS_PENDING')),
-    ...(d.version>=2?{banners:banners(d),casualties:structuredClone(d.casualties),
+    ...(d.version>=2?{banners:sectionVictory(state)?.banners??banners(d),casualties:structuredClone(d.casualties),
       leaderCheck:structuredClone(effectiveLeaderCheck(d)),
       leaderEvasionOptions:side===evasionSide?evasionOptions:[],
       canEvadeLeader:side===evasionSide&&evasionOptions.length>0,
