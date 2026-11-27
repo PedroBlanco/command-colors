@@ -7,7 +7,7 @@
 import {randomBytes,createHmac} from 'node:crypto';
 import {effectiveSectionCard} from './section-card-order-screen.mjs';
 import {neighbors,distance,inBounds} from '../hex-grid/hex.mjs';
-import {assessAncientsTerrainMovement,isImpassableHex,fortificationProtects,isMarshHex,pathHasMarsh} from './terrain-movement.mjs';
+import {assessAncientsTerrainMovement,isImpassableHex,fortificationProtects,isMarshHex,pathHasMarsh,isRetreatBlockedHex} from './terrain-movement.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS,captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice,interpretBaseAncientsCloseDice} from './battle-dice.mjs';
 import {BASE_UNIT_STARTING_BLOCKS,previewBaseAncientsRangedBlockLoss} from './block-loss-preview.mjs';
@@ -108,6 +108,7 @@ export function sectionMomentumOptions(state){
     !state.board.leaders.some(l=>l.id!==attached?.id&&hex(l)===hex(c)&&
       (l.side!==unit.side||!!attached));
   // A normal move that entered forest must end there for this turn.
+  if(state.combatLab.movement[unit.id]?.buildingMove||last.attackKind==='BONUS_CLOSE'&&terrainAt(unit)==='BUILDING')return [];
   if((state.combatLab.movement[unit.id]?.steps||last.attackKind==='BONUS_CLOSE'&&last.forestEntered)&&['FOREST','FORDABLE_RIVER'].includes(terrainAt(unit)))return [];
   const first={col:m.hex.col,row:m.hex.row};
   if(!available(first))return [];
@@ -314,7 +315,7 @@ function escapeRoutes(state,leader,origin=leader){
     if(path.length<3&&cell.row===rear)options.push({path,exit:true,...extra});
     if(path.length===3||(d.version>=6&&cell.row===rear))return;
     for(const dest of neighbors(cell)){
-      if(sign*(depth(dest)-depth(cell))<=0||isImpassableHex(state.footLab.terrain??[],dest))continue;
+      if(sign*(depth(dest)-depth(cell))<=0||isRetreatBlockedHex(state.footLab.terrain??[],dest))continue;
       const enemy=state.board.units.find(u=>u.side!==leader.side&&hex(u)===hex(dest));
       const enemyLeader=state.board.leaders.find(l=>l.side!==leader.side&&hex(l)===hex(dest));
       if(d.version<6&&(enemy||enemyLeader))continue;
@@ -358,7 +359,7 @@ function elephantContext(state){
   const units=state.board.units.filter(u=>keys.has(hex(u)));
   if(d.version>=8)units.push(...state.board.leaders.filter(l=>keys.has(hex(l))&&!state.board.units.some(u=>hex(u)===hex(l))).map(l=>({...l,loneLeader:true})));
   const sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0,depth=c=>2*c.row+(c.col&1);
-  const rearward=c=>c.row===rear?[]:neighbors(c).filter(n=>sign*(depth(n)-depth(c))>0&&!isImpassableHex(state.footLab.terrain??[],n));
+  const rearward=c=>c.row===rear?[]:neighbors(c).filter(n=>sign*(depth(n)-depth(c))>0&&!isRetreatBlockedHex(state.footLab.terrain??[],n));
   // Include every possible retreat/blocker hex, even if rampage opens a path.
   const affected=new Set([hex(target),...keys]);
   let frontier=[target];
@@ -572,7 +573,7 @@ function retreatPreview(state){
     for(const {cell,path} of frontier.values()){
       const joined=path.length&&!attached?leaders.get(hex(cell)):null;
       const legal=steps===required||joined||cell.row===rear?[]:neighbors(cell).filter(c=>
-        sign*(depth(c)-depth(cell))>0&&!isImpassableHex(state.footLab.terrain??[],c)&&!(type==='HEAVY_WAR_MACHINE'&&isMarshHex(state.footLab.terrain??[],c))&&!occupied.has(hex(c))&&
+        sign*(depth(c)-depth(cell))>0&&!isRetreatBlockedHex(state.footLab.terrain??[],c)&&!(type==='HEAVY_WAR_MACHINE'&&isMarshHex(state.footLab.terrain??[],c))&&!occupied.has(hex(c))&&
         (!leaders.has(hex(c))||(!attached&&leaders.get(hex(c)).side===target.side)));
       if(!legal.length){
         const missing=joined?0:required-steps;
