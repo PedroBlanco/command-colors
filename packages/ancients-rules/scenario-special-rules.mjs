@@ -14,7 +14,8 @@ export function initializeScenarioRules(config,state,handSizes){
   const rules={sacredBand:structuredClone(config.sacredBand),handGrowth:structuredClone(config.handGrowth),
     turns:{A:0,B:0},granted:[]};
   if(!validScenarioRules(rules,state)||rules.sacredBand.some(id=>state.footLab.unitTypes[id]!=='HEAVY_INFANTRY')||
-     SIDES.some(side=>handSizes[side]+rules.handGrowth.filter(r=>r.side===side).reduce((n,r)=>n+r.cards,0)>20))
+     SIDES.some(side=>handSizes[side]+rules.handGrowth.filter(r=>r.side===side).reduce((n,r)=>n+r.cards,0)>20)||
+     handSizes.A+handSizes.B+rules.handGrowth.reduce((n,r)=>n+r.cards,0)>=state.totalCards)
     throw Error('INVALID_SCENARIO_RULES');
   return rules;
 }
@@ -51,7 +52,7 @@ export function applyScenarioHandGrowth(state,endedSide,draw){
       state.diceLab.casualties.filter(c=>c.awardedTo===rule.side).length;
     if(value<rule.threshold)continue;
     let cards=0;
-    for(let i=0;i<rule.cards;i++){if(!draw(rule.side))break;cards++;}
+    for(let i=0;i<rule.cards;i++){if(!draw(rule.side))throw Error('SCENARIO_HAND_GROWTH_DECK_EXHAUSTED');cards++;}
     rules.granted.push(rule.id);
     awards.push({id:rule.id,side:rule.side,cards});
   }
