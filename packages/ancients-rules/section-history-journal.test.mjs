@@ -2222,3 +2222,49 @@ test('official geometry journal: legal diagonal, forbidden short-row cell, close
  const bad=structuredClone(setup);bad.board.units[0].col=12;bad.board.units[0].row=3;
  assert.throws(()=>init({...bad,randomIndex:n=>n-1}),/INVALID_SECTION_HISTORY_BOARD/);
 });
+
+test('scenario special rules: Sacred Band, immediate casualty reward, progressive hands and replay',()=>{
+ const setup=createAncientsScenarioSetup('open-field-v1');
+ setup.startingSide='A';setup.board={units:[{id:'a1',side:'A',col:5,row:4},{id:'b1',side:'B',col:5,row:3},{id:'b2',side:'B',col:10,row:1}],leaders:[]};
+ setup.movementUnitTypes={a1:'HEAVY_INFANTRY',b1:'HEAVY_INFANTRY',b2:'LIGHT_INFANTRY'};
+ setup.movementTerrain=[];
+ const selected=setup.cardInstances.findIndex(c=>c.definitionId==='ORDER_2_CENTER'),end=setup.cardInstances.length-1;
+ [setup.cardInstances[selected],setup.cardInstances[end]]=[setup.cardInstances[end],setup.cardInstances[selected]];
+ const doc={schemaVersion:1,...setup.scenario,geometry:LAB_SCENARIO_GEOMETRY,provenance:{kind:'ORIGINAL',source:'test'},factions:{A:'South',B:'North'},startingSide:'A',handSizes:setup.handSizes,victoryTargets:setup.victoryTargets,
+  units:setup.board.units.map(u=>({...u,type:setup.movementUnitTypes[u.id]})),leaders:[],terrain:[],sectorCells:setup.sectorCells,
+  specialRules:{sacredBand:['a1','b1'],handGrowth:[
+    {id:'reward',side:'A',trigger:'CASUALTY_BANNERS',threshold:1,cards:2},
+    {id:'turn1',side:'A',trigger:'OWN_TURN_END',threshold:1,cards:1},
+    {id:'turn2',side:'A',trigger:'OWN_TURN_END',threshold:2,cards:1}
+  ]}};
+ const imported=createAncientsScenarioCatalog([doc]).setup(doc.id);
+ for(const kill of [false,true]){
+  const initial=init({...imported,cardInstances:setup.cardInstances,randomIndex:n=>n-1});let s=initial;const log=[];
+  const run=(type,fields={},actor=s.turn)=>{const c=cmd(type,s.revision,{actor,...fields}),r=apply(s,c);assert.equal(r.accepted,true,type+': '+r.code);log.push(c);s=r.nextState;return r.publicEvent;};
+  assert.equal(project(s,'B').board.find(u=>u.id==='a1').sacredBand,true);
+  run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A[0].instanceId});
+  run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});
+  run('FINISH_SECTION_MOVEMENT_LAB');run('PREPARE_SECTION_CLOSE_LAB',{attackerId:'a1',targetId:'b1'});
+  if(s.diceLab.firstStrike.window)run('DECLINE_SECTION_FIRST_STRIKE_LAB',{},'B');
+  assert.equal(s.combatLab.plan.leaderHit,true);
+  const faces=Array(s.combatLab.plan.diceCount).fill(kill?'LEADER':'LIGHT');
+  if(!kill)faces[0]='FLAG';
+  run('DECLARE_SECTION_RANGED_PHYSICAL_LAB',{faces});run('REVIEW_SECTION_RANGED_PHYSICAL_LAB',{accept:true},'B');
+  if(!kill){const m=project(s,'B').diceLab.moralePreview;assert.equal(m.sacredBand,true);assert.equal(m.maxIgnored,1);run('CHOOSE_SECTION_MORALE_LAB',{ignored:1},'B');}
+  const before=s.hands.A.length;
+  const event=run('FINALIZE_SECTION_RANGED_LAB');
+  if(kill){assert.equal(s.board.units.some(u=>u.id==='b1'),false);assert.equal(s.hands.A.length,before+2);assert.deepEqual(event.scenarioHandGrowth,[{id:'reward',side:'A',cards:2}]);assert.equal(JSON.stringify(project(s,'B')).includes(s.hands.A.at(-1).instanceId),false);}
+  else {assert.equal(s.hands.A.length,before);assert.equal(event.scenarioHandGrowth,undefined);}
+  if(s.diceLab.last?.battleBackPending)run('DECLINE_SECTION_BATTLE_BACK_LAB',{},'B');
+  if(s.diceLab.last?.momentum?.pending)run('CHOOSE_SECTION_MOMENTUM_LAB',{path:[]});
+  const first=run('END_EXPERIMENTAL_TURN');assert.deepEqual(first.scenarioHandGrowth,[{id:'turn1',side:'A',cards:1}]);assert.equal(s.hands.A.length,kill?7:5);
+  for(const side of ['B','A']){
+   const card=s.hands[side].find(c=>/^ORDER_[234]_/.test(c.definitionId));assert.ok(card);
+   run('PLAY_SECTION_CARD',{cardInstanceId:card.instanceId});run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});
+   const e=run('END_EXPERIMENTAL_TURN');
+   if(side==='A')assert.deepEqual(e.scenarioHandGrowth,[{id:'turn2',side:'A',cards:1}]);
+  }
+  assert.equal(s.hands.A.length,kill?8:6);assert.deepEqual(replay(initial,log),s);
+ }
+ assert.throws(()=>createAncientsScenarioCatalog([{...doc,specialRules:{...doc.specialRules,sacredBand:['b2']}}]),/INVALID_SCENARIO_RULES/);
+});
