@@ -110,7 +110,7 @@ function validScenarioMetadata(s){
   const short=(x,n)=>typeof x==='string'&&x.trim()===x&&x.length>0&&x.length<=n;
   return isRecord(s)&&validId(s.id)&&validId(s.deckId)&&short(s.title,120)&&
     (Object.keys(s).length===3||
-     (Object.keys(s).length===5&&isRecord(s.provenance)&&Object.keys(s.provenance).length===2&&
+     (Object.keys(s).length===6&&s.geometry==='LAB_ODD_Q_13X9'&&isRecord(s.provenance)&&Object.keys(s.provenance).length===2&&
       ['OFFICIAL','COMMUNITY','ORIGINAL'].includes(s.provenance.kind)&&short(s.provenance.source,500)&&
       isRecord(s.factions)&&Object.keys(s.factions).length===2&&SIDES.every(side=>short(s.factions[side],80))));
 }
