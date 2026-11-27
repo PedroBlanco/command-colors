@@ -139,6 +139,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <label>Líderes propios que reciben orden (independiente de la unidad)
 <select id="ancients-leader-orders" multiple size="3"></select></label>
 <button id="ancients-order" disabled>Asignar órdenes</button>
+<fieldset id="ancients-reserve-controls" hidden><legend>Entrada de refuerzos</legend><p id="ancients-reserve-info"></p><label>Sector <select id="ancients-reserve-section"></select></label><label>Columnas de las tres unidades (separadas por comas, desde 1) <input id="ancients-reserve-columns" type="text" maxlength="24"></label><label>Unidad con el líder <select id="ancients-reserve-leader"></select></label><button id="ancients-reserve-deploy" type="button">Desplegar refuerzos</button><p id="ancients-reserve-feedback" role="status"></p></fieldset>
 <p>Selecciona una unidad ordenada en el tablero o elige un líder ordenado. Después, traza la ruta por hexágonos contiguos. El servidor decide si es válida. Un líder unido a una unidad puede desplazarse con ella sin recibir una orden independiente; moverlo por separado sí exige orden.</p>
 <label>Líder ordenado para movimiento independiente
 <select id="ancients-leader-choice"><option value="">Selecciona un líder</option></select></label>
@@ -150,6 +151,7 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <p id="ancients-route-status" role="status" aria-live="polite">Selecciona una unidad ordenada.</p>
 <button id="ancients-clear-path" disabled>Borrar ruta</button>
 <button id="ancients-move" disabled>Confirmar ruta</button>
+<button id="ancients-exit-unit" type="button" hidden disabled>Salir por borde enemigo (+medalla)</button><p id="ancients-exit-feedback" role="status"></p>
 <button id="ancients-finish-movement" disabled>Cerrar movimiento y preparar combate</button>
 <section id="ancients-combat" hidden>
 <h3>Combate experimental (a distancia y cuerpo a cuerpo)</h3>
