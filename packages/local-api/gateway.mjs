@@ -7,7 +7,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {browserConfig, cookieSession, sessionCookie, allowedBrowserRequest, validBrowserMutation} from './browser-session.mjs';
 import {startRevisionStream,startAncientsLabRevisionStream} from './revision-stream.mjs';
-import {createAncientsScenarioSetup,listAncientsScenarios} from '../ancients-rules/scenario-catalog.mjs';
+import {createAncientsScenarioCatalog} from '../ancients-rules/scenario-catalog.mjs';
 
 const MAX_BODY = 8192;
 const MAX_REVISION_STREAMS = 16;
@@ -129,13 +129,15 @@ function domainReply(result, successStatus = 200) {
  * Legacy bearer mode (browser omitted) is retained only for earlier laboratory tests.
  */
 export function createAccessGateway({identity, invitations, getStore, browser = null,
-  revisionPollMs = 1000, ancientsBrowserLab = false} = {}) {
+  revisionPollMs = 1000, ancientsBrowserLab = false, ancientsScenarioCatalog = createAncientsScenarioCatalog()} = {}) {
   if (!identity || !invitations || typeof getStore !== 'function') throw new TypeError('Servicios requeridos');
   if (!Number.isSafeInteger(revisionPollMs) || revisionPollMs < 20) throw new TypeError('INVALID_POLL_INTERVAL');
   const config = browser === null ? null : browserConfig(browser);
   if(typeof ancientsBrowserLab!=='boolean'||
      (ancientsBrowserLab&&!config?.insecureLoopback))
     throw new TypeError('ANCIENTS_LAB_LOOPBACK_ONLY');
+  if(ancientsBrowserLab&&(typeof ancientsScenarioCatalog?.list!=='function'||typeof ancientsScenarioCatalog?.setup!=='function'))
+    throw new TypeError('INVALID_ANCIENTS_SCENARIO_CATALOG');
   let revisionStreams = 0;
   return createServer(async (req, res) => {
     try {
@@ -213,7 +215,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         if (readError) return reply(res, readError.status, {code:readError.code});
         if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
         return reply(res, 200, {matchId, status: lobby.status, players: lobby.players, state,
-          ...(ancientsBrowserLab&&actor==='A'&&state.revision===0&&!state.phase?{ancientsScenarios:listAncientsScenarios()}: {})});
+          ...(ancientsBrowserLab&&actor==='A'&&state.revision===0&&!state.phase?{ancientsScenarios:ancientsScenarioCatalog.list()}: {})});
       }
       if (req.method === 'POST' && resource === 'invitations') {
         const body = await jsonRequest(req);
@@ -292,7 +294,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         if (req.method==='POST' && resource==='ancients-lab/initialize') {
           const body=await jsonRequest(req);
           if(Object.keys(body).length!==0&&!(Object.keys(body).length===1&&Object.hasOwn(body,'scenarioId')&&typeof body.scenarioId==='string'))return reply(res,400,{code:'INVALID_SETUP'});
-          const trustedSetup=createAncientsScenarioSetup(body.scenarioId);
+          const trustedSetup=ancientsScenarioCatalog.setup(body.scenarioId);
           if(!trustedSetup)return reply(res,400,{code:'UNKNOWN_SECTION_SCENARIO'});
           if(typeof store.initializeExperimentalSectionHistory!=='function')
             return reply(res,404,{code:'NOT_FOUND'});
