@@ -422,7 +422,7 @@ test('Ancients HTTP: own hand, ordered movement and SQLite replay through explic
  assert.equal((await request(cookies.bob,'/initialize','POST',{scenarioId:'open-field-v1'})).status,403);
  assert.equal((await request(cookies.alice,'/initialize','POST',{scenarioId:'__proto__'})).body.code,'UNKNOWN_SECTION_SCENARIO');
  const catalog=await fetch(origin+`/api/matches/${matchId}`,{headers:{cookie:cookies.alice}});
- assert.deepEqual((await catalog.json()).ancientsScenarios.map(s=>s.id),['demo-v1','open-field-v1']);
+ assert.deepEqual((await catalog.json()).ancientsScenarios.map(s=>s.id),['demo-v1','open-field-v1','crossroads-v1']);
  assert.equal((await request(cookies.alice,'/initialize','POST',{
   board:{units:[]},actor:'A'
  })).status,400);
