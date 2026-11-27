@@ -2084,7 +2084,7 @@ test('server scenario catalog: base deck, asymmetric command, shared sectors, pr
  assert.equal(deck.length,60);assert.equal(new Set(deck.map(c=>c.instanceId)).size,60);
  assert.deepEqual(Object.fromEntries(Object.keys(BASE_DECK_COUNTS).map(id=>[id,deck.filter(c=>c.definitionId===id).length])),BASE_DECK_COUNTS);
  assert.equal(createAncientsScenarioSetup('__proto__'),null);
- assert.deepEqual(listAncientsScenarios().map(s=>s.id),['demo-v1','open-field-v1']);
+ assert.deepEqual(listAncientsScenarios().map(s=>s.id),['demo-v1','open-field-v1','crossroads-v1']);
  const setup=createAncientsScenarioSetup('open-field-v1');
  const other=createAncientsScenarioSetup('open-field-v1');setup.movementTerrain.push({col:0,row:0,kind:'HILL'});
  assert.deepEqual(other.movementTerrain,[]);
