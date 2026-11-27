@@ -2102,3 +2102,49 @@ test('server scenario catalog: base deck, asymmetric command, shared sectors, pr
  assert.deepEqual(replay(initial,[play,order]),o.nextState);
  assert.throws(()=>init({...other,scenario:{...other.scenario,privateKey:'x'}}),/INVALID_SECTION_SCENARIO_METADATA/);
 });
+
+test('territorial objectives: temporary occupancy, permanent capture, victory and replay',()=>{
+ for(const mode of ['OCCUPY','CAPTURE','START_TURN_CAPTURE']){
+  for(const win of [false,true]){
+   const c=tacticalCardSetup('MOVE_FIRE_MOVE',true,10);c.enableMoveFireMoveLab=true;
+   c.victoryTargets={A:win?1:3,B:3};
+   c.scenarioObjectives=[{id:'objective',side:'A',mode,cells:[{col:3,row:4}],minUnits:1,banners:1}];
+   const initial=init(c);let s=initial;const log=[];
+   const run=(type,fields={},actor=s.turn)=>{const command=cmd(type,s.revision,{actor,...fields}),r=apply(s,command);assert.equal(r.accepted,true,r.code);log.push(command);s=r.nextState;return r.publicEvent;};
+   const score=()=>project(s,'A').diceLab.banners.A;
+   const move=col=>({unitId:'a1',path:[{col,row:4}]});
+   run('PLAY_SECTION_CARD',{cardInstanceId:s.hands.A.find(x=>x.definitionId==='MOVE_FIRE_MOVE').instanceId});
+   run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});
+   const arrival=run('MOVE_SECTION_FOOT_PATH_V2',move(3));
+   assert.equal(score(),mode==='START_TURN_CAPTURE'?0:1);
+   assert.equal(project(s,'B').victoryObjectives[0].occupied,1);
+   if(mode==='CAPTURE')assert.deepEqual(arrival.objectivesCaptured,['objective']);
+   if(win&&mode!=='START_TURN_CAPTURE'){
+    assert.equal(arrival.victory.winner,'A');
+    assert.equal(apply(s,cmd('FINISH_SECTION_MOVEMENT_LAB',s.revision)).code,'MATCH_FINISHED');
+   }else{
+    run('FINISH_SECTION_MOVEMENT_LAB');run('FINISH_SECTION_MOVEMENT_LAB');
+    if(mode!=='START_TURN_CAPTURE'){
+     run('MOVE_SECTION_FOOT_PATH_V2',move(2));
+     assert.equal(score(),mode==='CAPTURE'?1:0);
+     assert.equal(project(s,'A').victoryObjectives[0].claimed,mode==='CAPTURE');
+    }
+    run('END_EXPERIMENTAL_TURN');
+    if(mode==='START_TURN_CAPTURE'){
+     assert.equal(score(),0);
+     const card=s.hands.B.find(x=>x.definitionId.startsWith('ORDER_'));
+     assert.ok(card);
+     run('PLAY_SECTION_CARD',{cardInstanceId:card.instanceId});
+     run('ASSIGN_SECTION_ORDERS',{unitIds:card.definitionId.endsWith('_RIGHT')?['b1']:[],leaderIds:[]});
+     const end=run('END_EXPERIMENTAL_TURN');
+     assert.equal(score(),1);assert.deepEqual(end.objectivesCaptured,['objective']);
+     assert.equal(project(s,'B').diceLab.victory.winner,win?'A':null);
+    }
+   }
+   assert.deepEqual(replay(initial,log),s);
+  }
+ }
+ const bad=tacticalCardSetup('MOVE_FIRE_MOVE',true,10);bad.enableMoveFireMoveLab=true;
+ bad.scenarioObjectives=[{id:'bad',side:'A',mode:'CAPTURE',cells:[{col:13,row:0}],minUnits:1,banners:1}];
+ assert.throws(()=>init(bad),/INVALID_SECTION_SCENARIO_OBJECTIVES/);
+});
