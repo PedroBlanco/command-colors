@@ -16,7 +16,7 @@ import {planBaseAncientsRangedResolution,captureBaseAncientsLeaderCasualtyDice,
   previewBaseAncientsLeaderCasualtyCheck} from './ranged-resolution-sequence.mjs';
 
 import {scenarioObjectiveBanners,claimScenarioObjectives} from './scenario-objectives.mjs';
-import {isSacredBand} from './scenario-special-rules.mjs';
+import {isSacredBand,decisiveLeaderVictory} from './scenario-special-rules.mjs';
 
 const record=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -733,6 +733,8 @@ export function sectionVictory(state){
   if(d?.version<10||!d?.victoryTargets)return null;
   const score=banners(d),targets={...d.victoryTargets};
   if(state.victoryObjectives){const extra=scenarioObjectiveBanners(state);score.A+=extra.A;score.B+=extra.B;}
+  const decisive=decisiveLeaderVictory(state);
+  if(decisive)return {targets,banners:score,winner:decisive,reason:'DESIGNATED_LEADER_LOST'};
   const a=score.A>=targets.A,b=score.B>=targets.B;
   return {targets,banners:score,winner:a&&b?'DRAW':a?'A':b?'B':null};
 }
@@ -917,7 +919,7 @@ export function assertSectionDiceLab(state){
   }
   if(d.version>=9&&d.elephantRetreatPending!==null)elephantStageShadow(state);
   if(d.version>=10&&(!validVictoryTargets(d.victoryTargets)||sectionVictory(state).winner&&
-     (d.pending!==null||state.combatLab.plan!==null||!((d.version>=32||state.victoryObjectives)&&d.last===null)&&!same(d.last?.victory,sectionVictory(state)))))fail();
+     (d.pending!==null||state.combatLab.plan!==null||!((d.version>=32||state.victoryObjectives||sectionVictory(state).reason==='DESIGNATED_LEADER_LOST')&&d.last===null)&&!same(d.last?.victory,sectionVictory(state)))))fail();
   return true;
 }
 
