@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createAncientsScenarioSetup,listAncientsScenarios,createAncientsBaseDeck,BASE_DECK_COUNTS} from './scenario-catalog.mjs';
+import {createAncientsScenarioSetup,listAncientsScenarios,createAncientsBaseDeck,BASE_DECK_COUNTS,createAncientsScenarioCatalog,LAB_SCENARIO_GEOMETRY} from './scenario-catalog.mjs';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply,
  replaySectionHistoryLab as replay,projectSectionHistoryLab as project,
  assertSectionHistoryLab as validate,SECTION_HISTORY_MAX_COMMANDS} from './section-history-journal.mjs';
@@ -2147,4 +2147,36 @@ test('territorial objectives: temporary occupancy, permanent capture, victory an
  const bad=tacticalCardSetup('MOVE_FIRE_MOVE',true,10);bad.enableMoveFireMoveLab=true;
  bad.scenarioObjectives=[{id:'bad',side:'A',mode:'CAPTURE',cells:[{col:13,row:0}],minUnits:1,banners:1}];
  assert.throws(()=>init(bad),/INVALID_SECTION_SCENARIO_OBJECTIVES/);
+});
+
+test('external scenario import: schema, provenance, authority, isolation and replay',()=>{
+ const setup=createAncientsScenarioSetup('crossroads-v1');
+ const doc={schemaVersion:1,geometry:LAB_SCENARIO_GEOMETRY,id:'external-v1',title:'Imported example',
+  deckId:'ancients-base-2009',provenance:{kind:'COMMUNITY',source:'Original test fixture'},
+  factions:{A:'South',B:'North'},startingSide:setup.startingSide,handSizes:setup.handSizes,victoryTargets:setup.victoryTargets,
+  units:setup.board.units.map(u=>({...u,type:setup.movementUnitTypes[u.id]})),leaders:setup.board.leaders,
+  terrain:setup.movementTerrain,sectorCells:setup.sectorCells,objectives:setup.scenarioObjectives};
+ const catalog=createAncientsScenarioCatalog([doc]);
+ assert.equal(catalog.list().length,4);
+ assert.deepEqual(catalog.list().at(-1).provenance,doc.provenance);
+ const imported=catalog.setup(doc.id);
+ const initial=init({...imported,randomIndex:n=>n-1});
+ assert.deepEqual(project(initial,'A').scenario.provenance,doc.provenance);
+ assert.deepEqual(project(initial,'B').scenario.factions,doc.factions);
+ assert.deepEqual(project(initial,'A').victoryObjectives.map(x=>x.id),doc.objectives.map(x=>x.id));
+ assert.equal(initial.totalCards,60);assert.equal(initial.turn,'B');
+ assert.deepEqual(replay(initial,[]),initial);
+ doc.units[0].col=12;doc.provenance.kind='OFFICIAL';
+ imported.board.units[0].col=0;
+ assert.equal(catalog.setup(doc.id).board.units[0].col,2);
+ assert.equal(catalog.setup(doc.id).scenario.provenance.kind,'COMMUNITY');
+ const invalid=[
+  {...doc,enableDiceLab:false},{...doc,deckId:'unknown'},{...doc,schemaVersion:2},
+  {...doc,objectives:null},{...doc,units:[...doc.units,{...doc.units[0]}]},
+  {...doc,sectorCells:{}},{...doc,id:'open-field-v1'},{...doc,id:'demo-v1'}
+ ];
+ for(const bad of invalid)assert.throws(()=>createAncientsScenarioCatalog([bad]));
+ assert.throws(()=>createAncientsScenarioCatalog([{...doc,geometry:'OFFICIAL_ODD_R_113'}]),/UNSUPPORTED_SCENARIO_GEOMETRY/);
+ assert.throws(()=>createAncientsScenarioCatalog([doc,doc]),/DUPLICATE_SCENARIO_ID/);
+ assert.equal(catalog.setup('__proto__'),null);
 });
