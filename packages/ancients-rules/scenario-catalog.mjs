@@ -4,6 +4,7 @@
  * Keep IDs immutable: an edited deployment must receive a new versioned ID.
  */
 import {createAncientsLoopbackSetup} from './loopback-demo-setup.mjs';
+import {initializeSectionHistoryLab} from './section-history-journal.mjs';
 
 export const BASE_DECK_ID='ancients-base-2009';
 export const BASE_DECK_COUNTS=Object.freeze({
@@ -59,28 +60,68 @@ function sharedSectorCells(){
   }));
 }
 
-export function listAncientsScenarios(){
-  return [
-    {id:'demo-v1',title:'Demostración original (38 cartas)',deckId:'demo-38'},
-    ...SCENARIOS.map(s=>({id:s.id,title:s.title+' (60 cartas)',deckId:s.deckId}))
-  ];
-}
+const record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&Object.getPrototypeOf(x)===Object.prototype;
+const exact=(x,required,optional=[])=>record(x)&&required.every(k=>Object.hasOwn(x,k))&&Object.keys(x).every(k=>required.includes(k)||optional.includes(k));
+const short=(x,max)=>typeof x==='string'&&x.length>0&&x.length<=max&&x.trim()===x;
+const validId=x=>typeof x==='string'&&/^[a-z][a-z0-9-]{0,62}-v[1-9][0-9]*$/.test(x)&&x.length<=80;
+const pair=x=>exact(x,['A','B']);
+const unitKeys=['id','side','col','row'];
+const fail=()=>{throw new Error('INVALID_SCENARIO_DOCUMENT');};
 
-// Only an opaque ID selects a trusted deployment. No caller-supplied board,
-// hand sizes, deck or rules are merged into this object.
-export function createAncientsScenarioSetup(id='demo-v1'){
-  if(id==='demo-v1')return createAncientsLoopbackSetup();
-  const s=SCENARIOS.find(x=>x.id===id);
-  if(!s)return null;
+function scenarioSetup(s){
   const piece=([id,side,col,row])=>({id,side,col,row});
   return {
     ...createAncientsLoopbackSetup(),
-    scenario:{id:s.id,title:s.title,deckId:s.deckId},
+    scenario:{id:s.id,title:s.title,deckId:s.deckId,
+      ...(s.provenance?{provenance:structuredClone(s.provenance),factions:structuredClone(s.factions)}:{})},
     cardInstances:createAncientsBaseDeck(),startingSide:s.startingSide,
     handSizes:{...s.handSizes},victoryTargets:{...s.victoryTargets},
     board:{units:s.units.map(piece),leaders:s.leaders.map(piece)},
     movementUnitTypes:Object.fromEntries(s.units.map(([id,,,,type])=>[id,type])),
-    movementTerrain:structuredClone(s.terrain),sectorCells:sharedSectorCells(),
+    movementTerrain:structuredClone(s.terrain),sectorCells:s.sectorCells?structuredClone(s.sectorCells):sharedSectorCells(),
     ...(s.objectives?{scenarioObjectives:structuredClone(s.objectives)}:{})
   };
 }
+
+// A portable, versioned data format, not a way of injecting arbitrary setup
+// options. The engine is the final authority for geometry and supported rules.
+export function importAncientsScenario(doc){
+  if(!exact(doc,['schemaVersion','id','title','deckId','provenance','factions','startingSide','handSizes','victoryTargets','units','leaders','terrain','sectorCells'],['objectives'])||
+     doc.schemaVersion!==1||!validId(doc.id)||!short(doc.title,120)||doc.deckId!==BASE_DECK_ID||
+     !exact(doc.provenance,['kind','source'])||!['OFFICIAL','COMMUNITY','ORIGINAL'].includes(doc.provenance.kind)||!short(doc.provenance.source,500)||
+     !pair(doc.factions)||!['A','B'].every(side=>short(doc.factions[side],80))||!['A','B'].includes(doc.startingSide)||
+     !pair(doc.handSizes)||!pair(doc.victoryTargets)||!Array.isArray(doc.units)||doc.units.length<2||doc.units.length>117||
+     !Array.isArray(doc.leaders)||doc.leaders.length>117||!Array.isArray(doc.terrain)||doc.terrain.length>117||
+     !record(doc.sectorCells)||Object.keys(doc.sectorCells).length!==117||
+     !doc.units.every(u=>exact(u,[...unitKeys,'type'])&&typeof u.type==='string')||
+     !doc.leaders.every(l=>exact(l,unitKeys))||
+     !['A','B'].every(side=>doc.units.some(u=>u.side===side)))fail();
+  const normalized={...structuredClone(doc),units:doc.units.map(u=>[u.id,u.side,u.col,u.row,u.type]),
+    leaders:doc.leaders.map(l=>[l.id,l.side,l.col,l.row])};
+  // Validate exactly the same setup accepted by live initialization; no
+  // imported randomness, card definitions, flags or executable special rules.
+  initializeSectionHistoryLab({...scenarioSetup(normalized),randomIndex:n=>n-1});
+  return normalized;
+}
+
+export function createAncientsScenarioCatalog(documents=[]){
+  if(!Array.isArray(documents)||documents.length>500)fail();
+  const scenarios=new Map(SCENARIOS.map(s=>[s.id,s]));
+  for(const doc of documents){
+    const s=importAncientsScenario(doc);
+    if(s.id==='demo-v1'||scenarios.has(s.id))throw Error('DUPLICATE_SCENARIO_ID: '+s.id);
+    scenarios.set(s.id,s);
+  }
+  return Object.freeze({
+    list:()=>[
+      {id:'demo-v1',title:'Demostración original (38 cartas)',deckId:'demo-38'},
+      ...Array.from(scenarios.values(),s=>({id:s.id,title:s.title+' (60 cartas)',deckId:s.deckId,
+        ...(s.provenance?{provenance:structuredClone(s.provenance),factions:structuredClone(s.factions)}:{})}))
+    ],
+    setup:(id='demo-v1')=>id==='demo-v1'?createAncientsLoopbackSetup():
+      scenarios.has(id)?scenarioSetup(scenarios.get(id)):null
+  });
+}
+const defaults=createAncientsScenarioCatalog();
+export function listAncientsScenarios(){return defaults.list();}
+export function createAncientsScenarioSetup(id){return defaults.setup(id);}
