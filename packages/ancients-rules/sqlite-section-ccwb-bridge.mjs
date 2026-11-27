@@ -21,6 +21,8 @@ const TYPES=Object.freeze({
   PLAY_SECTION_CARD:['cardInstanceId'],
   ASSIGN_SECTION_ORDERS:['unitIds','leaderIds'],
   ASSIGN_SECTION_RALLY_LAB:['allocations'],
+  DEPLOY_SCENARIO_RESERVE:['section','placements','leaderUnitId'],
+  EXIT_SCENARIO_UNIT:['unitId','path'],
   // LAB_ONLY: this is persisted on the lab board, not an official scenario.
   MOVE_SECTION_FOOT_PATH_V2:['unitId','path'],
   MOVE_SECTION_MOUNTED_PATH_V1:['unitId','path'],
