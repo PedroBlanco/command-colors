@@ -249,7 +249,7 @@ function renderAncients() {
     if(unit.side!==cached.you||selection&&!selection.unitIds.includes(unit.id))continue;
     const option=document.createElement('option');
     option.value=unit.id;
-    option.textContent=`${unit.id} (${unit.unitType}, ${unit.col+1},${unit.row+1})`;
+    option.textContent=`${unit.id} (${unit.unitType}${unit.sacredBand?', Banda Sagrada':''}, ${unit.col+1},${unit.row+1})`;
     option.selected=!!selection?.allRequired||selected.has(unit.id);
     unitSelect.appendChild(option);
   }
@@ -426,7 +426,7 @@ function renderAncients() {
   el('ancients-morale-controls').hidden=!morale&&!decision;
   el('ancients-confirm-morale').disabled=stopped||!dice?.canChooseMorale;
   el('ancients-morale-status').textContent=morale
-    ?`Banderas: ${morale.flags}; máximo ignorable: ${morale.maxIgnored}. Líder: ${morale.attachedLeader?'sí':'no'}; apoyo: ${morale.supported?'sí':'no'}; guerreros al completo: ${morale.fullWarrior?'sí':'no'}.`+(morale.bridgeDefense?' Protección del puente: una bandera adicional.':'')+(morale.fortificationDefense?' Protección de fortificación: una bandera adicional.':'')+(decision?` Ignoradas: ${decision.ignored}; pendientes de retirada: ${decision.remaining}.`:'')
+    ?`Banderas: ${morale.flags}; máximo ignorable: ${morale.maxIgnored}. Líder: ${morale.attachedLeader?'sí':'no'}; apoyo: ${morale.supported?'sí':'no'}; guerreros al completo: ${morale.fullWarrior?'sí':'no'}.`+(morale.sacredBand?' Banda Sagrada: una bandera adicional.':'')+(morale.bridgeDefense?' Protección del puente: una bandera adicional.':'')+(morale.fortificationDefense?' Protección de fortificación: una bandera adicional.':'')+(decision?` Ignoradas: ${decision.ignored}; pendientes de retirada: ${decision.remaining}.`:'')
     :decision?`Banderas ignoradas: ${decision.ignored}; aceptadas: ${decision.remaining}.`:'';
   const retreat=dice?.retreat,retreatChoice=el('ancients-retreat-choice'),oldRetreat=retreatChoice.value;
   retreatChoice.replaceChildren();
