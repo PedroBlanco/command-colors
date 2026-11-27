@@ -85,5 +85,8 @@ test('building close cap and zero fire; fortified wall no battle',()=>{
   assert.equal(cap('HEAVY_INFANTRY',a,b).maxDice,2);
   assert.equal(cap('LIGHT_BOW_INFANTRY',a,b,'RANGED').maxDice,0);
  }
- assert.equal(cap('HEAVY_INFANTRY','CLEAR','FORTIFIED_CITY_WALL').maxDice,0);
+ for(const t of ['FORTIFIED_CITY_WALL','STEEP_HILL','LAKE']){
+   assert.equal(cap('HEAVY_INFANTRY','CLEAR',t).maxDice,0);
+   assert.equal(cap('LIGHT_BOW_INFANTRY',t,'CLEAR','RANGED').maxDice,0);
+ }
 });
