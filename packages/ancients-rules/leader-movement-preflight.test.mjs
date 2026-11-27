@@ -70,7 +70,7 @@ test('forest and broken ground stop a leader while hill allows crossing',()=>{
 });
 
 test('missing, duplicate or unrecognized server terrain cannot create a candidate',()=>{
-  for(const terrain of [undefined,null,[{...at(2,5),kind:'MARSH'}],
+  for(const terrain of [undefined,null,[{...at(2,5),kind:'UNKNOWN_TERRAIN'}],
     [{...at(2,5),kind:'FOREST'},{...at(2,5),kind:'HILL'}],
     Array.from({length:118},(_,i)=>({...at(2,5),kind:'FOREST'}))])
     assert.throws(()=>check({terrain}),/INVALID_LEADER_TERRAIN_MAP/);
@@ -93,4 +93,10 @@ test('leader not originally attached remains unattached when moving to empty hex
   assert.equal(result.status,'CANDIDATE');
   assert.equal(result.detachesFromUnit,false);
   assert.equal(result.attachesToUnit,false);
+});
+
+test('official geometry leader follows odd-r diagonal',()=>{
+ const geometryId='OFFICIAL_ODD_R_113';
+ assert.equal(check({geometryId,path:[at(1,5)]}).status,'CANDIDATE');
+ assert.equal(check({geometryId,path:[at(3,5)]}).reason,'NON_ADJACENT_HEX');
 });

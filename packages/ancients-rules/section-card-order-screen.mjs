@@ -3,7 +3,12 @@
  * This does not prove the snapshot came from the deck/hand event log, and is
  * never a command-card or combat authorization. No card text is reproduced.
  */
+import {getBoardGeometry} from '../hex-grid/hex.mjs';
+import {BASE_RANGED_REACH} from './ranged-profile.mjs';
+
 export const SECTION_CARD_ORDER_SCREEN_VERSION = 1;
+// A copied effect is separate from the conserved physical card instance.
+export const effectiveSectionCard=state=>state.diceLab?.counter?.effect??state.activeCard?.definitionId??null;
 export const BASE_SECTION_CARD_LIMITS = Object.freeze(Object.fromEntries(
   ['LEFT','CENTER','RIGHT'].flatMap(section => [2,3,4].map(count => [
     'ORDER_'+count+'_'+section, Object.freeze({section, maxOrders:count})
@@ -16,8 +21,7 @@ const record=x=>x!==null && typeof x==='object' && !Array.isArray(x) &&
   (Object.getPrototypeOf(x)===Object.prototype || Object.getPrototypeOf(x)===null);
 const ident=x=>typeof x==='string' && ID.test(x) && x!=='__proto__';
 const rev=x=>Number.isSafeInteger(x)&&x>=0;
-const coord=x=>record(x)&&Number.isSafeInteger(x.col)&&Number.isSafeInteger(x.row)&&
-  x.col>=0&&x.col<13&&x.row>=0&&x.row<9;
+const coord=(x,geometry)=>record(x)&&geometry.inBounds(x);
 const cell=x=>x.col+','+x.row;
 const list=xs=>Array.isArray(xs)&&xs.length<=117&&xs.every(ident)&&new Set(xs).size===xs.length;
 const forbidden=x=>Object.keys(x).some(k=>['__proto__','constructor','prototype'].includes(k));
@@ -32,7 +36,8 @@ const blocked=reason=>Object.freeze({status:'BLOCKED',reason,
  * post-movement board; sector labels are relative to the active player's side.
  */
 export function screenBaseAncientsSectionCardOrders({turnState,sessionSide,
-  expectedRevision,handAtPlay,cardPlay,orderSnapshot}={}) {
+  expectedRevision,handAtPlay,cardPlay,orderSnapshot,effectiveDefinitionId=undefined,geometryId}={}) {
+  const geometry=getBoardGeometry(geometryId);
   if (!record(turnState)||turnState.schemaVersion!==1||
       turnState.ruleset!=='ancients-base-3e-2009'||
       turnState.status!=='ACTIVE'||turnState.phase!=='COMBAT'||
@@ -63,13 +68,15 @@ export function screenBaseAncientsSectionCardOrders({turnState,sessionSide,
   const card=handAtPlay.cards.find(x=>x.instanceId===cardPlay.instanceId);
   if (!card || card.definitionId!==cardPlay.definitionId)
     return blocked('CARD_NOT_IN_ACTOR_HAND_AT_PLAY');
-  const rule=BASE_SECTION_CARD_LIMITS[cardPlay.definitionId];
-  if (!Object.hasOwn(BASE_SECTION_CARD_LIMITS,cardPlay.definitionId)||!rule)
+  // The journal supplies the replay-derived effect, never the request.
+  const definition=cardPlay.definitionId==='COUNTER_ATTACK'?effectiveDefinitionId:cardPlay.definitionId;
+  const rule=BASE_SECTION_CARD_LIMITS[definition];
+  if (!Object.hasOwn(BASE_SECTION_CARD_LIMITS,definition)||!rule)
     return blocked('UNSUPPORTED_CARD_FAMILY');
   const pieces=orderSnapshot.pieces;
   if (!Array.isArray(pieces)||pieces.length>117||pieces.some(x=>
       !record(x)||!ident(x.id)||!['UNIT','LEADER'].includes(x.kind)||
-      !SIDES.has(x.side)||!coord(x)))
+      !SIDES.has(x.side)||!coord(x,geometry)))
     throw new TypeError('INVALID_ORDER_PIECE_SNAPSHOT');
   const seenIds=new Set(),seenUnits=new Set(),seenLeaders=new Set(),
         usedCells={units:new Set(),leaders:new Set()};
@@ -105,4 +112,137 @@ export function screenBaseAncientsSectionCardOrders({turnState,sessionSide,
     cardPlayAuthorized:false,ordersAuthorized:false,attackAuthorized:false,
     needsFullLegalityCheck:true
   });
+}
+
+// V22: rules for cards that change order selection without a new combat phase.
+// Inputs are supplied only by the authoritative journal before any movement.
+export const SELECTION_CARD_DEFINITIONS=Object.freeze({
+  ORDER_LIGHT_TROOPS:'LIGHT',ORDER_MEDIUM_TROOPS:'MEDIUM',ORDER_HEAVY_TROOPS:'HEAVY',
+  ORDER_MOUNTED_TROOPS:'MOUNTED',COORDINATED_ATTACK:'COORDINATED',OUT_FLANKED:'FLANKS'
+});
+export const GROUP_CARD_DEFINITIONS=Object.freeze({LINE_COMMAND:'LINE',DOUBLE_TIME:'DOUBLE_TIME'});
+export const ATTACK_CARD_DEFINITIONS=Object.freeze({MOUNTED_CHARGE:'MOUNTED_CHARGE',CLASH_OF_SHIELDS:'CLASH'});
+export const LEADERSHIP_CARD_DEFINITIONS=Object.freeze({
+  LEADERSHIP_ANY_SECTION:null,INSPIRED_LEFT_LEADERSHIP:'LEFT',
+  INSPIRED_CENTER_LEADERSHIP:'CENTER',INSPIRED_RIGHT_LEADERSHIP:'RIGHT'
+});
+export const FIRE_CARD_DEFINITIONS=Object.freeze({DARKEN_THE_SKY:'DARKEN'});
+const mountedTypes=new Set(['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT']);
+const troopClasses={
+  LIGHT:new Set(['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY','LIGHT_CAVALRY']),
+  MEDIUM:new Set(['MEDIUM_INFANTRY','WARRIOR_INFANTRY','MEDIUM_CAVALRY']),
+  HEAVY:new Set(['HEAVY_INFANTRY','HEAVY_WAR_MACHINE','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT']),
+  MOUNTED:mountedTypes
+};
+export function selectionCardOptions({definitionId,side,command,board,unitTypes,sectorCells,geometryId}){
+  const geometry=getBoardGeometry(geometryId);
+  if(definitionId==='MOVE_FIRE_MOVE'){
+    const units=board.units.filter(u=>u.side===side);
+    const eligible=units.filter(u=>troopClasses.LIGHT.has(unitTypes[u.id]));
+    return {family:'MOVE_FIRE_MOVE',maximumOrders:eligible.length?command:1,
+      unitIds:(eligible.length?eligible:units).map(u=>u.id),leaderIds:[],fallback:eligible.length===0};
+  }
+  if(Object.hasOwn(FIRE_CARD_DEFINITIONS,definitionId)){
+    const units=board.units.filter(u=>u.side===side);
+    const eligible=units.filter(u=>Object.hasOwn(BASE_RANGED_REACH,unitTypes[u.id]));
+    return {family:'DARKEN',maximumOrders:eligible.length||1,
+      unitIds:(eligible.length?eligible:units).map(u=>u.id),leaderIds:[],
+      fallback:eligible.length===0,allRequired:eligible.length>0};
+  }
+  if(Object.hasOwn(LEADERSHIP_CARD_DEFINITIONS,definitionId)){
+    const section=LEADERSHIP_CARD_DEFINITIONS[definitionId];
+    const units=board.units.filter(u=>u.side===side),leaders=board.leaders.filter(l=>l.side===side);
+    const lone=leaders.filter(l=>!units.some(u=>cell(u)===cell(l)));
+    const anchors=leaders.filter(l=>section===null||sectorCells[cell(l)]?.includes(section))
+      .map(l=>({id:l.id,orderId:units.find(u=>cell(u)===cell(l))?.id??l.id,col:l.col,row:l.row}));
+    return {family:'LEADERSHIP',maximumOrders:section===null?4:5,
+      unitIds:units.map(u=>u.id),leaderIds:anchors.length?lone.map(l=>l.id):[],
+      leadershipAnchors:anchors,section,singleUnitAlternative:true};
+  }
+  if(!Object.hasOwn(SELECTION_CARD_DEFINITIONS,definitionId)&&!Object.hasOwn(GROUP_CARD_DEFINITIONS,definitionId)&&!Object.hasOwn(ATTACK_CARD_DEFINITIONS,definitionId))return null;
+  const family=SELECTION_CARD_DEFINITIONS[definitionId]??GROUP_CARD_DEFINITIONS[definitionId]??ATTACK_CARD_DEFINITIONS[definitionId];
+  const units=board.units.filter(u=>u.side===side),leaders=board.leaders.filter(l=>l.side===side);
+  if(family==='CLASH'){
+    const enemy=board.units.filter(u=>u.side!==side);
+    const eligible=units.filter(u=>enemy.some(v=>geometry.distance(u,v)===1));
+    return {family,maximumOrders:eligible.length,unitIds:eligible.map(u=>u.id),leaderIds:[],allRequired:true};
+  }
+  if(family==='MOUNTED_CHARGE'){
+    const eligible=units.filter(u=>mountedTypes.has(unitTypes[u.id]));
+    return {family,maximumOrders:eligible.length?command:1,
+      unitIds:(eligible.length?eligible:units).map(u=>u.id),leaderIds:[],fallback:eligible.length===0};
+  }
+  if(family==='LINE'||family==='DOUBLE_TIME'){
+    const foot=units.filter(u=>!mountedTypes.has(unitTypes[u.id]));
+    const fallback=foot.length===0;
+    return {family,maximumOrders:fallback?1:family==='LINE'?foot.length:Math.min(4,foot.length),
+      unitIds:(fallback?units:foot).map(u=>u.id),leaderIds:[],fallback,
+      ...(fallback?{}:{connected:true,maximumSections:family==='LINE'?3:2})};
+  }
+  if(family==='COORDINATED'||family==='FLANKS'){
+    const capacities=family==='COORDINATED'?{LEFT:1,CENTER:1,RIGHT:1}:{LEFT:2,CENTER:0,RIGHT:2};
+    const allowed=p=>sectorCells[cell(p)]?.some(s=>capacities[s]>0);
+    return {family,maximumOrders:Object.values(capacities).reduce((a,b)=>a+b,0),
+      unitIds:units.filter(allowed).map(u=>u.id),leaderIds:leaders.filter(allowed).map(l=>l.id),capacities};
+  }
+  const eligible=units.filter(u=>troopClasses[family].has(unitTypes[u.id]));
+  const fallback=eligible.length===0;
+  return {family,maximumOrders:fallback&&family!=='MOUNTED'?1:command,
+    unitIds:(fallback?units:eligible).map(u=>u.id),
+    leaderIds:family==='MOUNTED'?leaders.map(l=>l.id):[],fallback};
+}
+export function screenSelectionCardOrders(options,pieces,sectorCells,geometryId){
+  const geometry=getBoardGeometry(geometryId);
+  if(!options||pieces.length>options.maximumOrders||pieces.some(p=>!(p.kind==='UNIT'?options.unitIds:options.leaderIds).includes(p.id)))return false;
+  if(options.family==='LEADERSHIP'){
+    // A unit and its attached leader are one ordered hex. A lone leader
+    // uses its own order. A single-unit alternative is always available.
+    if(pieces.length===1&&pieces[0].kind==='UNIT')return true;
+    if(!pieces.length)return true;
+    return options.leadershipAnchors.some(anchor=>{
+      const start=pieces.findIndex(p=>p.id===anchor.orderId&&cell(p)===cell(anchor));
+      if(start<0)return false;
+      const reached=new Set([start]),queue=[start];
+      for(let i=0;i<queue.length;i++)for(let j=0;j<pieces.length;j++){
+        if(!reached.has(j)&&geometry.distance(pieces[queue[i]],pieces[j])===1){reached.add(j);queue.push(j);}
+      }
+      return reached.size===pieces.length;
+    });
+  }
+  if(options.allRequired&&(pieces.length!==options.unitIds.length||!options.unitIds.every(id=>pieces.some(p=>p.kind==='UNIT'&&p.id===id))))return false;
+  if(options.fallback){
+    const units=pieces.filter(p=>p.kind==='UNIT');
+    // Mounted card can order leaders; a substitute foot order is instead a
+    // single unit, never an extra order added to the leader allowance.
+    if(units.length&&(units.length!==1||pieces.length!==1))return false;
+  }
+  if(options.connected&&pieces.length){
+    // Selected units themselves must form a connected group at order time.
+    // Movement later in the turn is free to split that group.
+    const reached=new Set([0]),queue=[0];
+    for(let i=0;i<queue.length;i++){
+      for(let k=0;k<pieces.length;k++)if(!reached.has(k)&&geometry.distance(pieces[queue[i]],pieces[k])===1){
+        reached.add(k);queue.push(k);
+      }
+    }
+    if(reached.size!==pieces.length)return false;
+    if(options.maximumSections===2&&![
+      ['LEFT','CENTER'],['CENTER','RIGHT']
+    ].some(pair=>pieces.every(p=>sectorCells[cell(p)]?.some(x=>pair.includes(x)))))return false;
+  }
+  if(!options.capacities)return true;
+  const remaining={...options.capacities};
+  // Each boundary piece consumes exactly one slot. Try all assignments
+  // (at most four pieces) rather than selecting a sector greedily.
+  function assign(i){
+    if(i===pieces.length)return true;
+    for(const sector of sectorCells[cell(pieces[i])]??[]){
+      if(!(remaining[sector]>0))continue;
+      remaining[sector]--;
+      if(assign(i+1))return true;
+      remaining[sector]++;
+    }
+    return false;
+  }
+  return assign(0);
 }

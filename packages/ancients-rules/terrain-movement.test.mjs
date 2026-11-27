@@ -93,7 +93,7 @@ test('starting in a forest and ending in another forest triggers entry stop only
 });
 
 test('terrain map rejects malformed tiles and unsupported terrain kinds fail closed', () => {
-  const bad = [[tile(5,4,'MARSH')],[tile(5,4,'FOREST'),tile(5,4,'HILL')],
+  const bad = [[tile(5,4,'UNKNOWN_TERRAIN')],[tile(5,4,'FOREST'),tile(5,4,'HILL')],
     [tile(13,4,'FOREST')],[tile(-1,4,'FOREST')],[{kind:'HILL',col:4,row:4.5}],
     Array.from({length:118},()=>tile(5,4,'HILL')),null,{}];
   for (const terrain of bad)
@@ -122,5 +122,43 @@ test('battle screen is about terrain only; no legal battle or movement implied',
   assert.equal(res.needsFullLegalityCheck,true);
   assert.equal(Object.isFrozen(res),true);
   assert.equal(Object.isFrozen(BASE_TERRAIN_TYPES),true);
-  assert.deepEqual(BASE_TERRAIN_TYPES,['FOREST','HILL','BROKEN_GROUND']);
+  assert.deepEqual(BASE_TERRAIN_TYPES,['FOREST','HILL','BROKEN_GROUND','RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE','FORTIFIED_CAMP','RAMPART','MARSH','BUILDING','FORTIFIED_CITY_WALL','LAKE','STEEP_HILL']);
+});
+
+test('water terrain: impassable river/coast, ford stop and open bridge',()=>{
+  for(const kind of ['RIVER','SEACOAST','LAKE','STEEP_HILL'])assert.equal(check('LIGHT_INFANTRY',[at(5,4)],[tile(5,4,kind)]).reason,'IMPASSABLE_TERRAIN');
+  assert.equal(check('LIGHT_CAVALRY',[at(5,4),at(6,4)],[tile(5,4,'FORDABLE_RIVER')]).reason,'MUST_STOP_ON_FORD_ENTRY');
+  assert.equal(check('LIGHT_CAVALRY',[at(5,4)],[tile(5,4,'FORDABLE_RIVER')]).battleOnEntry,'NOT_BARRED_BY_TERRAIN');
+  assert.equal(check('LIGHT_CAVALRY',[at(5,4),at(6,4)],[tile(5,4,'BRIDGE')]).status,'CANDIDATE');
+});
+
+test('rampart accepts two or three contiguous canonical sides; no movement penalty',()=>{
+ for(const sides of [[0,1],[5,0,1]])assert.equal(check('LIGHT_CAVALRY',[at(5,4),at(6,4)],[{...tile(5,4,'RAMPART'),sides}]).status,'CANDIDATE');
+ for(const sides of [undefined,[],[0,2],[0,0],[6,0],[0,1,2,3]])assert.throws(()=>check('LIGHT_INFANTRY',[at(5,4)],[{...tile(5,4,'RAMPART'),sides}]),/INVALID_BASE_TERRAIN_MAP/);
+});
+
+test('marsh entry stops movement; exit is one hex and war machines cannot enter',()=>{
+ const terrain=[tile(5,4,'MARSH')];
+ assert.equal(check('LIGHT_CAVALRY',[at(5,4),at(6,4)],terrain).reason,'MUST_STOP_ON_MARSH_ENTRY');
+ assert.equal(check('LIGHT_CAVALRY',[at(5,4)],terrain).battleOnEntry,'NOT_BARRED_BY_TERRAIN');
+ assert.equal(check('HEAVY_WAR_MACHINE',[at(5,4)],terrain).reason,'WAR_MACHINE_CANNOT_ENTER_MARSH');
+ assert.equal(check('LIGHT_CAVALRY',[at(6,4),at(7,4)],terrain,at(5,4)).reason,'MARSH_EXIT_ONE_HEX');
+});
+
+
+test('building entry and exit are single-step; mounted, machines and fortified walls are blocked',()=>{
+ const terrain=[tile(5,4,'BUILDING'),tile(6,4,'FORTIFIED_CITY_WALL')];
+ assert.equal(check('LIGHT_INFANTRY',[at(5,4)],terrain).status,'CANDIDATE');
+ assert.equal(check('LIGHT_INFANTRY',[at(5,4),at(6,4)],terrain).reason,'BUILDING_MOVE_ONE_HEX');
+ assert.equal(check('LIGHT_INFANTRY',[at(4,4),at(3,4)],terrain,at(5,4)).reason,'BUILDING_EXIT_ONE_HEX');
+ for(const type of ['LIGHT_CAVALRY','ELEPHANT','HEAVY_WAR_MACHINE'])
+  assert.equal(check(type,[at(5,4)],terrain).reason,'UNIT_CANNOT_ENTER_BUILDING');
+ assert.equal(check('LIGHT_INFANTRY',[at(6,4)],terrain,at(5,4)).reason,'IMPASSABLE_TERRAIN');
+});
+
+test('official geometry admits diagonal across alternating rows, not a missing edge',()=>{
+ const from=at(4,4),geometryId='OFFICIAL_ODD_R_113',unitType='LIGHT_INFANTRY';
+ assert.equal(assess({unitType,origin:from,path:[at(3,3)],geometryId}).status,'CANDIDATE');
+ assert.equal(assess({unitType,origin:from,path:[at(5,3)],geometryId}).reason,'NON_ADJACENT_HEX');
+ assert.throws(()=>assess({unitType,origin:at(12,0),path:[at(12,1)],geometryId}),/INVALID_BASE_TERRAIN_PATH/);
 });

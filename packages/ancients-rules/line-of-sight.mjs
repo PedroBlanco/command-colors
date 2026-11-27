@@ -1,24 +1,25 @@
 /**
  * Partial Ancients base-game LOS screen (R-06), not an attack authorization.
- * Only FOREST, HILL and BROKEN_GROUND terrain are supported here. Terrain and
+ * Supported terrain is shared with the movement screen. Terrain and
  * positions MUST come from a trusted server-owned board, never a client claim.
  * Geometry uses the 13x9 odd-q hex centers and true intervening hex interiors.
  */
-import {allCells, distance, inBounds, pixelCenter, polygonPoints} from '../hex-grid/hex.mjs';
+import {getBoardGeometry} from '../hex-grid/hex.mjs';
 
-const KINDS = new Set(['FOREST', 'HILL', 'BROKEN_GROUND']);
+import {BASE_TERRAIN_TYPES,terrainTileShapeOK} from './terrain-movement.mjs';
+const KINDS = new Set(BASE_TERRAIN_TYPES);
 const EPS = 1e-8;
 const key = ({col, row}) => `${col},${row}`;
-const cell = v => v && typeof v === 'object' && !Array.isArray(v)
-  && Number.isSafeInteger(v.col) && Number.isSafeInteger(v.row) && inBounds(v);
+const cell = (v,board) => v && typeof v === 'object' && !Array.isArray(v)
+  && Number.isSafeInteger(v.col) && Number.isSafeInteger(v.row) && board.inBounds(v);
 const cross = (a, b) => a.x * b.y - a.y * b.x;
 const sub = (a, b) => ({x:a.x - b.x, y:a.y - b.y});
 
-function indexCells(items, kind) {
-  if (!Array.isArray(items) || items.length > 117) throw new TypeError('INVALID_LOS_' + kind);
+function indexCells(items, kind,board) {
+  if (!Array.isArray(items) || items.length > board.cellCount) throw new TypeError('INVALID_LOS_' + kind);
   const found = new Map();
   for (const value of items) {
-    if (!cell(value) || found.has(key(value)) || (kind === 'TERRAIN' && !KINDS.has(value.kind)))
+    if (!cell(value,board) || found.has(key(value)) || (kind === 'TERRAIN' && (!KINDS.has(value.kind)||!terrainTileShapeOK(value))))
       throw new TypeError('INVALID_LOS_' + kind);
     found.set(key(value), value);
   }
@@ -31,8 +32,8 @@ function indexCells(items, kind) {
  * Vertex-only touches do not obstruct LOS. This avoids unstable pixel/ray
  * sampling and deals with the rule for two blockers on opposite edge sides.
  */
-function crossedHex(start, end, tile) {
-  const polygon = polygonPoints(tile, 1);
+function crossedHex(start, end, tile,board) {
+  const polygon = board.polygonPoints(tile, 1);
   const d = sub(end, start);
   let low = 0, high = 1;
   for (let i = 0; i < polygon.length; i++) {
@@ -66,19 +67,20 @@ const freeze = (status, reason, obstructions = []) => Object.freeze({
  * `VISIBLE` means only that the included map/occupants do not block the line.
  * No shot, phase, range, weapon or sequence is authorized by this result.
  */
-export function assessAncientsLineOfSight({from, to, units = [], leaders = [], terrain = []} = {}) {
-  if (!cell(from) || !cell(to) || key(from) === key(to)) throw new TypeError('INVALID_LOS_ENDPOINTS');
-  const terrainCells = indexCells(terrain, 'TERRAIN');
-  const occupiedUnits = indexCells(units, 'UNITS');
-  const occupiedLeaders = indexCells(leaders, 'LEADERS');
+export function assessAncientsLineOfSight({from, to, units = [], leaders = [], terrain = [],geometryId} = {}) {
+  const board=getBoardGeometry(geometryId);
+  if (!cell(from,board) || !cell(to,board) || key(from) === key(to)) throw new TypeError('INVALID_LOS_ENDPOINTS');
+  const terrainCells = indexCells(terrain, 'TERRAIN',board);
+  const occupiedUnits = indexCells(units, 'UNITS',board);
+  const occupiedLeaders = indexCells(leaders, 'LEADERS',board);
   const originKind = terrainCells.get(key(from))?.kind ?? 'CLEAR';
   const targetKind = terrainCells.get(key(to))?.kind ?? 'CLEAR';
-  const start = pixelCenter(from, 1), end = pixelCenter(to, 1);
+  const start = board.pixelCenter(from, 1), end = board.pixelCenter(to, 1);
   const hit = [];
-  for (const hex of allCells()) {
+  for (const hex of board.allCells()) {
     const position = key(hex);
     if (position === key(from) || position === key(to)) continue;
-    const section = crossedHex(start, end, hex);
+    const section = crossedHex(start, end, hex,board);
     if (!section) continue;
     hit.push({...hex, position, ...section,
       kind:terrainCells.get(position)?.kind ?? 'CLEAR',
@@ -93,14 +95,14 @@ export function assessAncientsLineOfSight({from, to, units = [], leaders = [], t
     // Search a continuous, edge-connected hill corridor along the actual
     // sightline; a valley gap breaks plateau sight even if hills join elsewhere.
     const chain = [from, ...hit.filter(h => h.kind === 'HILL'), to]
-      .map(h => ({...h, ...crossedHex(start,end,h)}))
+      .map(h => ({...h, ...crossedHex(start,end,h,board)}))
       .filter(h => h.low !== undefined);
     const reachable = new Set([key(from)]);
     let changed = true;
     while (changed) {
       changed = false;
       for (const a of chain) if (reachable.has(key(a))) for (const b of chain) {
-        if (reachable.has(key(b)) || distance(a,b) !== 1) continue;
+        if (reachable.has(key(b)) || board.distance(a,b) !== 1) continue;
         if (a.low <= b.high + EPS && b.low <= a.high + EPS) {
           reachable.add(key(b)); changed = true;
         }
@@ -108,7 +110,7 @@ export function assessAncientsLineOfSight({from, to, units = [], leaders = [], t
     }
     return reachable.has(key(to));
   })();
-  const opaque = h => h.occupant || h.kind === 'FOREST' || (h.kind === 'HILL' && !plateau);
+  const opaque = h => h.occupant || ['FOREST','FORTIFIED_CAMP','BUILDING','FORTIFIED_CITY_WALL','STEEP_HILL'].includes(h.kind) || (h.kind === 'HILL' && !plateau);
 
   const insideBlockers = hit.filter(h => h.interior && opaque(h));
   if (insideBlockers.length) {

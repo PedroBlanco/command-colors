@@ -13,7 +13,7 @@ export const BASE_UNIT_STARTING_BLOCKS = Object.freeze({
 });
 
 const fail = code => { throw new TypeError(code); };
-const count = n => Number.isSafeInteger(n) && n >= 0 && n <= 32;
+const count = (n,max=32) => Number.isSafeInteger(n) && n >= 0 && n <= max;
 
 /**
  * Provisional hit accounting, never executable from an HTTP request.
@@ -22,14 +22,15 @@ const count = n => Number.isSafeInteger(n) && n >= 0 && n <= 32;
  * `leaderAttached` MUST be derived from the server's leader/hex placement.
  */
 export function previewBaseAncientsRangedBlockLoss({unitType, blocksRemaining,
-  diceCount, matchingColorHits, flagsPending, leaderAttached} = {}) {
+  diceCount, matchingColorHits, flagsPending, leaderAttached, extendedDice=false} = {}) {
   if (typeof unitType !== 'string' || !Object.hasOwn(BASE_UNIT_STARTING_BLOCKS, unitType))
     fail('UNSUPPORTED_BASE_UNIT_TYPE');
   const maxBlocks = BASE_UNIT_STARTING_BLOCKS[unitType];
   if (!Number.isSafeInteger(blocksRemaining) || blocksRemaining < 1 || blocksRemaining > maxBlocks)
     fail('INVALID_SERVER_UNIT_BLOCKS');
-  if (!Number.isSafeInteger(diceCount) || diceCount < 1 || diceCount > 32 ||
-      !count(matchingColorHits) || !count(flagsPending) ||
+  const maxDice=extendedDice===true?256:32;
+  if (typeof extendedDice!=='boolean'||!Number.isSafeInteger(diceCount) || diceCount < 1 || diceCount > maxDice ||
+      !count(matchingColorHits,maxDice) || !count(flagsPending,maxDice) ||
       matchingColorHits + flagsPending > diceCount)
     fail('INVALID_VALIDATED_DICE_COUNTS');
   if (typeof leaderAttached !== 'boolean') fail('LEADER_ATTACHMENT_NOT_VERIFIED');
@@ -50,6 +51,7 @@ export function previewBaseAncientsRangedBlockLoss({unitType, blocksRemaining,
   return Object.freeze({
     kind:'BASE_RANGED_BLOCK_LOSS_PREVIEW', unitType, maxBlocks,
     originalBlocks:blocksRemaining, matchingColorHits, diceCount, leaderAttached,
+    ...(extendedDice?{extendedDice:true}:{}),
     blocksToRemove, excessHits, remainingBlocks, unitWouldBeEliminated,
     possibleVictoryBanner:unitWouldBeEliminated ? 1 : 0,
     flagsRolled:flagsPending, effectiveFlagsPending, flagsNoLongerApplicable,

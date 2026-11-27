@@ -5,7 +5,7 @@
  * No migration, no rules-authorised combat and NO production scenario data.
  */
 import {initializeSectionHistoryLab, applySectionHistoryLabCommand,
-  assertSectionHistoryLab, projectSectionHistoryLab, SECTION_HISTORY_MAX_COMMANDS} from './section-history-journal.mjs';
+  assertSectionHistoryLab, projectSectionHistoryLab, sectionHistoryCommandLimit} from './section-history-journal.mjs';
 import {bindLabJournalIdempotency, readLabJournalIdempotency} from './lab-idempotency-binding.mjs';
 import {signSectionJournalCommand, checkSectionJournalSignature,
   matchesSectionJournalRetry} from './lab-command-signature.mjs';
@@ -20,18 +20,29 @@ const KEY=/^[A-Za-z0-9_-]{8,80}$/;
 const TYPES=Object.freeze({
   PLAY_SECTION_CARD:['cardInstanceId'],
   ASSIGN_SECTION_ORDERS:['unitIds','leaderIds'],
+  ASSIGN_SECTION_RALLY_LAB:['allocations'],
   // LAB_ONLY: this is persisted on the lab board, not an official scenario.
   MOVE_SECTION_FOOT_PATH_V2:['unitId','path'],
   MOVE_SECTION_MOUNTED_PATH_V1:['unitId','path'],
   MOVE_SECTION_LEADER_PATH_V1:['leaderId','path'],
   FINISH_SECTION_MOVEMENT_LAB:[],
   PREPARE_SECTION_RANGED_LAB:['attackerId','targetId'],
+  PREPARE_SECTION_CLOSE_LAB:['attackerId','targetId'],
+  DECLINE_SECTION_BATTLE_BACK_LAB:[],
+  ACCEPT_SECTION_BATTLE_BACK_LAB:[],
+  ACCEPT_SECTION_FIRST_STRIKE_LAB:[],
+  DECLINE_SECTION_FIRST_STRIKE_LAB:[],
+  CHOOSE_SECTION_MOMENTUM_LAB:['path'],
+  DECLINE_SECTION_BONUS_CLOSE_LAB:[],
+  CHOOSE_SECTION_UNIT_EVADE_LAB:['path'],
   CANCEL_SECTION_RANGED_LAB:[],
   ROLL_SECTION_RANGED_DIGITAL_LAB:[],
   DECLARE_SECTION_RANGED_PHYSICAL_LAB:['faces'],
+  CHOOSE_SECTION_ELEPHANT_RED_LAB:['ignore'],
   REVIEW_SECTION_RANGED_PHYSICAL_LAB:['accept'],
   FINALIZE_SECTION_RANGED_LAB:[],
   ARCHIVE_SECTION_RANGED_LAB:[],
+  RETRY_SECTION_PHYSICAL_LAB:[],
   ROLL_SECTION_LEADER_CASUALTY_LAB:[],
   EVADE_SECTION_LEADER_LAB:['path','exit'],
   CHOOSE_SECTION_MORALE_LAB:['ignored'],
@@ -76,9 +87,10 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     const journal=persisted.ancientsSectionHistoryLab;
     if(!record(journal)||Object.hasOwn(persisted,'commandSession')||
        !record(journal.initial)||!Array.isArray(journal.commands)||!record(journal.state)||
-       !Number.isSafeInteger(row.game_revision)||row.game_revision<0||row.game_revision>SECTION_HISTORY_MAX_COMMANDS)
+       !Number.isSafeInteger(row.game_revision)||row.game_revision<0)
       throw new Error('SECTION_CCWB_HISTORY_INVALID');
     assertSectionHistoryLab(journal.initial);
+    if(row.game_revision>sectionHistoryCommandLimit(journal.initial))throw new Error('SECTION_CCWB_HISTORY_INVALID');
     if(journal.initial.revision!==0||journal.commands.length!==row.game_revision)
       throw new Error('SECTION_CCWB_COMMAND_COUNT');
     let snapshot=structuredClone(journal.initial);

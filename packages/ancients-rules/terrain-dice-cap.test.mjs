@@ -65,7 +65,28 @@ test('reject unknown or expansion units without prototype inheritance',()=>{
 
 test('reject unsupported or unspecified battle/terrain values',()=>{
   for(const [from,to,kind] of [
-    [null,'CLEAR','CLOSE'], ['CLEAR','MARSH','CLOSE'], ['CLEAR','CLEAR','MAGIC'],
+    [null,'CLEAR','CLOSE'], ['CLEAR','UNKNOWN_TERRAIN','CLOSE'], ['CLEAR','CLEAR','MAGIC'],
     [undefined,'CLEAR','CLOSE'], ['HILL',undefined,'RANGED']])
     assert.throws(()=>cap('HEAVY_INFANTRY',from,to,kind),/INVALID_TERRAIN_BATTLE/);
+});
+
+test('ford and bridge cap close combat and outgoing ranged fire, not incoming fire',()=>{
+  for(const kind of ['FORDABLE_RIVER','BRIDGE']){
+    assert.equal(cap('HEAVY_INFANTRY',kind,'CLEAR').maxDice,2);
+    assert.equal(cap('HEAVY_INFANTRY','CLEAR',kind).maxDice,2);
+    assert.equal(cap('LIGHT_BOW_INFANTRY',kind,'CLEAR','RANGED').maxDice,1);
+    assert.equal(cap('LIGHT_BOW_INFANTRY','CLEAR',kind,'RANGED').maxDice,null);
+  }
+});
+
+
+test('building close cap and zero fire; fortified wall no battle',()=>{
+ for(const [a,b] of [['CLEAR','BUILDING'],['BUILDING','CLEAR']]){
+  assert.equal(cap('HEAVY_INFANTRY',a,b).maxDice,2);
+  assert.equal(cap('LIGHT_BOW_INFANTRY',a,b,'RANGED').maxDice,0);
+ }
+ for(const t of ['FORTIFIED_CITY_WALL','STEEP_HILL','LAKE']){
+   assert.equal(cap('HEAVY_INFANTRY','CLEAR',t).maxDice,0);
+   assert.equal(cap('LIGHT_BOW_INFANTRY',t,'CLEAR','RANGED').maxDice,0);
+ }
 });

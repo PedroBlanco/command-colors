@@ -103,7 +103,7 @@ test('reject duplicate board IDs, occupied positions and wrong-side leaders',()=
     {leaders:[{id:'leader',side:'B',col:2,row:4}]},
     {leaders:[{id:'shooter',side:'A',col:2,row:4}]},
     {terrain:[{col:4,row:4,kind:'FOREST'},{col:4,row:4,kind:'HILL'}]},
-    {terrain:[{col:4,row:4,kind:'MARSH'}]},
+    {terrain:[{col:4,row:4,kind:'UNKNOWN_TERRAIN'}]},
     {units:[shooter,{...target,col:13}]}
   ]) assert.throws(()=>check(extra),/INVALID_RANGED_BOARD/);
 });
@@ -130,4 +130,20 @@ test('input is not mutated, result is immutable, no physical dice or events are 
   assert.equal(r.cardModifiersApplied,false);
   assert.equal(r.scenarioExceptionsChecked,false);
   assert.equal(r.attackAuthorized,false);
+});
+
+
+test('buildings prohibit ranged attacks at either endpoint and both new terrains block LOS',()=>{
+ for(const p of [shooter,target])assert.equal(check({terrain:[{col:p.col,row:p.row,kind:'BUILDING'}]}).reason,'BUILDING_RANGED_FORBIDDEN');
+ for(const kind of ['BUILDING','FORTIFIED_CITY_WALL','STEEP_HILL'])assert.equal(check({terrain:[{col:4,row:4,kind}]}).reason,'LINE_OF_SIGHT_BLOCKED');
+  assert.equal(check({terrain:[{col:4,row:4,kind:'LAKE'}]}).status,'CANDIDATE');
+  for(const kind of ['LAKE','STEEP_HILL'])assert.equal(check({terrain:[{col:5,row:4,kind}]}).reason,'IMPASSABLE_TERRAIN');
+});
+
+test('official geometry range and line of sight use same topology',()=>{
+ const geometryId='OFFICIAL_ODD_R_113';
+ const units=[unit('shooter','A','LIGHT_BOW_INFANTRY',4,4),unit('target','B','HEAVY_INFANTRY',3,2)];
+ assert.equal(check({geometryId,units}).distance,2);
+ assert.equal(check({geometryId,units,terrain:[tileForOfficial()]}).status,'BLOCKED');
+ function tileForOfficial(){return {col:3,row:3,kind:'FOREST'};}
 });

@@ -7,7 +7,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {browserConfig, cookieSession, sessionCookie, allowedBrowserRequest, validBrowserMutation} from './browser-session.mjs';
 import {startRevisionStream,startAncientsLabRevisionStream} from './revision-stream.mjs';
-import {createAncientsLoopbackSetup} from '../ancients-rules/loopback-demo-setup.mjs';
+import {createAncientsScenarioCatalog} from '../ancients-rules/scenario-catalog.mjs';
 
 const MAX_BODY = 8192;
 const MAX_REVISION_STREAMS = 16;
@@ -15,17 +15,30 @@ const MAX_REVISION_STREAMS = 16;
 const ANCIENTS_LAB_COMMAND_FIELDS=Object.freeze({
   PLAY_SECTION_CARD:['cardInstanceId'],
   ASSIGN_SECTION_ORDERS:['unitIds','leaderIds'],
+  ASSIGN_SECTION_RALLY_LAB:['allocations'],
+  DEPLOY_SCENARIO_RESERVE:['section','placements','leaderUnitId'],
+  EXIT_SCENARIO_UNIT:['unitId','path'],
   MOVE_SECTION_FOOT_PATH_V2:['unitId','path'],
   MOVE_SECTION_MOUNTED_PATH_V1:['unitId','path'],
   MOVE_SECTION_LEADER_PATH_V1:['leaderId','path'],
   FINISH_SECTION_MOVEMENT_LAB:[],
   PREPARE_SECTION_RANGED_LAB:['attackerId','targetId'],
+  PREPARE_SECTION_CLOSE_LAB:['attackerId','targetId'],
+  DECLINE_SECTION_BATTLE_BACK_LAB:[],
+  ACCEPT_SECTION_BATTLE_BACK_LAB:[],
+  ACCEPT_SECTION_FIRST_STRIKE_LAB:[],
+  DECLINE_SECTION_FIRST_STRIKE_LAB:[],
+  CHOOSE_SECTION_MOMENTUM_LAB:['path'],
+  DECLINE_SECTION_BONUS_CLOSE_LAB:[],
+  CHOOSE_SECTION_UNIT_EVADE_LAB:['path'],
   CANCEL_SECTION_RANGED_LAB:[],
   ROLL_SECTION_RANGED_DIGITAL_LAB:[],
   DECLARE_SECTION_RANGED_PHYSICAL_LAB:['faces'],
+  CHOOSE_SECTION_ELEPHANT_RED_LAB:['ignore'],
   REVIEW_SECTION_RANGED_PHYSICAL_LAB:['accept'],
   FINALIZE_SECTION_RANGED_LAB:[],
   ARCHIVE_SECTION_RANGED_LAB:[],
+  RETRY_SECTION_PHYSICAL_LAB:[],
   ROLL_SECTION_LEADER_CASUALTY_LAB:[],
   EVADE_SECTION_LEADER_LAB:['path','exit'],
   CHOOSE_SECTION_MORALE_LAB:['ignored'],
@@ -37,6 +50,7 @@ const ANCIENTS_LAB_COMMAND_FIELDS=Object.freeze({
 const denied = (code, status = 403) => ({status, body: {code}});
 const HTML_FILE = fileURLToPath(new URL('./browser-ui.html',import.meta.url));
 const CLIENT_FILE = fileURLToPath(new URL('./browser-ui.mjs',import.meta.url));
+const COMMAND_FEEDBACK_FILE = fileURLToPath(new URL('./command-feedback.mjs',import.meta.url));
 const DECK_CONTROLS_FILE = fileURLToPath(new URL('./deck-controls.mjs',import.meta.url));
 const HEX_SELECTION_FILE = fileURLToPath(new URL('./hex-selection.mjs',import.meta.url));
 const MOVEMENT_BOARD_FILE = fileURLToPath(new URL('./movement-board-ui.mjs',import.meta.url));
@@ -47,6 +61,7 @@ const HEX_GRID_FILE = fileURLToPath(new URL('../hex-grid/hex.mjs',import.meta.ur
 // Exact same-origin allowlist: never serve arbitrary repository paths.
 const BROWSER_ASSETS = new Map([
   ['/browser-ui.mjs', CLIENT_FILE],
+  ['/command-feedback.mjs', COMMAND_FEEDBACK_FILE],
   ['/deck-controls.mjs', DECK_CONTROLS_FILE],
   ['/hex-selection.mjs', HEX_SELECTION_FILE],
   ['/movement-board-ui.mjs', MOVEMENT_BOARD_FILE],
@@ -119,13 +134,15 @@ function domainReply(result, successStatus = 200) {
  * Legacy bearer mode (browser omitted) is retained only for earlier laboratory tests.
  */
 export function createAccessGateway({identity, invitations, getStore, browser = null,
-  revisionPollMs = 1000, ancientsBrowserLab = false} = {}) {
+  revisionPollMs = 1000, ancientsBrowserLab = false, ancientsScenarioCatalog = createAncientsScenarioCatalog()} = {}) {
   if (!identity || !invitations || typeof getStore !== 'function') throw new TypeError('Servicios requeridos');
   if (!Number.isSafeInteger(revisionPollMs) || revisionPollMs < 20) throw new TypeError('INVALID_POLL_INTERVAL');
   const config = browser === null ? null : browserConfig(browser);
   if(typeof ancientsBrowserLab!=='boolean'||
      (ancientsBrowserLab&&!config?.insecureLoopback))
     throw new TypeError('ANCIENTS_LAB_LOOPBACK_ONLY');
+  if(ancientsBrowserLab&&(typeof ancientsScenarioCatalog?.list!=='function'||typeof ancientsScenarioCatalog?.setup!=='function'))
+    throw new TypeError('INVALID_ANCIENTS_SCENARIO_CATALOG');
   let revisionStreams = 0;
   return createServer(async (req, res) => {
     try {
@@ -171,6 +188,12 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         identity.logOut(token);
         return reply(res, 200, {ok: true}, config ? {'set-cookie':sessionCookie(null,config,{clear:true})} : {});
       }
+      if (req.method === 'GET' && route === '/api/matches') {
+        if(typeof invitations.listMatches!=='function')return reply(res,404,{code:'NOT_FOUND'});
+        const result=invitations.listMatches({sessionToken:token});
+        if(result?.ok&&result.handle!==current.handle)return reply(res,503,{code:'SERVICE_UNAVAILABLE'});
+        return reply(res,...Object.values(domainReply(result)));
+      }
       if (req.method === 'POST' && route === '/api/matches') {
         const result = invitations.createMatch({sessionToken: token});
         return reply(res, ...Object.values(domainReply(result, 201)));
@@ -202,7 +225,8 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const readError = publicReadError(state);
         if (readError) return reply(res, readError.status, {code:readError.code});
         if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
-        return reply(res, 200, {matchId, status: lobby.status, players: lobby.players, state});
+        return reply(res, 200, {matchId, status: lobby.status, players: lobby.players, state,
+          ...(ancientsBrowserLab&&actor==='A'&&state.revision===0&&!state.phase?{ancientsScenarios:ancientsScenarioCatalog.list()}: {})});
       }
       if (req.method === 'POST' && resource === 'invitations') {
         const body = await jsonRequest(req);
@@ -254,7 +278,7 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
           const result=store.viewExperimentalSectionHistory({sessionToken:token});
           if(result.status!==200)
             return reply(res,result.status,{code:result.code});
-          if(result.view?.matchId!==matchId||result.view.status!=='LAB_ONLY')
+          if(result.view?.matchId!==matchId||result.view.status!=='LAB_ONLY'||result.view.you!==actor)
             return reply(res,503,{code:'SERVICE_UNAVAILABLE'});
           return reply(res,200,{matchId,status:lobby.status,
             players:lobby.players,state:result.view});
@@ -280,11 +304,13 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         }
         if (req.method==='POST' && resource==='ancients-lab/initialize') {
           const body=await jsonRequest(req);
-          if(Object.keys(body).length!==0)return reply(res,400,{code:'INVALID_SETUP'});
+          if(Object.keys(body).length!==0&&!(Object.keys(body).length===1&&Object.hasOwn(body,'scenarioId')&&typeof body.scenarioId==='string'))return reply(res,400,{code:'INVALID_SETUP'});
+          const trustedSetup=ancientsScenarioCatalog.setup(body.scenarioId);
+          if(!trustedSetup)return reply(res,400,{code:'UNKNOWN_SECTION_SCENARIO'});
           if(typeof store.initializeExperimentalSectionHistory!=='function')
             return reply(res,404,{code:'NOT_FOUND'});
           const result=store.initializeExperimentalSectionHistory({
-            sessionToken:token,trustedSetup:createAncientsLoopbackSetup()
+            sessionToken:token,trustedSetup
           });
           return reply(res,result.status,{code:result.code});
         }

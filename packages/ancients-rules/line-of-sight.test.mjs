@@ -69,7 +69,7 @@ test('rejects invalid coordinates, overlapping markers and unsupported terrain k
   for(const input of [{from:at(-1,0),to:at(3,3)},
     {from:at(0,0),to:at(0,0)},
     {from:at(0.5,0),to:at(4,4)},
-    {from:at(1,1),to:at(3,1),terrain:[{col:2,row:1,kind:'MARSH'}]},
+    {from:at(1,1),to:at(3,1),terrain:[{col:2,row:1,kind:'UNKNOWN_TERRAIN'}]},
     {from:at(1,1),to:at(3,1),terrain:terrain('HILL',at(2,1),at(2,1))},
     {from:at(1,1),to:at(3,1),units:[at(2,1),at(2,1)]}])
     assert.throws(()=>see(input),/INVALID_LOS_/);
@@ -108,4 +108,20 @@ test('opposite edge obstructions may combine different categories',()=>{
   assert.equal(check(at(2,4),at(6,4),{
     terrain:terrain('FOREST',at(3,3)),leaders:[at(3,4)]
   }).reason,'BOTH_SIDES_OF_EDGE');
+});
+
+test('water terrain and bridges do not obstruct an otherwise clear sightline',()=>{
+  for(const kind of ['RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE','LAKE'])assert.equal(check(at(2,4),at(6,4),{terrain:terrain(kind,at(4,4))}).status,'VISIBLE');
+});
+
+test('camp blocks sight while oriented rampart does not',()=>{
+ assert.equal(check(at(2,4),at(6,4),{terrain:terrain('FORTIFIED_CAMP',at(4,4))}).status,'BLOCKED');
+ assert.equal(check(at(2,4),at(6,4),{terrain:[{...at(4,4),kind:'RAMPART',sides:[5,0]}]}).status,'VISIBLE');
+});
+
+test('official odd-r LOS crosses intervening cells and rejects missing edge cells',()=>{
+ const geometryId='OFFICIAL_ODD_R_113';
+ assert.equal(check(at(1,4),at(4,4),{geometryId}).status,'VISIBLE');
+ assert.equal(check(at(1,4),at(4,4),{geometryId,terrain:terrain('FOREST',at(2,4))}).status,'BLOCKED');
+ assert.throws(()=>check(at(12,1),at(4,4),{geometryId}),/INVALID_LOS_ENDPOINTS/);
 });

@@ -45,6 +45,7 @@ async function withBrowser(run,{owner='alice'}={}) {
     else if(path==='/api/session' && options.method==='DELETE'){state.login=false;response={ok:true};status=200;}
     else if(path==='/api/session' && state.login){response={authenticated:true,handle:owner};status=200;}
     else if(path==='/api/matches' && options.method==='POST'){response={matchId:MATCH};status=201;}
+    else if(path==='/api/matches' && state.login){response={ok:true,handle:state.listHandle??owner,more:false,matches:[{matchId:MATCH,side:'A',opponent:'bob',status:'READY'}]};status=200;}
     else if(path===`/api/matches/${MATCH}` && state.login && state.lab){
       response={code:'SECTION_LAB_INTERNAL_ONLY'};status=409;
     }
@@ -111,7 +112,7 @@ async function withBrowser(run,{owner='alice'}={}) {
       }
     }
     else if(path===`/api/matches/${MATCH}` && state.login){response={matchId:MATCH,status:state.lobby,players:state.lobby==='READY'?[{side:'A',handle:owner},{side:'B',handle:owner==='alice'?'bob':'alice'}]:[{side:'A',handle:owner}],
-      ...(state.lobby==='READY'?{state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:state.board,
+      ...(state.lobby==='READY'?{...(state.scenarios?{ancientsScenarios:state.scenarios}:{}),state:{matchId:MATCH,you:'A',turn:state.revision?'B':'A',revision:state.revision,yourHand:['A_CARD'],opponentCardCount:3,board:state.board,
         ...(state.deckPhase?{phase:state.deckPhase,actingSide:'A',
           pendingDecision:null,movedUnitIds:[],drawPileCount:10,
           discardPile:[],cardInPlay:null}:{})}}:{})};status=200;}
@@ -139,7 +140,16 @@ async function nextTurn() {await new Promise(resolve=>setImmediate(resolve));}
 
 test('browser UI: auto-refresca al recibir revisión SSE sin mostrar la mano contraria',()=>withBrowser(async ctx=>{
   await ctx.element('login-form').dispatch('submit');
-  await ctx.element('create').dispatch('click');
+  ctx.state.listHandle='another';
+  await ctx.element('list-matches').dispatch('click');
+  assert.equal(ctx.element('my-matches').children.length,1);
+  assert.equal(ctx.element('my-matches').disabled,true);
+  ctx.state.listHandle=undefined;
+  await ctx.element('list-matches').dispatch('click');
+  assert.equal(ctx.element('my-matches').children[1].value,MATCH);
+  ctx.element('my-matches').value=MATCH;
+  await ctx.element('my-matches').dispatch('change');
+  await ctx.element('open-my-match').dispatch('click');
   assert.equal(ctx.element('match-id').value,MATCH);
   assert.equal(ctx.feeds.length,1);
   assert.equal(ctx.feeds[0].url,`/api/matches/${MATCH}/updates`);
@@ -161,6 +171,8 @@ test('browser UI: auto-refresca al recibir revisión SSE sin mostrar la mano con
   assert.equal(ctx.element('state').textContent.includes('"revision": 1'),true);
   await ctx.element('logout').dispatch('click');
   assert.equal(ctx.feeds[0].closed,true);
+  assert.equal(ctx.element('my-matches').children.length,1);
+  assert.equal(ctx.element('my-matches').disabled,true);
 }));
 
 test('browser UI: cambio de partida y pestaña oculta cierran o posponen avisos',()=>withBrowser(async ctx=>{
@@ -404,6 +416,10 @@ test('browser: explicit loopback Ancients mode uses distinct authenticated route
  ctx.state.lobby='READY';
  await ctx.element('refresh').dispatch('click');
  assert.equal(ctx.element('ancients-start').disabled,false);
+ ctx.state.scenarios=[{id:'demo-v1',title:'Demo'},{id:'open-field-v1',title:'Campo abierto'}];
+ await ctx.element('refresh').dispatch('click');
+ assert.deepEqual(ctx.element('ancients-scenario').children.map(o=>o.value),['demo-v1','open-field-v1']);
+ ctx.element('ancients-scenario').value='open-field-v1';
  assert.equal(ctx.element('deck-initialize').disabled,false);
  await ctx.element('ancients-start').dispatch('click');
  assert.equal(ctx.state.lab,true);
@@ -418,7 +434,7 @@ test('browser: explicit loopback Ancients mode uses distinct authenticated route
  assert.match(ctx.element('ancients-status').textContent,/AWAIT_CARD/);
  const init=ctx.requests.find(r=>r.path===`/api/matches/${MATCH}/ancients-lab/initialize`);
  assert.equal(init.method,'POST');
- assert.deepEqual(JSON.parse(init.body),{});
+ assert.deepEqual(JSON.parse(init.body),{scenarioId:'open-field-v1'});
  await ctx.element('ancients-play').dispatch('click');
  assert.equal(ctx.state.labPhase,'ASSIGN_ORDERS');
  assert.equal(ctx.element('ancients-order').disabled,false);
@@ -480,6 +496,20 @@ test('browser: ranged plan uses server candidates, locks movement and displays d
  ctx.element('ancients-units').children.find(x=>x.value==='unitA').selected=true;
  await ctx.element('ancients-order').dispatch('click');
  assert.equal(ctx.element('ancients-finish-movement').disabled,false);
+ // A leader surviving a marsh loss must be able to evade before movement closes.
+ ctx.state.labDice={marshPending:{leaderId:'leaderA'},blocker:'LEADER_EVASION_PENDING',canEvadeLeader:true,
+   leaderEvasionAvailable:true,leaderEvasionOptions:[{path:[{col:2,row:8}],exit:false,risks:[]}]};
+ await ctx.element('ancients-refresh').dispatch('click');
+ assert.equal(ctx.element('ancients-combat').hidden,false);
+ assert.equal(ctx.element('ancients-dice-controls').hidden,false);
+ assert.equal(ctx.element('ancients-evade-leader').disabled,false);
+ assert.equal(ctx.element('ancients-finish-movement').disabled,true);
+ assert.equal(ctx.element('ancients-move').disabled,true);
+ assert.equal(ctx.element('ancients-end').disabled,true);
+ assert.match(ctx.element('ancients-next-action').textContent,/Tu acción.*marisma/);
+ ctx.state.labDice=null;
+ await ctx.element('ancients-refresh').dispatch('click');
+ assert.equal(ctx.element('ancients-combat').hidden,true);
  await ctx.element('ancients-finish-movement').dispatch('click');
  assert.equal(ctx.element('ancients-combat').hidden,false);
  assert.equal(ctx.element('ancients-move').disabled,true);

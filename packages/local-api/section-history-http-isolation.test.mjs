@@ -11,6 +11,9 @@ import {join} from 'node:path';
 import {createServer as netServer} from 'node:net';
 import {openSqliteComposition} from '../sqlite-store/sqlite.mjs';
 import {createAccessGateway} from './gateway.mjs';
+import {loadAncientsScenarioDirectory} from '../../scripts/scenario-import.mjs';
+import {createAncientsScenarioCatalog} from '../ancients-rules/scenario-catalog.mjs';
+import {fileURLToPath} from 'node:url';
 
 const PASSWORD='CCW-local-HTTP-lab-test-only-password-2026';
 const setup=()=>({cardInstances:[
@@ -49,12 +52,12 @@ async function fixture(work){
       sessionToken:tokens.bob,invitationToken:invited.token
     }).ok,true);
     const start=async({browser=false,revisionPollMs=30,storeFactory=app.getStore,
-      ancientsBrowserLab=false}={})=>{
+      ancientsBrowserLab=false,ancientsScenarioCatalog=undefined}={})=>{
       const port=await availablePort();
       const origin=`http://127.0.0.1:${port}`;
       const srv=createAccessGateway({
         identity:app.identity,invitations:app.invitations,getStore:storeFactory,
-        revisionPollMs,ancientsBrowserLab,...(browser?{browser:{origin,insecureLoopback:true}}:{})
+        revisionPollMs,ancientsBrowserLab,ancientsScenarioCatalog,...(browser?{browser:{origin,insecureLoopback:true}}:{})
       });
       await new Promise((resolve,reject)=>srv.once('error',reject).listen(port,'127.0.0.1',resolve));
       servers.push(srv);
@@ -82,6 +85,13 @@ async function api(origin,path,token,{method='GET',body}={}){
 
 test('HTTP: regular synthetic match GET still works before internal lab activation',()=>fixture(async({tokens,matchId,start})=>{
   const {origin}=await start();
+  for(const [who,side,opponent] of [['alice','A','bob'],['bob','B','alice']]){
+    const listed=await api(origin,'/api/matches',tokens[who]);
+    assert.equal(listed.status,200);
+    assert.deepEqual(listed.body,{ok:true,handle:who,more:false,matches:[{matchId,side,opponent,status:'READY'}]});
+  }
+  assert.deepEqual((await api(origin,'/api/matches',tokens.outsider)).body,{ok:true,handle:'outsider',more:false,matches:[]});
+  assert.equal((await api(origin,'/api/matches','invalid')).status,401);
   const result=await api(origin,`/api/matches/${matchId}`,tokens.alice);
   assert.equal(result.status,200);
   assert.equal(result.body.matchId,matchId);
@@ -396,7 +406,16 @@ test('Ancients HTTP: opt-in cannot be enabled without explicit loopback browser'
 }));
 
 test('Ancients HTTP: own hand, ordered movement and SQLite replay through explicit opt-in',()=>fixture(async({app,matchId,start})=>{
- const {origin}=await start({browser:true,ancientsBrowserLab:true});
+ // This particular movement walkthrough needs ordinary section cards for
+ // both players. Keep the production shuffle unchanged; fix only the fixture.
+ const realCatalog=createAncientsScenarioCatalog();
+ const deterministicCatalog={list:()=>realCatalog.list(),setup:id=>{
+  const config=realCatalog.setup(id);
+  if(!config)return null;
+  config.cardInstances.sort((a,b)=>Number(/^ORDER_[234]_/.test(a.definitionId))-Number(/^ORDER_[234]_/.test(b.definitionId)));
+  return {...config,randomIndex:n=>n-1};
+ }};
+ const {origin}=await start({browser:true,ancientsBrowserLab:true,ancientsScenarioCatalog:deterministicCatalog});
  const login=async(handle)=>{
   const res=await fetch(origin+'/api/session',{
    method:'POST',headers:{origin,'x-ccw-request':'1','content-type':'application/json'},
@@ -419,6 +438,10 @@ test('Ancients HTTP: own hand, ordered movement and SQLite replay through explic
  assert.equal((await request(cookies.alice)).body.code,'SECTION_LAB_NOT_INITIALIZED');
  assert.equal((await request(cookies.outsider)).status,404);
  assert.equal((await request(cookies.bob,'/initialize','POST',{})).status,403);
+ assert.equal((await request(cookies.bob,'/initialize','POST',{scenarioId:'open-field-v1'})).status,403);
+ assert.equal((await request(cookies.alice,'/initialize','POST',{scenarioId:'__proto__'})).body.code,'UNKNOWN_SECTION_SCENARIO');
+ const catalog=await fetch(origin+`/api/matches/${matchId}`,{headers:{cookie:cookies.alice}});
+ assert.deepEqual((await catalog.json()).ancientsScenarios.map(s=>s.id),['demo-v1','open-field-v1','crossroads-v1']);
  assert.equal((await request(cookies.alice,'/initialize','POST',{
   board:{units:[]},actor:'A'
  })).status,400);
@@ -434,6 +457,14 @@ test('Ancients HTTP: own hand, ordered movement and SQLite replay through explic
  assert.equal(a.body.state.opponentCardCount,3);
  assert.equal(JSON.stringify(a.body).includes(b.body.state.yourHand[0].instanceId),false);
  assert.equal(JSON.stringify(b.body).includes(a.body.state.yourHand[0].instanceId),false);
+ // A corrupted or miswired adapter must not leak the other side's private
+ // projection, even if its match ID and laboratory status are correct.
+ const wrong=await start({browser:true,ancientsBrowserLab:true,storeFactory:()=>({
+  viewExperimentalSectionHistory:()=>({status:200,view:b.body.state})
+ })});
+ const rejected=await fetch(wrong.origin+endpoint,{headers:{cookie:cookies.alice}});
+ assert.equal(rejected.status,503);
+ assert.deepEqual(await rejected.json(),{code:'SERVICE_UNAVAILABLE'});
  assert.equal((await fetch(origin+`/api/matches/${matchId}`,{
   headers:{cookie:cookies.alice}
  })).status,409);
@@ -568,4 +599,30 @@ test('Ancients HTTP SSE: opt-in stream notifies revision only; generic SSE remai
  }finally{
   controller.abort();
  }
+}));
+
+test('HTTP: imported scenario selected by owner survives a server without the catalog',()=>fixture(async({matchId,start})=>{
+ const catalog=loadAncientsScenarioDirectory(fileURLToPath(new URL('../../scenarios/examples/',import.meta.url)));
+ const {origin}=await start({browser:true,ancientsBrowserLab:true,ancientsScenarioCatalog:catalog});
+ const login=async(handle)=>{
+  const res=await fetch(origin+'/api/session',{method:'POST',
+   headers:{origin,'x-ccw-request':'1','content-type':'application/json'},body:JSON.stringify({handle,password:PASSWORD})});
+  assert.equal(res.status,200);return res.headers.get('set-cookie').split(';')[0];
+ };
+ const [alice,bob]=await Promise.all(['alice','bob'].map(login));
+ const url='/api/matches/'+matchId,lab=url+'/ancients-lab';
+ const view=async(base,cookie,path=lab)=>{const res=await fetch(base+path,{headers:{cookie}});assert.equal(res.status,200);return await res.json();};
+ const init=async(cookie,body)=>fetch(origin+lab+'/initialize',{method:'POST',headers:{cookie,origin,'x-ccw-request':'1','content-type':'application/json'},body:JSON.stringify(body)});
+ assert.ok((await view(origin,alice,url)).ancientsScenarios.some(s=>s.id==='ford-example-v1'));
+ assert.equal((await view(origin,bob,url)).ancientsScenarios,undefined);
+ assert.equal((await init(bob,{scenarioId:'ford-example-v1'})).status,403);
+ assert.equal((await init(alice,{scenarioId:'ford-example-v1',board:{}})).status,400);
+ assert.equal((await init(alice,{scenarioId:'ford-example-v1'})).status,201);
+ const a=(await view(origin,alice)).state,b=(await view(origin,bob)).state;
+ assert.equal(a.scenario.id,'ford-example-v1');assert.equal(b.scenario.id,a.scenario.id);
+ assert.equal(a.yourHand.length,4);assert.equal(b.yourHand.length,5);assert.equal(a.turn,'B');
+ assert.equal(a.victoryObjectives.length,2);
+ assert.equal(JSON.stringify(a).includes(b.yourHand[0].instanceId),false);
+ const second=await start({browser:true,ancientsBrowserLab:true});
+ assert.deepEqual((await view(second.origin,alice)).state,a);
 }));

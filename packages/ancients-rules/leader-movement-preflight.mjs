@@ -4,29 +4,30 @@
  * screen, NEVER an authorization to move, escape, evade or alter a CCWB match.
  * Board and terrain MUST originate from a replay-verified server snapshot.
  */
-import {distance, inBounds} from '../hex-grid/hex.mjs';
+import {getBoardGeometry} from '../hex-grid/hex.mjs';
 
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const SIDES = new Set(['A','B']);
-const TERRAINS = new Set(['FOREST','HILL','BROKEN_GROUND']);
+import {BASE_TERRAIN_TYPES,isImpassableTerrain,terrainTileShapeOK} from './terrain-movement.mjs';
+const TERRAINS = new Set(BASE_TERRAIN_TYPES);
 const key = ({col,row}) => col+','+row;
-const validCell = x => x !== null && typeof x === 'object' && !Array.isArray(x) &&
-  Number.isSafeInteger(x.col) && Number.isSafeInteger(x.row) && inBounds(x);
+const validCell = (x,board) => x !== null && typeof x === 'object' && !Array.isArray(x) &&
+  Number.isSafeInteger(x.col) && Number.isSafeInteger(x.row) && board.inBounds(x);
 const validId = x => typeof x === 'string' && ID.test(x) && x !== '__proto__';
 const blocked = (reason,step=null) => Object.freeze({status:'BLOCKED',reason,step,
   movementAuthorized:false,attackAuthorized:false,stateChanged:false,needsFullLegalityCheck:true});
 
-function boardIndex(units,leaders) {
-  if (!Array.isArray(units)||!Array.isArray(leaders)||units.length+leaders.length>117)
+function boardIndex(units,leaders,board) {
+  if (!Array.isArray(units)||!Array.isArray(leaders)||units.length+leaders.length>board.cellCount)
     throw new TypeError('INVALID_LEADER_BOARD');
   const ids=new Set(), occupied=new Map(), leaderCells=new Map();
   for (const piece of units) {
-    if (!piece || !validId(piece.id)||!SIDES.has(piece.side)||!validCell(piece)||
+    if (!piece || !validId(piece.id)||!SIDES.has(piece.side)||!validCell(piece,board)||
       ids.has(piece.id)||occupied.has(key(piece))) throw new TypeError('INVALID_LEADER_BOARD');
     ids.add(piece.id);occupied.set(key(piece),piece);
   }
   for (const piece of leaders) {
-    if (!piece || !validId(piece.id)||!SIDES.has(piece.side)||!validCell(piece)||
+    if (!piece || !validId(piece.id)||!SIDES.has(piece.side)||!validCell(piece,board)||
       ids.has(piece.id)||leaderCells.has(key(piece))||
       (occupied.has(key(piece))&&occupied.get(key(piece)).side!==piece.side))
       throw new TypeError('INVALID_LEADER_BOARD');
@@ -35,11 +36,11 @@ function boardIndex(units,leaders) {
   return {occupied,leaderCells};
 }
 
-function terrainIndex(terrain) {
-  if (!Array.isArray(terrain)||terrain.length>117)throw new TypeError('INVALID_LEADER_TERRAIN_MAP');
+function terrainIndex(terrain,board) {
+  if (!Array.isArray(terrain)||terrain.length>board.cellCount)throw new TypeError('INVALID_LEADER_TERRAIN_MAP');
   const index=new Map();
   for(const tile of terrain) {
-    if(!tile||!validCell(tile)||!TERRAINS.has(tile.kind)||index.has(key(tile)))
+    if(!tile||!validCell(tile,board)||(!TERRAINS.has(tile.kind)||!terrainTileShapeOK(tile))||index.has(key(tile)))
       throw new TypeError('INVALID_LEADER_TERRAIN_MAP');
     index.set(key(tile),tile.kind);
   }
@@ -49,21 +50,23 @@ function terrainIndex(terrain) {
 /** The supplied path excludes the leader's origin and includes each hex crossed.
  * A CANDIDATE is never a decision that the move is fully legal. */
 export function precheckAncientsLeaderPath({
-  units,leaders,leaderId,path,terrain
+  units,leaders,leaderId,path,terrain,geometryId
 }={}) {
-  const {occupied,leaderCells}=boardIndex(units,leaders);
-  const terrainByCell=terrainIndex(terrain);
+  const board=getBoardGeometry(geometryId);
+  const {occupied,leaderCells}=boardIndex(units,leaders,board);
+  const terrainByCell=terrainIndex(terrain,board);
   if(!validId(leaderId)||!Array.isArray(path)||path.length<1||path.length>32||
-    !path.every(validCell))throw new TypeError('INVALID_LEADER_PATH');
+    !path.every(c=>validCell(c,board)))throw new TypeError('INVALID_LEADER_PATH');
   const leader=leaders.find(x=>x.id===leaderId);
   if(!leader)throw new TypeError('UNKNOWN_MOVING_LEADER');
   if(path.length>3)return blocked('LEADER_RANGE_EXCEEDED',3);
+  if(terrainByCell.get(key(leader))==='BUILDING'&&path.length>1)return blocked('BUILDING_EXIT_ONE_HEX',1);
   const fromAttached=occupied.get(key(leader))?.side===leader.side;
   const seen=new Set([key(leader)]);
   let last=leader;
   for(let i=0;i<path.length;i++){
     const destination=path[i], cellKey=key(destination);
-    if(distance(last,destination)!==1)return blocked('NON_ADJACENT_HEX',i);
+    if(board.distance(last,destination)!==1)return blocked('NON_ADJACENT_HEX',i);
     if(seen.has(cellKey))return blocked('REPEATED_HEX',i);
     const unit=occupied.get(cellKey), otherLeader=leaderCells.get(cellKey);
     if(unit&&unit.side!==leader.side)return blocked('ENEMY_OCCUPIED_HEX',i);
@@ -72,7 +75,9 @@ export function precheckAncientsLeaderPath({
     // finish in a hex already occupied by another friendly leader.
     if(i===path.length-1&&otherLeader)return blocked('FRIENDLY_LEADER_AT_DESTINATION',i);
     const ground=terrainByCell.get(cellKey);
-    if((ground==='FOREST'||ground==='BROKEN_GROUND')&&i!==path.length-1)
+    if(isImpassableTerrain(ground))return blocked('IMPASSABLE_TERRAIN',i);
+    if(ground==='BUILDING'&&path.length!==1)return blocked('BUILDING_MOVE_ONE_HEX',i);
+    if((ground==='FOREST'||ground==='BROKEN_GROUND'||ground==='FORDABLE_RIVER'||ground==='MARSH')&&i!==path.length-1)
       return blocked('LEADER_MUST_STOP_ON_TERRAIN',i);
     seen.add(cellKey);last=destination;
   }

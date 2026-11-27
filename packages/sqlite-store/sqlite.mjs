@@ -151,6 +151,23 @@ export function openSqliteComposition({file, clock = Date.now,
         return {ok:true, matchId:id};
       });
     },
+    listMatches({sessionToken} = {}) {
+      return readSnapshot(() => {
+        const user=sessions.resolveSession(sessionToken);
+        if(!user)return denied('UNAUTHENTICATED');
+        // Explicit projection: no private_state, invitation token, account ID,
+        // hand or event history is selected. Membership shares the session snapshot.
+        const rows=db.prepare(`SELECT m.id AS matchId,
+          CASE WHEN m.owner_id=? THEN 'A' ELSE 'B' END AS side,
+          CASE WHEN m.owner_id=? THEN guest.handle ELSE owner.handle END AS opponent,
+          CASE WHEN m.guest_id IS NULL THEN 'INVITING' ELSE 'READY' END AS status
+          FROM matches m JOIN accounts owner ON owner.id=m.owner_id
+          LEFT JOIN accounts guest ON guest.id=m.guest_id
+          WHERE m.owner_id=? OR m.guest_id=?
+          ORDER BY m.rowid DESC LIMIT 101`).all(user.userId,user.userId,user.userId,user.userId);
+        return {ok:true,handle:user.handle,more:rows.length>100,matches:rows.slice(0,100).map(row=>({...row}))};
+      });
+    },
     getMatch({sessionToken, matchId} = {}) {
       // The lobby metadata is security-sensitive too: a logout, change of
       // membership and the participant list must share one WAL snapshot.
