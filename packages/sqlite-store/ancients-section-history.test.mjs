@@ -79,7 +79,15 @@ test('CCWB composition: logged section-card command survives restart and stays p
  assert.equal(recorded.view.revision,1);
  assert.equal(store.publicEvents('B').length,1);
  assert.equal(JSON.stringify(store.publicEvents('B')).includes(card.instanceId),false);
- const next=connect().getStore(matchId);
+ // Reopen the persisted database and discover the match without its ID.
+ app.close();
+ const reopened=connect();
+ for(const [token,side,opponent] of [[tokens.A,'A','bob'],[tokens.B,'B','alice']]){
+   const listed=reopened.invitations.listMatches({sessionToken:token});
+   assert.deepEqual(listed,{ok:true,more:false,matches:[{matchId,side,opponent,status:'READY'}]});
+ }
+ assert.deepEqual(reopened.invitations.listMatches({sessionToken:tokens.outsider}),{ok:true,more:false,matches:[]});
+ const next=reopened.getStore(matchId);
  assert.equal(next.view('B').revision,1);
  assert.equal(next.view('B').opponentCardCount,1);
  assert.equal(next.dispatchExperimentalSectionHistory(command).code,'ALREADY_APPLIED');

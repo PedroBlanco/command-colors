@@ -45,6 +45,7 @@ async function withBrowser(run,{owner='alice'}={}) {
     else if(path==='/api/session' && options.method==='DELETE'){state.login=false;response={ok:true};status=200;}
     else if(path==='/api/session' && state.login){response={authenticated:true,handle:owner};status=200;}
     else if(path==='/api/matches' && options.method==='POST'){response={matchId:MATCH};status=201;}
+    else if(path==='/api/matches' && state.login){response={ok:true,more:false,matches:[{matchId:MATCH,side:'A',opponent:'bob',status:'READY'}]};status=200;}
     else if(path===`/api/matches/${MATCH}` && state.login && state.lab){
       response={code:'SECTION_LAB_INTERNAL_ONLY'};status=409;
     }
@@ -139,7 +140,11 @@ async function nextTurn() {await new Promise(resolve=>setImmediate(resolve));}
 
 test('browser UI: auto-refresca al recibir revisión SSE sin mostrar la mano contraria',()=>withBrowser(async ctx=>{
   await ctx.element('login-form').dispatch('submit');
-  await ctx.element('create').dispatch('click');
+  await ctx.element('list-matches').dispatch('click');
+  assert.equal(ctx.element('my-matches').children[1].value,MATCH);
+  ctx.element('my-matches').value=MATCH;
+  await ctx.element('my-matches').dispatch('change');
+  await ctx.element('open-my-match').dispatch('click');
   assert.equal(ctx.element('match-id').value,MATCH);
   assert.equal(ctx.feeds.length,1);
   assert.equal(ctx.feeds[0].url,`/api/matches/${MATCH}/updates`);
@@ -161,6 +166,8 @@ test('browser UI: auto-refresca al recibir revisión SSE sin mostrar la mano con
   assert.equal(ctx.element('state').textContent.includes('"revision": 1'),true);
   await ctx.element('logout').dispatch('click');
   assert.equal(ctx.feeds[0].closed,true);
+  assert.equal(ctx.element('my-matches').children.length,1);
+  assert.equal(ctx.element('my-matches').disabled,true);
 }));
 
 test('browser UI: cambio de partida y pestaña oculta cierran o posponen avisos',()=>withBrowser(async ctx=>{

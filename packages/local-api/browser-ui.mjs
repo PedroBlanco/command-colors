@@ -114,6 +114,7 @@ function updatePanels() {
       typeof cached?.phase === 'string' ? 'game' : 'ready';
   el('login-form').hidden = Boolean(signedInHandle);
   el('logout').disabled = !signedInHandle;
+  el('list-matches').disabled = !signedInHandle;
   syncLobbyWatch(mode,matchId);
   const key = [signedInHandle ?? '', matchId ?? '', mode].join(':');
   if (key === panelKey) return;
@@ -676,6 +677,7 @@ function clearMatchPresentation() {
 }
 function clearPrivateView() {
   signedInHandle = null;
+  clearMyMatches();
   privateScope.reset();
   inspectionSequence++; // invalidate GETs started under an earlier session
   clearMatchPresentation();
@@ -917,6 +919,51 @@ action('logout',async()=>{
   if(!privateScope.isCurrent(ticket))return false;
   await session();
   return privateScope.isCurrent(ticket);
+});
+function clearMyMatches(){
+  const select=el('my-matches');
+  select.replaceChildren();
+  const placeholder=document.createElement('option');
+  placeholder.value='';placeholder.textContent='Consultar mis partidas';
+  select.appendChild(placeholder);
+  select.disabled=true;el('open-my-match').disabled=true;el('my-matches-status').textContent='';
+}
+action('list-matches',async()=>{
+  const ticket=privateScope.capture(),previous=el('my-matches').value;
+  clearMyMatches();
+  if(!await confirmCurrentSession(ticket))return false;
+  const owner=signedInHandle,result=await api('GET','/api/matches');
+  if(!await confirmCurrentSession(ticket)||owner!==signedInHandle)return false;
+  if(!Array.isArray(result.matches)||typeof result.more!=='boolean'||result.matches.length>100||
+     result.matches.some(m=>!m||typeof m.matchId!=='string'||!/^[0-9a-f-]{36}$/i.test(m.matchId)||
+       !['A','B'].includes(m.side)||!['READY','INVITING'].includes(m.status)||
+       !(m.opponent===null||typeof m.opponent==='string')))throw Error('Listado de partidas inválido');
+  const select=el('my-matches');
+  select.replaceChildren();
+  const placeholder=document.createElement('option');
+  placeholder.value='';placeholder.textContent='Selecciona una partida';
+  select.appendChild(placeholder);
+  for(const match of result.matches){
+    const option=document.createElement('option');
+    option.value=match.matchId;
+    option.textContent=(match.opponent?'Contra '+match.opponent:'Esperando invitado')+' · '+match.side+' · '+match.matchId.slice(0,8);
+    select.appendChild(option);
+  }
+  select.disabled=result.matches.length===0;
+  if(result.matches.some(m=>m.matchId===previous))select.value=previous;
+  el('open-my-match').disabled=!select.value;
+  el('my-matches-status').textContent=result.more?'Se muestran las 100 partidas más recientes. Las anteriores se pueden consultar por identificador.':
+    result.matches.length?result.matches.length+' partidas disponibles.':'No tienes partidas.';
+  return false;
+});
+el('my-matches').addEventListener('change',()=>{el('open-my-match').disabled=!el('my-matches').value||!signedInHandle;});
+action('open-my-match',async()=>{
+  const id=el('my-matches').value,ticket=privateScope.capture();
+  if(!/^[0-9a-f-]{36}$/i.test(id)||!await confirmCurrentSession(ticket))return false;
+  el('match-id').value=id;selectActiveMatch(id);
+  const next=privateScope.capture();
+  await inspect();
+  return privateScope.isCurrent(next,id);
 });
 action('create',async()=>{
   const ticket=privateScope.capture();

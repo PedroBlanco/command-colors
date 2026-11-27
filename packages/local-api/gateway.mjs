@@ -187,6 +187,11 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         identity.logOut(token);
         return reply(res, 200, {ok: true}, config ? {'set-cookie':sessionCookie(null,config,{clear:true})} : {});
       }
+      if (req.method === 'GET' && route === '/api/matches') {
+        if(typeof invitations.listMatches!=='function')return reply(res,404,{code:'NOT_FOUND'});
+        const result=invitations.listMatches({sessionToken:token});
+        return reply(res,...Object.values(domainReply(result)));
+      }
       if (req.method === 'POST' && route === '/api/matches') {
         const result = invitations.createMatch({sessionToken: token});
         return reply(res, ...Object.values(domainReply(result, 201)));
