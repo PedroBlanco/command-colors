@@ -490,17 +490,22 @@ function elephantLossBoard(state,choice,revision){
   const target=shadow.board.units.find(u=>u.id===ctx.target.id);
   const attached=shadow.board.leaders.find(l=>hex(l)===hex(target)&&l.side===target.side);
   const destination=choice.path.at(-1);
-  if(destination){Object.assign(target,destination);if(attached)Object.assign(attached,destination);}
+  if(state.diceLab.version>=32&&pathHasMarsh(state.footLab.terrain,choice.path)){
+    applyMarshUnitPath(shadow,target.id,attached?.id,choice.path,revision);
+    // Terrain losses precede any unfulfilled retreat or blocker losses.
+    if(!Object.hasOwn(shadow.diceLab.blocks,target.id)||sectionVictory(shadow)?.winner)return {shadow,checks:[]};
+  }else if(destination){Object.assign(target,destination);if(attached)Object.assign(attached,destination);}
   const affected=[];
   const losses=[...choice.blockingLosses,...(choice.blocksLost?[{unitId:target.id,blocksLost:choice.blocksLost}]:[])];
   for(const loss of losses){
     if(loss.leaderId){rampageLeaderLoss(shadow,shadow.board.leaders.find(l=>l.id===loss.leaderId),revision);continue;}
     const unit=shadow.board.units.find(u=>u.id===loss.unitId);
     const leader=shadow.board.leaders.find(l=>l.side===unit.side&&hex(l)===hex(unit));
-    const eliminated=shadow.diceLab.blocks[unit.id]===loss.blocksLost;
+    const amount=Math.min(shadow.diceLab.blocks[unit.id],loss.blocksLost);
+    const eliminated=shadow.diceLab.blocks[unit.id]===amount;
     if(leader)affected.push({leaderId:leader.id,unitId:unit.id,eliminated,
       reused:unit.id===target.id&&state.diceLab.leaderCheck?.leaderId===leader.id});
-    applyRampageUnitLoss(shadow,unit.id,loss.blocksLost,revision);
+    applyRampageUnitLoss(shadow,unit.id,amount,revision);
   }
   if(sectionVictory(shadow)?.winner)return {shadow,checks:[]};
   const rollId='section_blocker_'+revision,draw=sectionRollIndex(state.diceLab.key,rollId);
@@ -1031,9 +1036,6 @@ export function applySectionDiceCommand(state,next,command){
       retreatChoice=preview.options.find(o=>same(o.path,path));
       if(!retreatChoice)return deny('INVALID_RETREAT_PATH');
       retreatRequired=preview.required;
-      if(d.version>=32&&pathHasMarsh(state.footLab.terrain,retreatChoice.path)&&
-        (retreatChoice.blockingLosses||retreatChoice.blocksLost>0&&state.board.leaders.some(l=>hex(l)===hex(state.board.units.find(u=>u.id===plan.targetId))&&!(l.id===d.leaderCheck?.leaderId&&d.leaderCheck.outcome.leaderWouldBeEliminated))))
-        return deny('MARSH_COMPLEX_RETREAT_PENDING');
       if(d.version>=9&&retreatChoice.blockingLosses){
         const revision=state.revision+1,{checks}=elephantLossBoard(state,retreatChoice,revision);
         if(checks.some(c=>c.needsEvasion)){
@@ -1041,7 +1043,7 @@ export function applySectionDiceCommand(state,next,command){
           return {accepted:true,event:{kind:'SECTION_ELEPHANT_RETREAT_STAGED_LAB',side,targetId:plan.targetId,...retreatChoice,checks,combatResolved:false}};
         }
       }
-      if(d.version>=5&&retreatChoice.needsLeaderResolution){
+      if(d.version>=5&&retreatChoice.needsLeaderResolution&&!(d.version>=32&&pathHasMarsh(state.footLab.terrain,retreatChoice.path))){
         next.diceLab.retreatPending={revision:state.revision+1,choice:structuredClone(retreatChoice),
           required:retreatRequired,leaderCheck:null};
         return {accepted:true,event:{kind:'SECTION_RETREAT_STAGED_LAB',side,targetId:plan.targetId,
@@ -1064,13 +1066,18 @@ export function applySectionDiceCommand(state,next,command){
       const ctx=elephantContext(state);
       if(ctx&&!ctx.leaderPending&&!(d.version>=8&&retreatPreview(state)?.reason==='ELEPHANT_BLOCKER_LEADERS_PENDING'))return deny('ELEPHANT_RAMPAGE_PENDING');
     }
-    let elephantChecks,marshChecks=[];
+    let elephantChecks,retreatLeaderCheck,marshChecks=[];
     if(finalize&&d.version>=9&&retreatChoice?.blockingLosses){
       const applied=d.elephantRetreatPending?elephantStageShadow(state):elephantLossBoard(state,retreatChoice,state.revision+1);
       if(applied.pending)fail();
       next.board=applied.shadow.board;next.footLab.unitTypes=applied.shadow.footLab.unitTypes;
       next.diceLab.blocks=applied.shadow.diceLab.blocks;next.diceLab.casualties=applied.shadow.diceLab.casualties;
       elephantChecks=d.elephantRetreatPending?.checks??applied.checks;
+      if(d.version>=32&&pathHasMarsh(state.footLab.terrain,retreatChoice.path)){
+        next.diceLab.marshLast=applied.shadow.diceLab.marshLast;
+        next.diceLab.marshPending=applied.shadow.diceLab.marshPending;
+        marshChecks=next.diceLab.marshLast??[];
+      }
     }else if(finalize){
       if(d.version>=2)applyDirectLoss(state,next,plan,p);
       else next.diceLab.blocks[plan.targetId]=p.loss.remainingBlocks;
@@ -1107,6 +1114,20 @@ export function applySectionDiceCommand(state,next,command){
         const leader=next.board.leaders.find(l=>l.side===target.side&&hex(l)===hex(target));
         const destination=retreatChoice.path.at(-1);
         const remaining=Math.max(0,next.diceLab.blocks[target.id]-retreatChoice.blocksLost);
+        if(marshChecks.length&&retreatChoice.blocksLost>0){
+          // The terrain check has already been resolved. Reuse an existing
+          // combat check, otherwise check the actual post-terrain strength.
+          const amount=Math.min(next.diceLab.blocks[target.id],retreatChoice.blocksLost);
+          applyRampageUnitLoss(next,target.id,amount,state.revision+1);
+          if(leader&&!sectionVictory(next)?.winner){
+            const faces=d.leaderCheck?[]:Array.from({length:remaining===0?1:2},()=>0);
+            if(faces.length){const draw=sectionRollIndex(d.key,'section_blocker_'+(state.revision+1));for(let i=0;i<faces.length;i++)faces[i]=ANCIENTS_BATTLE_DIE_FACES[draw(6)];}
+            const leaderEliminated=faces.length>0&&faces.every(f=>f==='LEADER');
+            retreatLeaderCheck={leaderId:leader.id,faces,leaderEliminated,reused:!!d.leaderCheck};
+            if(leaderEliminated)rampageLeaderLoss(next,leader,state.revision+1);
+            else if(remaining===0)next.diceLab.marshPending={leaderId:leader.id};
+          }
+        }else{
         if(d.retreatPending?.leaderCheck?.outcome.leaderWouldBeEliminated){
           next.board.leaders=next.board.leaders.filter(l=>l.id!==leader.id);
           awardCasualty(next,leader,'LEADER',sectionCombatSide(state),state.revision+1);
@@ -1118,6 +1139,7 @@ export function applySectionDiceCommand(state,next,command){
         }else{
           next.diceLab.blocks[target.id]=remaining;
           if(destination)Object.assign(target,destination);
+        }
         }
         }
       }
@@ -1135,11 +1157,11 @@ export function applySectionDiceCommand(state,next,command){
       review:p.review,interpretation:p.interpretation,loss:p.loss,
       outcome:finalize?'DIRECT_HITS_APPLIED':'ARCHIVED_WITHOUT_EFFECTS',
       reason:evade||retreat?null:blocker,blocksApplied:finalize?(marshChecks.length?p.loss.originalBlocks-(next.diceLab.blocks[plan.targetId]??0):p.loss.blocksToRemove+(retreatChoice?.blocksLost??0)):0,
-      ...(marshChecks.length?{marshChecks}:{}),
+      ...(marshChecks.length?{marshChecks}:{}),...(retreatLeaderCheck?{retreatLeaderCheck}:{}),
       blocksRemaining:next.diceLab.blocks[plan.targetId]??0,
       ...(d.version>=2?{leaderCheck:structuredClone(effectiveLeaderCheck(d)),
         unitEliminated:finalize&&(p.loss.unitWouldBeEliminated||!!retreatChoice&&retreatChoice.blocksLost===p.loss.remainingBlocks||marshChecks.length>0&&!Object.hasOwn(next.diceLab.blocks,plan.targetId)),
-        leaderEliminated:finalize&&(!!p.loss.leaderWouldBeEliminated||!!effectiveLeaderCheck(d)?.outcome.leaderWouldBeEliminated||!!escape?.eliminated||marshChecks.some(c=>c.leaderEliminated)),
+        leaderEliminated:finalize&&(!!p.loss.leaderWouldBeEliminated||!!effectiveLeaderCheck(d)?.outcome.leaderWouldBeEliminated||!!escape?.eliminated||marshChecks.some(c=>c.leaderEliminated)||!!retreatLeaderCheck?.leaderEliminated),
         ...(plan.loneLeader?{loneLeader:true}:{}),
         banners:banners(next.diceLab)}:{}),
       ...(evasion?{leaderEvasion:{leaderId:plan.loneLeader?plan.targetId:effectiveLeaderCheck(d).leaderId,...evasion,...(escape?{escape}:{})}}:{}),
