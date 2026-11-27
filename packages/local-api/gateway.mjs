@@ -7,7 +7,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {browserConfig, cookieSession, sessionCookie, allowedBrowserRequest, validBrowserMutation} from './browser-session.mjs';
 import {startRevisionStream,startAncientsLabRevisionStream} from './revision-stream.mjs';
-import {createAncientsLoopbackSetup} from '../ancients-rules/loopback-demo-setup.mjs';
+import {createAncientsScenarioSetup,listAncientsScenarios} from '../ancients-rules/scenario-catalog.mjs';
 
 const MAX_BODY = 8192;
 const MAX_REVISION_STREAMS = 16;
@@ -212,7 +212,8 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         const readError = publicReadError(state);
         if (readError) return reply(res, readError.status, {code:readError.code});
         if (!state || state.matchId !== matchId) return reply(res, 503, {code: 'SERVICE_UNAVAILABLE'});
-        return reply(res, 200, {matchId, status: lobby.status, players: lobby.players, state});
+        return reply(res, 200, {matchId, status: lobby.status, players: lobby.players, state,
+          ...(ancientsBrowserLab&&actor==='A'&&state.revision===0&&!state.phase?{ancientsScenarios:listAncientsScenarios()}: {})});
       }
       if (req.method === 'POST' && resource === 'invitations') {
         const body = await jsonRequest(req);
@@ -290,11 +291,13 @@ export function createAccessGateway({identity, invitations, getStore, browser = 
         }
         if (req.method==='POST' && resource==='ancients-lab/initialize') {
           const body=await jsonRequest(req);
-          if(Object.keys(body).length!==0)return reply(res,400,{code:'INVALID_SETUP'});
+          if(Object.keys(body).length!==0&&!(Object.keys(body).length===1&&Object.hasOwn(body,'scenarioId')&&typeof body.scenarioId==='string'))return reply(res,400,{code:'INVALID_SETUP'});
+          const trustedSetup=createAncientsScenarioSetup(body.scenarioId);
+          if(!trustedSetup)return reply(res,400,{code:'UNKNOWN_SECTION_SCENARIO'});
           if(typeof store.initializeExperimentalSectionHistory!=='function')
             return reply(res,404,{code:'NOT_FOUND'});
           const result=store.initializeExperimentalSectionHistory({
-            sessionToken:token,trustedSetup:createAncientsLoopbackSetup()
+            sessionToken:token,trustedSetup
           });
           return reply(res,result.status,{code:result.code});
         }
