@@ -11,7 +11,7 @@ import {BASE_UNIT_STARTING_BLOCKS} from './block-loss-preview.mjs';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS, SELECTION_CARD_DEFINITIONS, GROUP_CARD_DEFINITIONS, ATTACK_CARD_DEFINITIONS, LEADERSHIP_CARD_DEFINITIONS, FIRE_CARD_DEFINITIONS, effectiveSectionCard, selectionCardOptions, screenSelectionCardOrders} from './section-card-order-screen.mjs';
 import {ANCIENTS_RULESET,assessBaseMovement} from './movement-profile.mjs';
 import {assessAncientsMovementRegime,assessOpenHexPathGeometry} from './movement-regimes.mjs';
-import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex,terrainTileShapeOK,fortificationProtects,isMarshHex,pathHasMarsh} from './terrain-movement.mjs';
+import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex,terrainTileShapeOK,fortificationProtects,isMarshHex,pathHasMarsh,isBuildingHex,buildingOccupantAllowed,isRetreatBlockedHex} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
 import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {screenAncientsCombatTurn} from './combat-turn-guard.mjs';
@@ -71,7 +71,8 @@ function validFootLabSetup(board,sectorCells,types,terrain=[],allowLeaders=false
        !['id','side','col','row'].every(k=>Object.hasOwn(unit,k))||
        !validId(unit.id)||!SIDES.includes(unit.side)||!goodLoc(unit)||
        ids.has(unit.id)||positions.has(loc(unit))||isImpassableHex(terrain,unit)||
-       !Object.hasOwn(types,unit.id)||types[unit.id]==='HEAVY_WAR_MACHINE'&&isMarshHex(terrain,unit))return false;
+       !Object.hasOwn(types,unit.id)||types[unit.id]==='HEAVY_WAR_MACHINE'&&isMarshHex(terrain,unit)||
+       isBuildingHex(terrain,unit)&&!buildingOccupantAllowed(types[unit.id]))return false;
     const regime=assessAncientsMovementRegime({
       unitType:types[unit.id],steps:1
     });
@@ -406,7 +407,7 @@ function unitEvadePaths(state,attacker,target){
   const depth=c=>2*c.row+(c.col&1),sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
   const attached=state.board.leaders.some(l=>l.side===target.side&&loc(l)===loc(target));
   const leaderAt=c=>state.board.leaders.find(l=>loc(l)===loc(c));
-  const available=c=>!isImpassableHex(state.footLab.terrain??[],c)&&!(tt==='HEAVY_WAR_MACHINE'&&isMarshHex(state.footLab.terrain??[],c))&&!state.board.units.some(u=>loc(u)===loc(c))&&
+  const available=c=>!isRetreatBlockedHex(state.footLab.terrain??[],c)&&!(tt==='HEAVY_WAR_MACHINE'&&isMarshHex(state.footLab.terrain??[],c))&&!state.board.units.some(u=>loc(u)===loc(c))&&
     (!leaderAt(c)||(!attached&&leaderAt(c).side===target.side));
   const successors=c=>c.row===rear?[]:neighbors(c).filter(n=>sign*(depth(n)-depth(c))>0&&available(n));
   const full=[],short=[],join=[];
@@ -463,6 +464,7 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
     ...(battleBack?['HEAVY_WAR_MACHINE']:[]),...(state.diceLab.version>=16?['ELEPHANT']:[]),...(state.diceLab.version>=17?['HEAVY_CHARIOT','HEAVY_WAR_MACHINE']:[]),...(loneLeader?['LEADER']:[])].includes(targetUnitType))
     return reject('CLOSE_COMBAT_SPECIAL_TARGET_PENDING');
   const terrainAt=p=>(state.footLab.terrain??[]).find(t=>loc(t)===loc(p))?.kind??'CLEAR';
+  if([terrainAt(attacker),terrainAt(target)].includes('FORTIFIED_CITY_WALL'))return reject('IMPASSABLE_TERRAIN');
   // Warriors retain their full-strength dice for the response to this attack.
   const elephantAttack=state.diceLab.version>=16&&attackerType==='ELEPHANT';
   const elephantTarget=state.diceLab.version>=16&&targetUnitType==='ELEPHANT';
@@ -565,7 +567,7 @@ export function assertSectionHistoryLab(s){
        Object.keys(c.movement).length!==s.footLab.movedUnitIds.length||
        Object.entries(c.movement).some(([id,m])=>
          !s.footLab.movedUnitIds.includes(id)||!isRecord(m)||
-         Object.keys(m).length!==2||!Number.isSafeInteger(m.steps)||
+         (Object.keys(m).length!==2&&!(Object.keys(m).length===3&&m.buildingMove===true&&m.steps===1&&s.footLab.terrain?.some(t=>t.kind==='BUILDING')))||!Number.isSafeInteger(m.steps)||
          m.steps<1||m.steps>4||!['POSSIBLE','UNAVAILABLE',...(s.diceLab?.version>=18&&(m.steps===2||s.diceLab.version>=23&&m.steps===3&&effectiveSectionCard(s)==='DOUBLE_TIME')&&(s.footLab.unitTypes[id]==='WARRIOR_INFANTRY'||!s.board.units.some(u=>u.id===id))?['MANDATORY_CLOSE_COMBAT']:[])].includes(m.battle))||
        (c.plan!==null&&!c.movementClosed))fail('INVALID_COMBAT_LAB_STATE');
     if(c.plan!==null){
@@ -774,7 +776,8 @@ export function applySectionHistoryLabCommand(state,command={}){
     next.board.units=result.nextState.board.units;
     next.footLab.movedUnitIds=result.nextState.orderLedger.movedUnitIds;
     if(next.combatLab)next.combatLab.movement[command.unitId]={
-      steps:command.path.length,battle:battleAfterMovement==='MANDATORY_CLOSE_COMBAT'?'MANDATORY_CLOSE_COMBAT':battleAfterMovement==='POSSIBLE'?'POSSIBLE':'UNAVAILABLE'
+      steps:command.path.length,battle:battleAfterMovement==='MANDATORY_CLOSE_COMBAT'?'MANDATORY_CLOSE_COMBAT':battleAfterMovement==='POSSIBLE'?'POSSIBLE':'UNAVAILABLE',
+      ...(isBuildingHex(state.footLab.terrain??[],moving)||terrain.destinationTerrain==='BUILDING'?{buildingMove:true}:{})
     };
     if(attached){
       const destination=result.transition.to;
@@ -895,9 +898,10 @@ export function applySectionHistoryLabCommand(state,command={}){
       // Keep combat permanently closed to further declarations, but reset
       // the per-movement allowance, including attached leaders.
       next.diceLab.moveFireMove='SECOND';
-      next.footLab.movedUnitIds=[];
-      next.combatLab.movement={};
-      next.leaderLab.movedLeaderIds=[];
+      // Building movement consumes the entire turn, not just the first MFM leg.
+      next.combatLab.movement=Object.fromEntries(Object.entries(next.combatLab.movement).filter(([,m])=>m.buildingMove));
+      next.footLab.movedUnitIds=Object.keys(next.combatLab.movement);
+      next.leaderLab.movedLeaderIds=next.leaderLab.movedLeaderIds.filter(id=>next.board.units.some(u=>next.footLab.movedUnitIds.includes(u.id)&&next.board.leaders.some(l=>l.id===id&&loc(l)===loc(u))));
       next.leaderLab.joinedUnitIds=[];
       publicEvent={kind:'SECTION_SECOND_MOVEMENT_OPENED_LAB',side};
     }else{
