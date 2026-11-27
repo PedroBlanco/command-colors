@@ -4,7 +4,7 @@
  * LOS, card bonuses, unit dice, range, leaders and attack sequencing are external.
  */
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
-import {BASE_TERRAIN_TYPES} from './terrain-movement.mjs';
+import {BASE_TERRAIN_TYPES,isImpassableTerrain} from './terrain-movement.mjs';
 
 const allowed = new Set(['CLEAR', ...BASE_TERRAIN_TYPES]);
 const mounted = new Set(['LIGHT_CAVALRY', 'MEDIUM_CAVALRY', 'HEAVY_CAVALRY', 'ELEPHANT', 'HEAVY_CHARIOT']);
@@ -20,7 +20,7 @@ export function assessAncientsTerrainDiceCap({attackerType, attackerTerrain,
 
   if(attackKind==='RANGED'&&(attackerTerrain==='BUILDING'||targetTerrain==='BUILDING'))
     return Object.freeze({maxDice:0,needsFullLegalityCheck:true,lineOfSightChecked:false,cardModifiersApplied:false});
-  if(attackerTerrain==='FORTIFIED_CITY_WALL'||targetTerrain==='FORTIFIED_CITY_WALL')
+  if(isImpassableTerrain(attackerTerrain)||isImpassableTerrain(targetTerrain))
     return Object.freeze({maxDice:0,needsFullLegalityCheck:true,lineOfSightChecked:false,cardModifiersApplied:false});
   let maxDice = null;
   if (attackKind === 'RANGED') {
