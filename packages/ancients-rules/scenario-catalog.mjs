@@ -38,6 +38,18 @@ const OPEN_FIELD={
   terrain:[]
 };
 
+// Original objective-based variant; the published scenarios are separate data.
+const CROSSROADS={...OPEN_FIELD,id:'crossroads-v1',title:'La encrucijada',
+  terrain:[{col:6,row:4,kind:'HILL'},{col:5,row:6,kind:'FORTIFIED_CAMP'},{col:7,row:2,kind:'FORTIFIED_CAMP'}],
+  objectives:[
+    {id:'hill_a',side:'A',mode:'OCCUPY',cells:[{col:6,row:4}],minUnits:1,banners:1},
+    {id:'hill_b',side:'B',mode:'OCCUPY',cells:[{col:6,row:4}],minUnits:1,banners:1},
+    {id:'camp_b',side:'A',mode:'CAPTURE',cells:[{col:7,row:2}],minUnits:1,banners:2},
+    {id:'camp_a',side:'B',mode:'CAPTURE',cells:[{col:5,row:6}],minUnits:1,banners:2}
+  ]
+};
+const SCENARIOS=[OPEN_FIELD,CROSSROADS];
+
 // Column 4 and 8 are shared in this original scenario. This is an explicit
 // scenario mapping, not a claim that the printed board has been audited.
 function sharedSectorCells(){
@@ -50,7 +62,7 @@ function sharedSectorCells(){
 export function listAncientsScenarios(){
   return [
     {id:'demo-v1',title:'Demostración original (38 cartas)',deckId:'demo-38'},
-    {id:OPEN_FIELD.id,title:OPEN_FIELD.title+' (60 cartas)',deckId:OPEN_FIELD.deckId}
+    ...SCENARIOS.map(s=>({id:s.id,title:s.title+' (60 cartas)',deckId:s.deckId}))
   ];
 }
 
@@ -58,8 +70,8 @@ export function listAncientsScenarios(){
 // hand sizes, deck or rules are merged into this object.
 export function createAncientsScenarioSetup(id='demo-v1'){
   if(id==='demo-v1')return createAncientsLoopbackSetup();
-  if(id!==OPEN_FIELD.id)return null;
-  const s=OPEN_FIELD;
+  const s=SCENARIOS.find(x=>x.id===id);
+  if(!s)return null;
   const piece=([id,side,col,row])=>({id,side,col,row});
   return {
     ...createAncientsLoopbackSetup(),
@@ -68,6 +80,7 @@ export function createAncientsScenarioSetup(id='demo-v1'){
     handSizes:{...s.handSizes},victoryTargets:{...s.victoryTargets},
     board:{units:s.units.map(piece),leaders:s.leaders.map(piece)},
     movementUnitTypes:Object.fromEntries(s.units.map(([id,,,,type])=>[id,type])),
-    movementTerrain:structuredClone(s.terrain),sectorCells:sharedSectorCells()
+    movementTerrain:structuredClone(s.terrain),sectorCells:sharedSectorCells(),
+    ...(s.objectives?{scenarioObjectives:structuredClone(s.objectives)}:{})
   };
 }
