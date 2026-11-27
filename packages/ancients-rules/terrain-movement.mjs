@@ -6,10 +6,10 @@
 import {getBoardGeometry} from '../hex-grid/hex.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 
-export const BASE_TERRAIN_TYPES = Object.freeze(['FOREST', 'HILL', 'BROKEN_GROUND', 'RIVER', 'FORDABLE_RIVER', 'SEACOAST', 'BRIDGE', 'FORTIFIED_CAMP', 'RAMPART', 'MARSH', 'BUILDING', 'FORTIFIED_CITY_WALL']);
+export const BASE_TERRAIN_TYPES = Object.freeze(['FOREST', 'HILL', 'BROKEN_GROUND', 'RIVER', 'FORDABLE_RIVER', 'SEACOAST', 'BRIDGE', 'FORTIFIED_CAMP', 'RAMPART', 'MARSH', 'BUILDING', 'FORTIFIED_CITY_WALL', 'LAKE', 'STEEP_HILL']);
 export const isMarshHex=(terrain,cell)=>terrain.some(t=>t.kind==='MARSH'&&t.col===cell.col&&t.row===cell.row);
 export const pathHasMarsh=(terrain,path)=>path.some(c=>isMarshHex(terrain,c));
-export const isImpassableTerrain=kind=>kind==='RIVER'||kind==='SEACOAST'||kind==='FORTIFIED_CITY_WALL';
+export const isImpassableTerrain=kind=>['RIVER','SEACOAST','FORTIFIED_CITY_WALL','LAKE','STEEP_HILL'].includes(kind);
 export const isBuildingHex=(terrain,cell)=>terrain.some(t=>t.kind==='BUILDING'&&t.col===cell.col&&t.row===cell.row);
 // Retreat and evasion may leave buildings but cannot enter them.
 export const isRetreatBlockedHex=(terrain,cell)=>isImpassableHex(terrain,cell)||isBuildingHex(terrain,cell);
