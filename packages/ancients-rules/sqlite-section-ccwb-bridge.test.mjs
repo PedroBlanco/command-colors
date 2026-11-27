@@ -592,6 +592,10 @@ test('CCWB V21: persists beyond revision 256 and verifies replay after reopening
   assert.equal(revision,261);
   const second=connect();
   assert.deepEqual(second.bridge.view(actor),view);
+  // Warm the connection cache; a new bridge sharing the same connection
+  // must still detect same-revision drift rather than trusting its prefix.
+  const warm=second.bridge.view(actor);
+  assert.deepEqual(warm,view);
   assert.equal(second.bridge.dispatch(last).code,'ALREADY_APPLIED');
   assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_events').get().n,261);
   assert.equal(root.db.prepare('SELECT COUNT(*) n FROM game_commands').get().n,261);
@@ -599,4 +603,17 @@ test('CCWB V21: persists beyond revision 256 and verifies replay after reopening
   const altered=JSON.parse(event.payload);altered.side=altered.side==='A'?'B':'A';
   root.db.prepare('UPDATE game_events SET payload=? WHERE sequence=257').run(JSON.stringify(altered));
   assert.throws(()=>second.bridge.view(actor),/SECTION_CCWB_HISTORY_TAMPERED/);
+  root.db.prepare('UPDATE game_events SET payload=? WHERE sequence=257').run(event.payload);
+  assert.deepEqual(second.bridge.view(actor),view);
+  const oldKey=root.db.prepare('SELECT signature FROM game_commands WHERE committed_revision=257').get();
+  root.db.prepare('UPDATE game_commands SET signature=? WHERE committed_revision=257').run(oldKey.signature+' ');
+  assert.throws(()=>second.bridge.view(actor),/SECTION_CCWB_HISTORY_TAMPERED/);
+  root.db.prepare('UPDATE game_commands SET signature=? WHERE committed_revision=257').run(oldKey.signature);
+  assert.deepEqual(second.bridge.view(actor),view);
+  const persisted=root.getRow(MATCH).private_state,corrupt=JSON.parse(persisted);
+  corrupt.ancientsSectionHistoryLab.state.turn=corrupt.ancientsSectionHistoryLab.state.turn==='A'?'B':'A';
+  root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(JSON.stringify(corrupt),MATCH);
+  assert.throws(()=>second.bridge.view(actor),/SECTION_CCWB_SNAPSHOT_DRIFT/);
+  root.db.prepare('UPDATE matches SET private_state=? WHERE id=?').run(persisted,MATCH);
+  assert.deepEqual(second.bridge.view(actor),view);
 }));

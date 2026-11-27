@@ -17,6 +17,12 @@ import {precheckStagedAncientsMovement,
   precheckStagedAncientsMovementSequence} from './staged-movement-preflight.mjs';
 
 const KEY=/^[A-Za-z0-9_-]{8,80}$/;
+// One verified prefix per SQLite connection, shared by short-lived bridges.
+// Never trust revision alone: compare the full initial state, commands,
+// public events and key signatures before reusing a prefix. Serialized
+// snapshots cannot be mutated by callers. A new process starts with no cache.
+const verifiedPrefixes=new WeakMap();
+const MAX_PREFIX_CHARS=4*1024*1024;
 const TYPES=Object.freeze({
   PLAY_SECTION_CARD:['cardInstanceId'],
   ASSIGN_SECTION_ORDERS:['unitIds','leaderIds'],
@@ -95,11 +101,17 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     if(row.game_revision>sectionHistoryCommandLimit(journal.initial))throw new Error('SECTION_CCWB_HISTORY_INVALID');
     if(journal.initial.revision!==0||journal.commands.length!==row.game_revision)
       throw new Error('SECTION_CCWB_COMMAND_COUNT');
-    let snapshot=structuredClone(journal.initial);
     const storedEvents=events.all(row.id),storedKeys=keys.all(row.id);
     if(storedEvents.length!==row.game_revision||storedKeys.length!==row.game_revision)
       throw new Error('SECTION_CCWB_EVENT_COUNT');
-    for(let i=0;i<journal.commands.length;i++){
+    const initialBytes=JSON.stringify(journal.initial);
+    const prefix=verifiedPrefixes.get(db);
+    const reuse=prefix?.matchId===row.id&&prefix.revision<=row.game_revision&&prefix.initial===initialBytes&&
+      prefix.commands===JSON.stringify(journal.commands.slice(0,prefix.revision))&&
+      prefix.events===JSON.stringify(storedEvents.slice(0,prefix.revision))&&
+      prefix.keys===JSON.stringify(storedKeys.slice(0,prefix.revision));
+    let snapshot=reuse?JSON.parse(prefix.snapshot):structuredClone(journal.initial);
+    for(let i=reuse?prefix.revision:0;i<journal.commands.length;i++){
       const {command,idempotencyKey}=
         readLabJournalIdempotency(journal.commands[i]);
       const step=applySectionHistoryLabCommand(snapshot,command),revision=i+1;
@@ -117,6 +129,12 @@ export function createSqliteAncientsSectionBridge({db,matchId,getRow,atomic}={})
     }
     if(snapshot.revision!==row.game_revision||!exact(snapshot,journal.state))
       throw new Error('SECTION_CCWB_SNAPSHOT_DRIFT');
+    const entry={matchId:row.id,revision:row.game_revision,initial:initialBytes,
+      commands:JSON.stringify(journal.commands),events:JSON.stringify(storedEvents),
+      keys:JSON.stringify(storedKeys),snapshot:JSON.stringify(snapshot)};
+    if(entry.initial.length+entry.commands.length+entry.events.length+entry.keys.length+entry.snapshot.length<=MAX_PREFIX_CHARS)
+      verifiedPrefixes.set(db,entry);
+    else verifiedPrefixes.delete(db);
     return {persisted,journal,snapshot};
   }
   function safeView(row,actor){
