@@ -1,7 +1,7 @@
 /** Local-only browser lab; no licensed artwork, card texts or legal Ancients rules. */
 import {deckActions, deckCommand, deckSummary, parseSyntheticMovementPath} from './deck-controls.mjs';
 import {createMovementBoard,renderMovementBoard} from './movement-board-ui.mjs';
-import {distance} from '../hex-grid/hex.mjs';
+import {getBoardGeometry} from '../hex-grid/hex.mjs';
 import {describeCommandError} from './command-feedback.mjs';
 import {createPrivateViewScope} from './private-view-scope.mjs';
 import {privateProjectionMatches} from './private-projection.mjs';
@@ -515,19 +515,22 @@ function renderAncients() {
       terrain:Array.isArray(cached.terrain)?cached.terrain:[],
       selectableUnitIds:selectable,
       leaders:Array.isArray(cached.leaders)?cached.leaders:[],
-      objectiveCells:(cached.victoryObjectives??[]).filter(o=>!o.claimed).flatMap(o=>o.cells)
+      objectiveCells:(cached.victoryObjectives??[]).filter(o=>!o.claimed).flatMap(o=>o.cells),
+      geometryId:cached.scenario?.geometry
     });
   }
 }
 function selectAncientsHex(cell){
   if(cached?.status!=='LAB_ONLY'||cached.diceLab?.victory?.winner||cached.historyLimitReached||cached.turn!==cached.you||
      cached.phase!=='LAB_RESOLUTION_PENDING'||(cached.combatLab?.movementClosed&&cached.diceLab?.moveFireMove!=='SECOND')||(cached.effectiveCardInPlay??cached.cardInPlay)==='CLASH_OF_SHIELDS'||cached.diceLab?.darken)return;
+  const geometry=getBoardGeometry(cached.scenario?.geometry);
+  if(!geometry.inBounds(cell))return;
   const units=cached.board??[];
   const at=units.find(u=>u.col===cell.col&&u.row===cell.row);
   const ordered=new Set(cached.orderedUnitIds??[]);
   const moved=new Set(cached.movedUnitIds??[]);
   const locked=new Set(cached.unitsLockedByLeader??[]);
-  const transit=!!ancientsDraft&&ancientsDraft.kind!=='LEADER'&&((cached.effectiveCardInPlay??cached.cardInPlay)==='ORDER_LIGHT_TROOPS'||!!cached.diceLab?.moveFireMove)&&ancientsDraft.path.length===0&&at?.side===cached.you&&at.id!==ancientsDraft.unitId&&['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY'].includes(units.find(u=>u.id===ancientsDraft.unitId)?.unitType)&&distance(ancientsDraft.origin,cell)===1;
+  const transit=!!ancientsDraft&&ancientsDraft.kind!=='LEADER'&&((cached.effectiveCardInPlay??cached.cardInPlay)==='ORDER_LIGHT_TROOPS'||!!cached.diceLab?.moveFireMove)&&ancientsDraft.path.length===0&&at?.side===cached.you&&at.id!==ancientsDraft.unitId&&['LIGHT_INFANTRY','LIGHT_SLING_INFANTRY','LIGHT_BOW_INFANTRY','AUXILIA_INFANTRY'].includes(units.find(u=>u.id===ancientsDraft.unitId)?.unitType)&&geometry.distance(ancientsDraft.origin,cell)===1;
   if(!transit&&ancientsDraft?.kind!=='LEADER'&&at?.side===cached.you&&ordered.has(at.id)&&!moved.has(at.id)&&!locked.has(at.id)){
     ancientsDraft={unitId:at.id,origin:{col:at.col,row:at.row},
       path:[],revision:cached.revision};
@@ -539,7 +542,7 @@ function selectAncientsHex(cell){
       ancientsDraft.path=[];
     }else if(index>=0){
       ancientsDraft.path=ancientsDraft.path.slice(0,index+1);
-    }else if(distance(previous,cell)!==1){
+    }else if(geometry.distance(previous,cell)!==1){
       el('ancients-route-status').textContent='El siguiente hexágono debe ser contiguo.';
       return;
     }else if(at && !transit && !(ancientsDraft.kind==='LEADER'&&at.side===cached.you)){
