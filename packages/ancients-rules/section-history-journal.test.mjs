@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createAncientsScenarioSetup,listAncientsScenarios,createAncientsBaseDeck,BASE_DECK_COUNTS} from './scenario-catalog.mjs';
 import {initializeSectionHistoryLab as init,applySectionHistoryLabCommand as apply,
  replaySectionHistoryLab as replay,projectSectionHistoryLab as project,
  assertSectionHistoryLab as validate,SECTION_HISTORY_MAX_COMMANDS} from './section-history-journal.mjs';
@@ -2076,4 +2077,28 @@ test('marsh retreat: shortfall after terrain, elephant retreat and immediate vic
   }
   assert.deepEqual(replay(initial,log),s);
  }
+});
+
+test('server scenario catalog: base deck, asymmetric command, shared sectors, private hands and replay',()=>{
+ const deck=createAncientsBaseDeck();
+ assert.equal(deck.length,60);assert.equal(new Set(deck.map(c=>c.instanceId)).size,60);
+ assert.deepEqual(Object.fromEntries(Object.keys(BASE_DECK_COUNTS).map(id=>[id,deck.filter(c=>c.definitionId===id).length])),BASE_DECK_COUNTS);
+ assert.equal(createAncientsScenarioSetup('__proto__'),null);
+ assert.deepEqual(listAncientsScenarios().map(s=>s.id),['demo-v1','open-field-v1']);
+ const setup=createAncientsScenarioSetup('open-field-v1');
+ const other=createAncientsScenarioSetup('open-field-v1');setup.movementTerrain.push({col:0,row:0,kind:'HILL'});
+ assert.deepEqual(other.movementTerrain,[]);
+ const i=other.cardInstances.findIndex(c=>c.definitionId==='ORDER_2_LEFT'),k=other.cardInstances.length-5;
+ [other.cardInstances[i],other.cardInstances[k]]=[other.cardInstances[k],other.cardInstances[i]];
+ const initial=init({...other,randomIndex:n=>n-1});
+ assert.equal(initial.turn,'B');assert.equal(initial.hands.A.length,4);assert.equal(initial.hands.B.length,5);
+ assert.equal(initial.drawPile.length,51);assert.equal(initial.board.units.length,12);
+ assert.deepEqual(project(initial,'A').scenario,other.scenario);
+ assert.equal(JSON.stringify(project(initial,'A')).includes(initial.hands.B[0].instanceId),false);
+ const play=cmd('PLAY_SECTION_CARD',0,{actor:'B',cardInstanceId:initial.hands.B[0].instanceId});
+ const p=apply(initial,play);assert.equal(p.accepted,true,p.code);
+ const order=cmd('ASSIGN_SECTION_ORDERS',1,{actor:'B',unitIds:['B5','B6'],leaderIds:[]});
+ const o=apply(p.nextState,order);assert.equal(o.accepted,true,o.code);
+ assert.deepEqual(replay(initial,[play,order]),o.nextState);
+ assert.throws(()=>init({...other,scenario:{...other.scenario,privateKey:'x'}}),/INVALID_SECTION_SCENARIO_METADATA/);
 });
