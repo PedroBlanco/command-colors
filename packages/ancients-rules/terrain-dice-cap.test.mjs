@@ -78,3 +78,12 @@ test('ford and bridge cap close combat and outgoing ranged fire, not incoming fi
     assert.equal(cap('LIGHT_BOW_INFANTRY','CLEAR',kind,'RANGED').maxDice,null);
   }
 });
+
+
+test('building close cap and zero fire; fortified wall no battle',()=>{
+ for(const [a,b] of [['CLEAR','BUILDING'],['BUILDING','CLEAR']]){
+  assert.equal(cap('HEAVY_INFANTRY',a,b).maxDice,2);
+  assert.equal(cap('LIGHT_BOW_INFANTRY',a,b,'RANGED').maxDice,0);
+ }
+ assert.equal(cap('HEAVY_INFANTRY','CLEAR','FORTIFIED_CITY_WALL').maxDice,0);
+});
