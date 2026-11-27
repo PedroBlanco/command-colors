@@ -2329,7 +2329,13 @@ test('scenario exit and ambush: authenticated orders, movement budget, victory a
  const y=setup();y.scenarioRules={sacredBand:[],handGrowth:[],reserve:{side:'B',units:[{id:'reserve_c',type:'MEDIUM_CAVALRY'},{id:'reserve_w1',type:'WARRIOR_INFANTRY'},{id:'reserve_w2',type:'WARRIOR_INFANTRY'}],leaderId:'reserve_l'}};
  y.cardInstances.sort((a,b)=>Number(/^ORDER_[234]_/.test(a.definitionId))-Number(/^ORDER_[234]_/.test(b.definitionId)));
  pick(y,'ORDER_2_CENTER',59);pick(y,'INSPIRED_LEFT_LEADERSHIP',55);pick(y,'LEADERSHIP_ANY_SECTION',54);
- exercise(init({...y,randomIndex:n=>n-1}),(run,get,deny)=>{
+ for(const standard of [false,true]){
+ const z=structuredClone(y);
+ if(standard){
+  z.scenarioRules.reserve.entryTerrainPolicy='STANDARD_V1';
+  z.movementTerrain=[{col:4,row:8,kind:'BROKEN_GROUND'},{col:5,row:8,kind:'FOREST'},{col:6,row:7,kind:'BUILDING'}];
+ }
+ exercise(init({...z,randomIndex:n=>n-1}),(run,get,deny)=>{
   const pass=()=>{const s=get(),card=s.hands[s.turn].find(c=>/^ORDER_[234]_/.test(c.definitionId));assert.ok(card);
    run('PLAY_SECTION_CARD',{cardInstanceId:card.instanceId});run('ASSIGN_SECTION_ORDERS',{unitIds:[],leaderIds:[]});run('END_EXPERIMENTAL_TURN');};
   pass();
@@ -2345,6 +2351,18 @@ test('scenario exit and ambush: authenticated orders, movement budget, victory a
   assert.equal(get().board.units.length,6);assert.equal(get().combatLab.movement.reserve_c.steps,1);
   assert.equal(get().scenarioRules.reserve.enteredTurn,1);
   const col=placements[0].col;
+  if(standard){
+   assert.equal(col,4);
+   assert.equal(get().combatLab.movement.reserve_c.battle,'UNAVAILABLE');
+   assert.equal(get().combatLab.movement.reserve_w1.battle,'POSSIBLE');
+   assert.equal(project(get(),'B').scenarioReserveMovableIds.includes('reserve_c'),false);
+   assert.equal(project(get(),'B').scenarioReserveMovableIds.includes('reserve_w1'),false);
+   assert.equal(project(get(),'B').scenarioReserveMovableIds.includes('reserve_w2'),true);
+   deny('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'reserve_c',path:[{col,row:7}]},'UNIT_ALREADY_MOVED');
+   deny('MOVE_SECTION_FOOT_PATH_V2',{unitId:'reserve_w2',path:[{col:6,row:7}]},'INVALID_RESERVE_CONTINUATION');
+   run('FINISH_SECTION_MOVEMENT_LAB');assert.deepEqual(project(get(),'B').scenarioReserveMovableIds,[]);
+   run('END_EXPERIMENTAL_TURN');return;
+  }
   deny('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'reserve_c',path:[{col,row:7},{col,row:6},{col,row:5}]},'INVALID_RESERVE_CONTINUATION');
   run('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'reserve_c',path:[{col,row:7},{col,row:6}]});
   assert.equal(get().combatLab.movement.reserve_c.steps,3);assert.equal(get().board.leaders.find(l=>l.id==='reserve_l').row,6);
@@ -2352,4 +2370,5 @@ test('scenario exit and ambush: authenticated orders, movement budget, victory a
   deny('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'reserve_c',path:[{col,row:5}]},'UNIT_ALREADY_MOVED');
   run('FINISH_SECTION_MOVEMENT_LAB');run('END_EXPERIMENTAL_TURN');
  });
+ }
 });

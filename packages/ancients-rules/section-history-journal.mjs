@@ -4,7 +4,7 @@
  * come from a trusted server setup, never a request. NOT an official game turn.
  */
 import {validScenarioObjectives,claimScenarioObjectives,projectScenarioObjectives} from './scenario-objectives.mjs';
-import {initializeScenarioRules,validScenarioRules,isSacredBand,applyScenarioHandGrowth,reserveEntryOptions,reserveCanContinue} from './scenario-special-rules.mjs';
+import {initializeScenarioRules,validScenarioRules,isSacredBand,applyScenarioHandGrowth,reserveEntryOptions,reserveCanContinue,reserveEntryBattle,RESERVE_ENTRY_TERRAIN_POLICY} from './scenario-special-rules.mjs';
 import {randomInt} from 'node:crypto';
 import {getBoardGeometry,LAB_BOARD_GEOMETRY,OFFICIAL_BOARD_GEOMETRY,officialSectorCells} from '../hex-grid/hex.mjs';
 import {assessAncientsTerrainDiceCap} from './terrain-dice-cap.mjs';
@@ -790,7 +790,7 @@ export function applySectionHistoryLabCommand(state,command={}){
     for(const p of placements){
       const u=available.units.find(x=>x.id===p.unitId),unit={id:u.id,side,col:p.col,row};
       next.board.units.push(unit);next.footLab.unitTypes[u.id]=u.type;next.diceLab.blocks[u.id]=BASE_UNIT_STARTING_BLOCKS[u.type];
-      next.footLab.movedUnitIds.push(u.id);next.combatLab.movement[u.id]={steps:1,battle:next.footLab.terrain.some(t=>loc(t)===loc(unit)&&t.kind==='FOREST')?'UNAVAILABLE':'POSSIBLE'};
+      next.footLab.movedUnitIds.push(u.id);next.combatLab.movement[u.id]={steps:1,battle:reserveEntryBattle(state,u.type,unit)};
       pieces.push({...unit,kind:'UNIT'});
     }
     const host=placements.find(p=>p.unitId===command.leaderUnitId);
@@ -807,6 +807,10 @@ export function applySectionHistoryLabCommand(state,command={}){
        !scenarioPath(state,piece,path,path.length+1))return reject('INVALID_RESERVE_CONTINUATION');
     const type=state.footLab.unitTypes[piece.id];
     if((command.type==='MOVE_SECTION_MOUNTED_PATH_V1')!==BASE_MOUNTED_TYPES.includes(type))return reject('INVALID_RESERVE_CONTINUATION');
+    // Entry from off board already spent a movement step. Building entry
+    // consumes the entire one-step movement, including that earlier step.
+    if(state.scenarioRules.reserve.rule.entryTerrainPolicy===RESERVE_ENTRY_TERRAIN_POLICY&&path.some(c=>isBuildingHex(state.footLab.terrain,c)))
+      return reject('INVALID_RESERVE_CONTINUATION');
     const to=path.at(-1),battle=assessBaseMovement({unitType:type,steps:path.length+1}).battle;
     const terrain=assessAncientsTerrainMovement({unitType:type,origin:piece,path,terrain:state.footLab.terrain??[],geometryId:state.scenario?.geometry});
     if(battle==='MANDATORY_CLOSE_COMBAT'&&(terrain.battleOnEntry==='UNAVAILABLE'||!combatTargets(state).some(u=>u.side!==side&&geometryOf(state).distance(u,to)===1)))return reject('WARRIOR_CHARGE_TARGET_REQUIRED');

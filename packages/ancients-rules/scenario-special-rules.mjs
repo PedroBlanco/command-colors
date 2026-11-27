@@ -1,7 +1,7 @@
 /** Declarative, versioned scenario exceptions. No scenario names or code hooks.
  * All effects are evaluated on the authoritative, replayable journal.
  */
-import {isImpassableTerrain} from './terrain-movement.mjs';
+import {isImpassableTerrain,terrainBarsBattleOnEntry,terrainStopsMovementOnEntry} from './terrain-movement.mjs';
 const SIDES=['A','B'];
 const record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&Object.getPrototypeOf(x)===Object.prototype;
 const exact=(x,keys)=>record(x)&&Object.keys(x).length===keys.length&&keys.every(k=>Object.hasOwn(x,k));
@@ -81,7 +81,10 @@ const validExitConfig=r=>exact(r,['side','sectors','banners'])&&SIDES.includes(r
 function validUnitExit(e,state){
   return exact(e,['rule','exited'])&&validExitConfig(e.rule)&&Array.isArray(e.exited)&&e.exited.length<=117&&new Set(e.exited).size===e.exited.length&&e.exited.every(id=>idOK(id)&&!state.board.units.some(u=>u.id===id)&&!state.diceLab.casualties.some(c=>c.id===id));
 }
-const validReserveConfig=r=>exact(r,['side','units','leaderId'])&&SIDES.includes(r.side)&&idOK(r.leaderId)&&Array.isArray(r.units)&&r.units.length===3&&
+export const RESERVE_ENTRY_TERRAIN_POLICY='STANDARD_V1';
+const standardReserve=r=>r?.rule?.entryTerrainPolicy===RESERVE_ENTRY_TERRAIN_POLICY;
+const validReserveConfig=r=>exact(r,['side','units','leaderId',...(Object.hasOwn(r??{},'entryTerrainPolicy')?['entryTerrainPolicy']:[])])&&
+  (!Object.hasOwn(r,'entryTerrainPolicy')||r.entryTerrainPolicy===RESERVE_ENTRY_TERRAIN_POLICY)&&SIDES.includes(r.side)&&idOK(r.leaderId)&&Array.isArray(r.units)&&r.units.length===3&&
   r.units.every(u=>exact(u,['id','type'])&&idOK(u.id)&&['MEDIUM_CAVALRY','WARRIOR_INFANTRY'].includes(u.type))&&
   r.units.filter(u=>u.type==='MEDIUM_CAVALRY').length===1&&new Set([...r.units.map(u=>u.id),r.leaderId]).size===4;
 function validReserve(r,state,turns){
@@ -101,7 +104,18 @@ export function reserveEntryOptions(state,side,sectors,geometry,leadershipSectio
   const options=SECTORS.filter(s=>leadershipSection===null||s===leadershipSection).map(section=>({section,cells:cells.filter(c=>sectors[c.col+','+c.row]?.includes(section))})).filter(o=>o.cells.length>=3);
   return options.length?{units:structuredClone(r.rule.units),leaderId:r.rule.leaderId,options}:null;
 }
+export function reserveEntryBattle(state,type,cell){
+  const kind=state.footLab.terrain.find(t=>t.col===cell.col&&t.row===cell.row)?.kind??'CLEAR';
+  const barred=standardReserve(state.scenarioRules?.reserve)?terrainBarsBattleOnEntry(type,kind):kind==='FOREST';
+  return barred?'UNAVAILABLE':'POSSIBLE';
+}
 export function reserveCanContinue(state,id){
   const r=state.scenarioRules?.reserve;
-  return !!(r&&r.enteredTurn!==null&&state.turn===r.rule.side&&state.scenarioRules.turns[state.turn]===r.enteredTurn&&r.rule.units.some(u=>u.id===id)&&state.combatLab.movement[id]?.steps===1&&!state.footLab.terrain.some(t=>['FOREST','FORDABLE_RIVER','MARSH','BUILDING'].includes(t.kind)&&state.board.units.some(u=>u.id===id&&u.col===t.col&&u.row===t.row)));
+  if(!r||r.enteredTurn===null||state.turn!==r.rule.side||state.scenarioRules.turns[state.turn]!==r.enteredTurn||
+    !r.rule.units.some(u=>u.id===id)||state.combatLab.movement[id]?.steps!==1)return false;
+  const piece=state.board.units.find(u=>u.id===id);
+  if(!piece)return false;
+  const kind=state.footLab.terrain.find(t=>t.col===piece.col&&t.row===piece.row)?.kind??'CLEAR';
+  if(standardReserve(r))return state.phase==='LAB_RESOLUTION_PENDING'&&!state.combatLab.movementClosed&&!terrainStopsMovementOnEntry(state.footLab.unitTypes[id],kind);
+  return !['FOREST','FORDABLE_RIVER','MARSH','BUILDING'].includes(kind);
 }

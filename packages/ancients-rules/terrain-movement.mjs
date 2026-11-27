@@ -21,6 +21,8 @@ const forestBattleExceptions = new Set([
   'LIGHT_INFANTRY', 'LIGHT_SLING_INFANTRY', 'LIGHT_BOW_INFANTRY',
   'AUXILIA_INFANTRY', 'WARRIOR_INFANTRY'
 ]);
+export const terrainBarsBattleOnEntry=(unitType,kind)=>(kind==='FOREST'&&!forestBattleExceptions.has(unitType))||(kind==='BROKEN_GROUND'&&mounted.has(unitType));
+export const terrainStopsMovementOnEntry=(unitType,kind)=>['FOREST','FORDABLE_RIVER','MARSH','BUILDING'].includes(kind)||(kind==='BROKEN_GROUND'&&mounted.has(unitType));
 // Side i joins polygon vertices i and (i+1)%6; indices never rotate with viewers.
 export function validRampartSides(sides){
   return Array.isArray(sides)&&[2,3].includes(sides.length)&&sides.every(i=>Number.isInteger(i)&&i>=0&&i<6)&&
@@ -107,8 +109,7 @@ export function assessAncientsTerrainMovement({unitType, origin, path, terrain =
     visited.add(hex);
   }
   const kind = index.get(key(path.at(-1))) ?? 'CLEAR';
-  const noBattle = (kind === 'FOREST' && !forestBattleExceptions.has(unitType))
-    || (kind === 'BROKEN_GROUND' && mounted.has(unitType));
+  const noBattle = terrainBarsBattleOnEntry(unitType,kind);
   return result('CANDIDATE', null, null, kind,
     noBattle ? 'UNAVAILABLE' : 'NOT_BARRED_BY_TERRAIN');
 }

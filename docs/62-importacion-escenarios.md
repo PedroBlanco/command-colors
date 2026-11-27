@@ -43,7 +43,7 @@ Ejemplo completo: [ford-example-v1.json](../scenarios/examples/ford-example-v1.j
 | objectives | lista opcional de objetos id, side, mode, cells, minUnits, banners; omitir si no hay objetivos especiales |
 | specialRules | objeto opcional con listas sacredBand y handGrowth, y campos opcionales leaderLoss, unitExit y reserve; solo excepciones implementadas |
 
-Solo se admiten campos conocidos. Se comprueba la configuración con el inicializador real del diario, incluyendo tipos, coordenadas, ocupación, líderes, sectores, cartas y objetivos. No se admiten funciones, flags de motor, cartas arbitrarias, reglas sin soporte, fuerzas iniciales reducidas ni salidas puntuables. No omitir o simular una regla especial para hacer pasar un escenario oficial como compatible.
+Solo se admiten campos conocidos. Se comprueba la configuración con el inicializador real del diario, incluyendo tipos, coordenadas, ocupación, líderes, sectores, cartas y objetivos. No se admiten funciones, flags de motor, cartas arbitrarias ni reglas sin soporte. Las salidas puntuables y reservas solo se admiten con las excepciones declarativas descritas a continuación. No omitir o simular una regla especial para hacer pasar un escenario oficial como compatible.
 
 ## Excepciones declarativas (juego base)
 
@@ -134,3 +134,7 @@ castulo-v1  1ea17a0c
 ```
 
 SHA-256 del ZIP: `2c0a5b950da6b5b8726b477e1c32d1770ca74c07364496ed542051baa95c085b`. La entrega se realiza fuera de GitHub. Todos los escenarios están preparados para importar; todavía no equivalen a escenarios certificados ni instalados. Pendientes: comprobar la inicialización de los quince archivos reales conjuntamente mediante Node/SQLite/HTTP, cotejar despliegues con el ejemplar físico, probar combinaciones de reglas y navegador, consolidar la rama. Escenarios comunitarios y expansiones posteriores emplearán el mismo formato.
+
+## Política de terreno en la entrada de reservas (consolidación)
+
+Los nuevos escenarios importados guardan `reserve.entryTerrainPolicy: "STANDARD_V1"` en su configuración inicial. Se reutilizan las reglas de terreno de la unidad: la caballería se detiene y no combate al entrar en terreno accidentado; los guerreros pueden combatir al entrar en bosque, pero no continuar el movimiento. La entrada cuenta como un paso, por lo que la continuación no permite entrar en un edificio (movimiento de un solo paso). La interfaz deja de ofrecer continuación después de cerrar movimiento. Los diarios anteriores que no tienen esta política conservan su interpretación anterior; no se reescriben. La exclusión de edificios y pantanos para el primer hexágono de entrada sigue siendo provisional. Pendiente de comprobación reglamentaria y regresión nativa.

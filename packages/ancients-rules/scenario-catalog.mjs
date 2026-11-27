@@ -5,6 +5,7 @@
  */
 import {createAncientsLoopbackSetup} from './loopback-demo-setup.mjs';
 import {initializeSectionHistoryLab} from './section-history-journal.mjs';
+import {RESERVE_ENTRY_TERRAIN_POLICY} from './scenario-special-rules.mjs';
 import {getBoardGeometry,LAB_BOARD_GEOMETRY,OFFICIAL_BOARD_GEOMETRY} from '../hex-grid/hex.mjs';
 
 export const LAB_SCENARIO_GEOMETRY=LAB_BOARD_GEOMETRY;
@@ -72,6 +73,11 @@ const fail=()=>{throw new Error('INVALID_SCENARIO_DOCUMENT');};
 
 function scenarioSetup(s){
   const piece=([id,side,col,row])=>({id,side,col,row});
+  const rules=s.specialRules?structuredClone(s.specialRules):null;
+  // The chosen entry policy is persisted in the initial journal, not inferred
+  // from today's code during replay of an already-created match.
+  if(rules?.reserve&&record(rules.reserve)&&!Object.hasOwn(rules.reserve,'entryTerrainPolicy'))
+    rules.reserve.entryTerrainPolicy=RESERVE_ENTRY_TERRAIN_POLICY;
   return {
     ...createAncientsLoopbackSetup(),
     scenario:{id:s.id,title:s.title,deckId:s.deckId,
@@ -82,7 +88,7 @@ function scenarioSetup(s){
     movementUnitTypes:Object.fromEntries(s.units.map(([id,,,,type])=>[id,type])),
     movementTerrain:structuredClone(s.terrain),sectorCells:s.sectorCells?structuredClone(s.sectorCells):sharedSectorCells(),
     ...(s.objectives?{scenarioObjectives:structuredClone(s.objectives)}:{}),
-    ...(s.specialRules?{scenarioRules:structuredClone(s.specialRules)}:{})
+    ...(rules?{scenarioRules:rules}:{})
   };
 }
 
