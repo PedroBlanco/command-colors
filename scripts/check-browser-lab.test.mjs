@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {checkLocalLab, LOCAL_TEST_FILES} from './check-browser-lab.mjs';
 import {verifyTestInventory} from './check-test-inventory.mjs';
-import {loadAncientsScenarioDirectory} from './scenario-import.mjs';
+import {loadAncientsScenarioDirectory,auditAncientsScenarioDirectory} from './scenario-import.mjs';
 
 test('diagnóstico es de solo lectura, no crea base ni directorios', async() => {
  const root=await mkdtemp(join(tmpdir(), 'ccw-preflight-'));
@@ -120,8 +120,16 @@ test('scenario directory imports validated JSON atomically and rejects invalid f
  const catalog=loadAncientsScenarioDirectory(dir);
  assert.equal(catalog.list().length,4);
  assert.equal(catalog.setup('ford-example-v1').scenario.provenance.kind,'ORIGINAL');
+ const report=auditAncientsScenarioDirectory(dir,{expectedOfficialCount:0});
+ assert.equal(report.externalCount,1);assert.equal(report.catalogCount,4);
+ assert.deepEqual(report.counts,{OFFICIAL:0,COMMUNITY:0,ORIGINAL:1});
+ assert.equal(report.scenarios[0].id,'ford-example-v1');
+ assert.equal(report.scenarios[0].bytes,example.length);
+ assert.match(report.scenarios[0].sha256,/^[a-f0-9]{64}$/);
+ assert.throws(()=>auditAncientsScenarioDirectory(dir,{expectedOfficialCount:15}),/SCENARIO_OFFICIAL_COUNT_MISMATCH/);
  await writeFile(join(dir,'bad.json'),'{');
  assert.throws(()=>loadAncientsScenarioDirectory(dir),/SCENARIO_IMPORT_FAILED bad.json/);
+ assert.throws(()=>auditAncientsScenarioDirectory(dir),/SCENARIO_IMPORT_FAILED bad.json/);
  await rm(join(dir,'bad.json'));
  await writeFile(join(dir,'duplicate.json'),example);
  assert.throws(()=>loadAncientsScenarioDirectory(dir),/DUPLICATE_SCENARIO_ID/);

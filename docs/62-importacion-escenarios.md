@@ -138,3 +138,13 @@ SHA-256 del ZIP: `2c0a5b950da6b5b8726b477e1c32d1770ca74c07364496ed542051baa95c08
 ## Política de terreno en la entrada de reservas (consolidación)
 
 Los nuevos escenarios importados guardan `reserve.entryTerrainPolicy: "STANDARD_V1"` en su configuración inicial. Se reutilizan las reglas de terreno de la unidad: la caballería se detiene y no combate al entrar en terreno accidentado; los guerreros pueden combatir al entrar en bosque, pero no continuar el movimiento. La entrada cuenta como un paso, por lo que la continuación no permite entrar en un edificio (movimiento de un solo paso). La interfaz deja de ofrecer continuación después de cerrar movimiento. Los diarios anteriores que no tienen esta política conservan su interpretación anterior; no se reescriben. La exclusión de edificios y pantanos para el primer hexágono de entrada sigue siendo provisional. Pendiente de comprobación reglamentaria y regresión nativa.
+
+## Comprobación del paquete completo antes de arrancar
+
+El mismo cargador de inicio ofrece una comprobación independiente de SQLite, sin iniciar HTTP ni instalar archivos. En PowerShell, una vez extraído el ZIP a un directorio local de confianza que contenga directamente los JSON:
+
+```powershell
+node scripts/scenario-import.mjs .local-data/scenarios --expect-official 15
+````
+
+Devuelve JSON con recuento por procedencia, número de entradas del catálogo (18 si solo se añaden los 15 oficiales), identificadores, nombre de archivo, geometría, tamaño y SHA-256 de los bytes de cada fichero. Sale con código 1 ante error de lectura, JSON, inicialización, identificador duplicado o recuento incorrecto. No modifica la base de datos ni el directorio. Un informe correcto acredita compatibilidad del lote con el inicializador, no autenticidad de las fuentes, fidelidad de despliegue ni partidas completas. La herramienta admite también paquetes comunitarios y originales; `--expect-official` es opcional.
