@@ -13,7 +13,7 @@ import {BASE_UNIT_STARTING_BLOCKS} from './block-loss-preview.mjs';
 import {screenBaseAncientsSectionCardOrders, BASE_SECTION_CARD_LIMITS, SELECTION_CARD_DEFINITIONS, GROUP_CARD_DEFINITIONS, ATTACK_CARD_DEFINITIONS, LEADERSHIP_CARD_DEFINITIONS, FIRE_CARD_DEFINITIONS, effectiveSectionCard, selectionCardOptions, screenSelectionCardOrders} from './section-card-order-screen.mjs';
 import {ANCIENTS_RULESET,assessBaseMovement} from './movement-profile.mjs';
 import {assessAncientsMovementRegime,assessOpenHexPathGeometry} from './movement-regimes.mjs';
-import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex,terrainTileShapeOK,fortificationProtects,isMarshHex,pathHasMarsh,isBuildingHex,buildingOccupantAllowed,isRetreatBlockedHex} from './terrain-movement.mjs';
+import {assessAncientsTerrainMovement,BASE_TERRAIN_TYPES,isImpassableHex,isImpassableTerrain,terrainTileShapeOK,fortificationProtects,isMarshHex,pathHasMarsh,isBuildingHex,buildingOccupantAllowed,isRetreatBlockedHex} from './terrain-movement.mjs';
 import {BASE_MOUNTED_TYPES,previewBaseMountedPath} from './base-mounted-path.mjs';
 import {precheckAncientsLeaderPath} from './leader-movement-preflight.mjs';
 import {screenAncientsCombatTurn} from './combat-turn-guard.mjs';
@@ -496,7 +496,7 @@ function screenClosePlan(state,attackerId,targetId,evadePath=undefined,battleBac
     ...(battleBack?['HEAVY_WAR_MACHINE']:[]),...(state.diceLab.version>=16?['ELEPHANT']:[]),...(state.diceLab.version>=17?['HEAVY_CHARIOT','HEAVY_WAR_MACHINE']:[]),...(loneLeader?['LEADER']:[])].includes(targetUnitType))
     return reject('CLOSE_COMBAT_SPECIAL_TARGET_PENDING');
   const terrainAt=p=>(state.footLab.terrain??[]).find(t=>loc(t)===loc(p))?.kind??'CLEAR';
-  if([terrainAt(attacker),terrainAt(target)].includes('FORTIFIED_CITY_WALL'))return reject('IMPASSABLE_TERRAIN');
+  if([terrainAt(attacker),terrainAt(target)].some(isImpassableTerrain))return reject('IMPASSABLE_TERRAIN');
   // Warriors retain their full-strength dice for the response to this attack.
   const elephantAttack=state.diceLab.version>=16&&attackerType==='ELEPHANT';
   const elephantTarget=state.diceLab.version>=16&&targetUnitType==='ELEPHANT';
