@@ -122,7 +122,7 @@ test('battle screen is about terrain only; no legal battle or movement implied',
   assert.equal(res.needsFullLegalityCheck,true);
   assert.equal(Object.isFrozen(res),true);
   assert.equal(Object.isFrozen(BASE_TERRAIN_TYPES),true);
-  assert.deepEqual(BASE_TERRAIN_TYPES,['FOREST','HILL','BROKEN_GROUND','RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE','FORTIFIED_CAMP','RAMPART','MARSH']);
+  assert.deepEqual(BASE_TERRAIN_TYPES,['FOREST','HILL','BROKEN_GROUND','RIVER','FORDABLE_RIVER','SEACOAST','BRIDGE','FORTIFIED_CAMP','RAMPART','MARSH','BUILDING','FORTIFIED_CITY_WALL']);
 });
 
 test('water terrain: impassable river/coast, ford stop and open bridge',()=>{
@@ -143,4 +143,15 @@ test('marsh entry stops movement; exit is one hex and war machines cannot enter'
  assert.equal(check('LIGHT_CAVALRY',[at(5,4)],terrain).battleOnEntry,'NOT_BARRED_BY_TERRAIN');
  assert.equal(check('HEAVY_WAR_MACHINE',[at(5,4)],terrain).reason,'WAR_MACHINE_CANNOT_ENTER_MARSH');
  assert.equal(check('LIGHT_CAVALRY',[at(6,4),at(7,4)],terrain,at(5,4)).reason,'MARSH_EXIT_ONE_HEX');
+});
+
+
+test('building entry and exit are single-step; mounted, machines and fortified walls are blocked',()=>{
+ const terrain=[tile(5,4,'BUILDING'),tile(6,4,'FORTIFIED_CITY_WALL')];
+ assert.equal(check('LIGHT_INFANTRY',[at(5,4)],terrain).status,'CANDIDATE');
+ assert.equal(check('LIGHT_INFANTRY',[at(5,4),at(6,4)],terrain).reason,'BUILDING_MOVE_ONE_HEX');
+ assert.equal(check('LIGHT_INFANTRY',[at(4,4),at(3,4)],terrain,at(5,4)).reason,'BUILDING_EXIT_ONE_HEX');
+ for(const type of ['LIGHT_CAVALRY','ELEPHANT','HEAVY_WAR_MACHINE'])
+  assert.equal(check(type,[at(5,4)],terrain).reason,'UNIT_CANNOT_ENTER_BUILDING');
+ assert.equal(check('LIGHT_INFANTRY',[at(6,4)],terrain,at(5,4)).reason,'IMPASSABLE_TERRAIN');
 });
