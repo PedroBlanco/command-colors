@@ -6,7 +6,8 @@
  */
 import {randomBytes,createHmac} from 'node:crypto';
 import {effectiveSectionCard} from './section-card-order-screen.mjs';
-import {neighbors,distance,inBounds} from '../hex-grid/hex.mjs';
+import {getBoardGeometry} from '../hex-grid/hex.mjs';
+const geometryOf=state=>getBoardGeometry(state.scenario?.geometry);
 import {assessAncientsTerrainMovement,fortificationProtects,isMarshHex,pathHasMarsh,isRetreatBlockedHex} from './terrain-movement.mjs';
 import {BASE_MOVEMENT_PROFILES} from './movement-profile.mjs';
 import {ANCIENTS_BATTLE_DIE_FACES,BASE_UNIT_DIE_SYMBOLS,captureBaseAncientsRangedDice,interpretBaseAncientsRangedDice,interpretBaseAncientsCloseDice} from './battle-dice.mjs';
@@ -100,7 +101,7 @@ export function sectionMomentumOptions(state){
     state.combatLab.plan||sectionVictory(state)?.winner)return [];
   const unit=state.board.units.find(u=>u.id===last.attackerId&&u.side===state.turn);
   const target=state.board.units.find(u=>u.id===last.targetId);
-  if(!unit||!record(m.hex)||!inBounds(m.hex)||distance(unit,m.hex)!==1||
+  if(!unit||!record(m.hex)||!geometryOf(state).inBounds(m.hex)||geometryOf(state).distance(unit,m.hex)!==1||
     (target&&hex(target)===hex(m.hex)))return [];
   const unitType=state.footLab.unitTypes[unit.id],terrain=state.footLab.terrain??[];
   if(unitType==='HEAVY_WAR_MACHINE')return [];
@@ -116,7 +117,7 @@ export function sectionMomentumOptions(state){
   if(!available(first))return [];
   const options=[];
   const add=(path,origin)=>{
-    const check=assessAncientsTerrainMovement({unitType,origin,path:[path.at(-1)],terrain});
+    const check=assessAncientsTerrainMovement({unitType,origin,path:[path.at(-1)],terrain,geometryId:state.scenario?.geometry});
     if(check.status!=='CANDIDATE')return;
     const joined=state.board.leaders.some(l=>l.side===unit.side&&l.id!==attached?.id&&hex(l)===hex(path.at(-1)));
     const bonusEligible=last.attackKind!=='BONUS_CLOSE'&&check.battleOnEntry!=='UNAVAILABLE'&&
@@ -126,7 +127,7 @@ export function sectionMomentumOptions(state){
   add([first],unit);
   if(last.attackKind!=='BONUS_CLOSE'&&options.length&&momentumCavalry.has(unitType)&&!['FORDABLE_RIVER','MARSH'].includes(terrainAt(unit))&&!['FOREST','BROKEN_GROUND','FORDABLE_RIVER','MARSH'].includes(terrainAt(first))&&
     !state.board.leaders.some(l=>l.id!==attached?.id&&hex(l)===hex(first))){
-    for(const cell of neighbors(first))if(available(cell))add([first,{col:cell.col,row:cell.row}],first);
+    for(const cell of geometryOf(state).neighbors(first))if(available(cell))add([first,{col:cell.col,row:cell.row}],first);
   }
   return options;
 }
@@ -230,7 +231,7 @@ function moralePreview(state){
      (p.loss.leaderCasualtyCheck&&!d.leaderCheck))return null;
   const target=state.board.units.find(u=>u.id===state.combatLab.plan.targetId);
   const type=state.footLab.unitTypes[target.id];
-  const supportHexes=neighbors(target).filter(c=>
+  const supportHexes=geometryOf(state).neighbors(target).filter(c=>
     [...state.board.units,...state.board.leaders].some(x=>x.side===target.side&&hex(x)===hex(c)));
   const elephant=type==='ELEPHANT';
   const attachedLeader=!elephant&&p.loss.leaderAttached&&!d.leaderCheck?.outcome.leaderWouldBeEliminated;
@@ -238,7 +239,7 @@ function moralePreview(state){
   // Full strength at the beginning of this combat, not after its direct hits.
   const fullWarrior=type==='WARRIOR_INFANTRY'&&p.loss.originalBlocks===BASE_UNIT_STARTING_BLOCKS[type];
   const bridgeDefense=!['LIGHT_CAVALRY','MEDIUM_CAVALRY','HEAVY_CAVALRY','ELEPHANT','HEAVY_CHARIOT'].includes(type)&&state.footLab.terrain?.some(t=>t.kind==='BRIDGE'&&hex(t)===hex(target));
-  const fortificationDefense=fortificationProtects(state.footLab.terrain??[],state.board.units.find(u=>u.id===state.combatLab.plan.attackerId),target,type);
+  const fortificationDefense=fortificationProtects(state.footLab.terrain??[],state.board.units.find(u=>u.id===state.combatLab.plan.attackerId),target,type,state.scenario?.geometry);
   const capacity=Number(attachedLeader)+Number(supported)+Number(fullWarrior)+Number(!!state.combatLab.plan.elephantMountedDefense)+Number(!!bridgeDefense)+Number(fortificationDefense);
   const flags=p.loss.effectiveFlagsPending;
   return {flags,attachedLeader,supported,fullWarrior,supportHexes,...(bridgeDefense?{bridgeDefense:true}:{}),...(fortificationDefense?{fortificationDefense:true}:{}),
@@ -307,8 +308,7 @@ function leaderEvasionOptions(state){
 function escapeRoutes(state,leader,origin=leader){
   const d=state.diceLab;
   const options=[],rear=leader.side==='A'?8:0,sign=leader.side==='A'?1:-1;
-  // Physical vertical coordinate of the existing flat-top board.
-  const depth=c=>2*c.row+(c.col&1);
+  const {depth,neighbors}=geometryOf(state);
   function visit(cell,path,risks=[]){
     const occupiedLeader=state.board.leaders.some(l=>l.id!==leader.id&&hex(l)===hex(cell));
     const enemyUnit=state.board.units.some(u=>u.side!==leader.side&&hex(u)===hex(cell));
@@ -357,10 +357,11 @@ function elephantContext(state){
      p.loss.unitType!=='ELEPHANT'||unsupported(state,p)!=='RETREAT_PENDING')return null;
   const target=state.board.units.find(u=>u.id===state.combatLab.plan.targetId);
   const required=p.loss.effectiveFlagsPending-(d.morale?.ignored??0);
+  const {depth,neighbors}=geometryOf(state);
   const adjacent=neighbors(target),keys=new Set(adjacent.map(hex));
   const units=state.board.units.filter(u=>keys.has(hex(u)));
   if(d.version>=8)units.push(...state.board.leaders.filter(l=>keys.has(hex(l))&&!state.board.units.some(u=>hex(u)===hex(l))).map(l=>({...l,loneLeader:true})));
-  const sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0,depth=c=>2*c.row+(c.col&1);
+  const sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
   const rearward=c=>c.row===rear?[]:neighbors(c).filter(n=>sign*(depth(n)-depth(c))>0&&!isRetreatBlockedHex(state.footLab.terrain??[],n));
   // Include every possible retreat/blocker hex, even if rampage opens a path.
   const affected=new Set([hex(target),...keys]);
@@ -567,7 +568,7 @@ function retreatPreview(state){
   const occupied=new Set(state.board.units.map(hex));
   const leaders=new Map(state.board.leaders.filter(l=>l.id!==d.leaderCheck?.leaderId||
     !d.leaderCheck.outcome.leaderWouldBeEliminated).map(l=>[hex(l),l]));
-  const depth=c=>2*c.row+(c.col&1),sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
+  const {depth,neighbors}=geometryOf(state),sign=target.side==='A'?1:-1,rear=target.side==='A'?8:0;
   const terminals=[];
   let frontier=new Map([[hex(target),{cell:target,path:[]}]]);
   for(let steps=0;steps<=required&&frontier.size;steps++){
@@ -838,7 +839,7 @@ export function assertSectionDiceLab(state){
     const rolling=state.phase==='ASSIGN_ORDERS'&&effectiveSectionCard(state)==='I_AM_SPARTACUS';
     if(rolling?(!Array.isArray(d.spartacusFaces)||d.spartacusFaces.length!==state.handAtPlay.cards.length||d.spartacusFaces.some(f=>!ANCIENTS_BATTLE_DIE_FACES.includes(f))):d.spartacusFaces!==null)fail();
   }
-  if(d.version>=32&&d.marshLast!==null&&(!Array.isArray(d.marshLast)||d.marshLast.length<1||d.marshLast.length>10||d.marshLast.some(c=>!record(c)||!record(c.cell)||!inBounds(c.cell)||!ANCIENTS_BATTLE_DIE_FACES.includes(c.face))))fail();
+  if(d.version>=32&&d.marshLast!==null&&(!Array.isArray(d.marshLast)||d.marshLast.length<1||d.marshLast.length>10||d.marshLast.some(c=>!record(c)||!record(c.cell)||!geometryOf(state).inBounds(c.cell)||!ANCIENTS_BATTLE_DIE_FACES.includes(c.face))))fail();
   if(d.version>=32&&d.marshPending!==null&&(!record(d.marshPending)||Object.keys(d.marshPending).length!==1||
     !state.board.leaders.some(l=>l.id===d.marshPending.leaderId&&!state.board.units.some(u=>hex(u)===hex(l)))||d.pending||state.combatLab.plan||state.phase!=='LAB_RESOLUTION_PENDING'))fail();
   if(d.last?.momentum?.pending&&!sectionMomentumOptions(state).length)fail();
@@ -1191,7 +1192,7 @@ export function applySectionDiceCommand(state,next,command){
       }
       // The response ends the exchange: no recursive Battle Back or evasion.
       result.battleBackPending=!!(!plan.battleBack&&!d.firstStrike?.suppress&&finalize&&!plan.evadePath?.length&&defender&&hex(defender)===hex(original)&&
-        (d.version<16||next.board.units.some(u=>u.id===plan.attackerId&&distance(u,defender)===1)));
+        (d.version<16||next.board.units.some(u=>u.id===plan.attackerId&&geometryOf(next).distance(u,defender)===1)));
       if(d.version>=12&&plan.evadePath?.length){
         const escaped=d.version>=17&&plan.targetUnitType==='HEAVY_WAR_MACHINE'&&finalize&&!p.loss.unitWouldBeEliminated;
         result.unitEvasion={path:structuredClone(plan.evadePath),applied:finalize&&(!!defender||escaped),...(escaped?{crewEscaped:true}:{})};
