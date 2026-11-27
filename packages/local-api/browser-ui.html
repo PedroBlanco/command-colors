@@ -123,13 +123,14 @@ Puedes usar también Tabulador y Entrar. Las unidades propias sin mover aparecen
 <p class="notice">Sin reglas oficiales: el servidor valida unidades ordenadas, recorrido y límites de la partida.</p>
 </details></section>
 <section id="ancients-section"><details id="ancients-details">
-<summary>Ancients — laboratorio reglado de movimientos (opcional)</summary>
-<p class="notice">Demo experimental en este ordenador. No es un escenario oficial ni implementa el combate completo; no utiliza cartas licenciadas. Debe habilitarse expresamente al iniciar el servidor.</p>
+<summary>Ancients — laboratorio de juego (opcional)</summary>
+<p class="notice">Laboratorio experimental en este ordenador. Admite escenarios originales e importados; las reglas y la integración todavía no están certificadas. No distribuye cartas ni ilustraciones licenciadas. Debe habilitarse expresamente al iniciar el servidor.</p>
 <label id="ancients-scenario-label" hidden>Escenario <select id="ancients-scenario"></select></label>
 <button id="ancients-start" type="button" disabled>Inicializar partida de Ancients</button>
 <button id="ancients-refresh" type="button" disabled>Actualizar demo</button>
 <p id="ancients-status" role="status" aria-live="polite">No se ha iniciado el laboratorio.</p>
 <div id="ancients-controls" hidden>
+<p id="ancients-next-action" role="status" aria-live="polite" style="font-weight:700"></p>
 <p id="ancients-banners" role="status" aria-live="polite"></p>
 <p id="ancients-objectives" role="status" aria-live="polite"></p>
 <label>Carta de mando propia<select id="ancients-card"></select></label>

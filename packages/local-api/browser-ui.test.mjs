@@ -496,6 +496,20 @@ test('browser: ranged plan uses server candidates, locks movement and displays d
  ctx.element('ancients-units').children.find(x=>x.value==='unitA').selected=true;
  await ctx.element('ancients-order').dispatch('click');
  assert.equal(ctx.element('ancients-finish-movement').disabled,false);
+ // A leader surviving a marsh loss must be able to evade before movement closes.
+ ctx.state.labDice={marshPending:{leaderId:'leaderA'},blocker:'LEADER_EVASION_PENDING',canEvadeLeader:true,
+   leaderEvasionAvailable:true,leaderEvasionOptions:[{path:[{col:2,row:8}],exit:false,risks:[]}]};
+ await ctx.element('ancients-refresh').dispatch('click');
+ assert.equal(ctx.element('ancients-combat').hidden,false);
+ assert.equal(ctx.element('ancients-dice-controls').hidden,false);
+ assert.equal(ctx.element('ancients-evade-leader').disabled,false);
+ assert.equal(ctx.element('ancients-finish-movement').disabled,true);
+ assert.equal(ctx.element('ancients-move').disabled,true);
+ assert.equal(ctx.element('ancients-end').disabled,true);
+ assert.match(ctx.element('ancients-next-action').textContent,/Tu acción.*marisma/);
+ ctx.state.labDice=null;
+ await ctx.element('ancients-refresh').dispatch('click');
+ assert.equal(ctx.element('ancients-combat').hidden,true);
  await ctx.element('ancients-finish-movement').dispatch('click');
  assert.equal(ctx.element('ancients-combat').hidden,false);
  assert.equal(ctx.element('ancients-move').disabled,true);
