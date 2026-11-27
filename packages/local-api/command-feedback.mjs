@@ -45,6 +45,7 @@ const explanations=Object.freeze({
   MARSH_LEADER_EVASION_PENDING:'Debe resolverse la evasión del líder que ha perdido su unidad en la marisma.',
   MARSH_COMPLEX_RETREAT_PENDING:'Esta retirada por marisma requiere una combinación de efectos aún no implementada.',
   NO_COMBAT_DICE:'Los modificadores dejan este ataque sin dados disponibles.',
+  UNKNOWN_SECTION_SCENARIO:'El escenario solicitado no está disponible en el servidor.',
   BUILDING_EXIT_ONE_HEX:'Al salir de un edificio solo se permite un hexágono.',
   BUILDING_MOVE_ONE_HEX:'Para entrar en un edificio hay que comenzar el movimiento en un hexágono adyacente.',
   UNIT_CANNOT_ENTER_BUILDING:'La tropa montada y las máquinas de guerra no pueden entrar en edificios.',
