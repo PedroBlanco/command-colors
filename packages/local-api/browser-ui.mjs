@@ -175,7 +175,7 @@ function renderAncients() {
   const available=Array.isArray(cached?.ancientsScenarios)?cached.ancientsScenarios:[];
   const scenarioSelect=el('ancients-scenario'),selectedScenario=scenarioSelect.value;
   scenarioSelect.replaceChildren();
-  for(const entry of available){const option=document.createElement('option');option.value=entry.id;option.textContent=entry.title;scenarioSelect.appendChild(option);}
+  for(const entry of available){const option=document.createElement('option');option.value=entry.id;option.textContent=entry.title+(entry.provenance?.kind==='OFFICIAL'?' — oficial':entry.provenance?.kind==='COMMUNITY'?' — comunidad':entry.provenance?.kind==='ORIGINAL'?' — original':'');scenarioSelect.appendChild(option);}
   if(available.some(e=>e.id===selectedScenario))scenarioSelect.value=selectedScenario;
   el('ancients-scenario-label').hidden=el('ancients-start').disabled||!available.length;
   el('ancients-refresh').disabled=!ready;
@@ -201,7 +201,7 @@ function renderAncients() {
   el('ancients-status').textContent=
     finished?`Partida terminada · ${victory.winner==='DRAW'?'Empate':victory.winner===cached.you?'Victoria':'Derrota'} · revisión ${cached.revision}`:
     cached.historyLimitReached?'Límite de comandos del laboratorio alcanzado. Consulta disponible; partida sin resolución.':
-    `${cached.scenario?.title??'Ancients experimental'} · ${cached.phase} · turno ${cached.turn} · revisión ${cached.revision}`;
+    `${cached.scenario?.title??'Ancients experimental'} · ${cached.phase} · turno ${cached.scenario?.factions?.[cached.turn]??cached.turn} · revisión ${cached.revision}`;
   const terrainNames={FOREST:'bosque',HILL:'colina',
     BROKEN_GROUND:'terreno accidentado',RIVER:'río infranqueable',FORDABLE_RIVER:'río vadeable',SEACOAST:'costa',BRIDGE:'puente',FORTIFIED_CAMP:'campamento fortificado',RAMPART:'empalizada',MARSH:'marisma',BUILDING:'edificio',FORTIFIED_CITY_WALL:'muralla infranqueable'};
   el('ancients-terrain-info').textContent='Terreno del escenario: '+
