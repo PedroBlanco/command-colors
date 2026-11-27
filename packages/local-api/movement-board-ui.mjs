@@ -50,7 +50,9 @@ const TERRAIN_LABELS=Object.freeze({
   RAMPART:['E','empalizada','terrain-rampart'],
   MARSH:['M','marisma','terrain-marsh'],
   BUILDING:['ED','edificio','terrain-camp'],
-  FORTIFIED_CITY_WALL:['MU','muralla infranqueable','terrain-rampart']
+  FORTIFIED_CITY_WALL:['MU','muralla infranqueable','terrain-rampart'],
+  LAKE:['LA','lago infranqueable','terrain-coast'],
+  STEEP_HILL:['CE','colina escarpada infranqueable','terrain-steep-hill']
 });
 
 function svgNode(doc, name, attrs = {}) {
