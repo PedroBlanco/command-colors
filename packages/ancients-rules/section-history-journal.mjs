@@ -930,6 +930,7 @@ export function applySectionHistoryLabCommand(state,command={}){
        state.leaderLab.joinedUnitIds.includes(piece.id)||
        (attached&&state.leaderLab.movedLeaderIds.includes(attached.id))))
       return reject('UNIT_LOCKED_BY_LEADER_MOVE');
+    if(!Array.isArray(command.path))return reject('INVALID_MOUNTED_PATH');
     if(state.leaderLab){
       const ending=command.path.at(-1);
       if(ending&&state.board.leaders.some(l=>l.col===ending.col&&
@@ -1237,7 +1238,8 @@ export function projectSectionHistoryLab(state,side){
     phase:state.phase, yourHand:copy(state.hands[side]),
     ...(state.scenario?{scenario:copy(state.scenario)}:{}),
     ...(state.victoryObjectives?{victoryObjectives:projectScenarioObjectives(state)}:{}),
-    ...(state.scenarioRules?.unitExit?{scenarioUnitExit:copy(state.scenarioRules.unitExit)}:{}),
+    ...(state.scenarioRules?.unitExit?{scenarioUnitExit:copy(state.scenarioRules.unitExit),
+      scenarioExitCells:geometryOf(state).allCells().filter(c=>exitRule(state,state.scenarioRules.unitExit.rule.side,c))}:{}),
     ...(ambushOptions(state,side)?{scenarioReserveOptions:ambushOptions(state,side)}:{}),
     ...(state.scenarioRules?.reserve?{scenarioReserveMovableIds:state.board.units.filter(u=>u.side===side&&reserveCanContinue(state,u.id)).map(u=>u.id)}:{}),
     ...(state.scenarioRules?.leaderLoss?{scenarioLeaderLoss:copy(state.scenarioRules.leaderLoss)}:{}),

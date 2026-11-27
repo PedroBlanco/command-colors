@@ -310,7 +310,11 @@ function renderAncients() {
   const exitButton=el('ancients-exit-unit');
   if(exitButton){const rule=cached.scenarioUnitExit?.rule,end=ancientsDraft?.path.at(-1)??ancientsDraft?.origin;
     exitButton.hidden=rule?.side!==cached.you;
-    exitButton.disabled=!isTurn||movementClosed||noMove||cached.phase!=='LAB_RESOLUTION_PENDING'||!ancientsDraft||ancientsDraft.kind==='LEADER'||end?.row!==(cached.you==='A'?0:8);
+    const authorized=Array.isArray(cached.scenarioExitCells)
+      ?cached.scenarioExitCells.some(c=>c.col===end?.col&&c.row===end?.row)
+      :end?.row===(cached.you==='A'?0:8);
+    exitButton.disabled=!isTurn||movementClosed||noMove||cached.phase!=='LAB_RESOLUTION_PENDING'||!ancientsDraft||ancientsDraft.kind==='LEADER'||!authorized;
+    exitButton.textContent='Salir por borde enemigo (+'+(rule?.banners??1)+' med.)';
   }
   el('ancients-end').disabled=!isTurn||cached.phase!=='LAB_RESOLUTION_PENDING'||Boolean(combat?.plan)||!!cached.diceLab?.battleBackPending||!!cached.diceLab?.momentumPending||!!cached.diceLab?.bonusClosePending||!!combat?.pendingWarriorCharges?.length||!!cached.diceLab?.marshPending;
   el('ancients-finish-movement').hidden=!combat;
@@ -1017,10 +1021,17 @@ if(el('ancients-reserve-deploy'))action('ancients-reserve-deploy',()=>{
   const reserve=cached?.scenarioReserveOptions,section=el('ancients-reserve-section').value;
   const raw=el('ancients-reserve-columns').value.trim().split(',').map(x=>x.trim());
   if(!reserve||raw.length!==3||raw.some(x=>!/^\d{1,2}$/.test(x)))throw Error('INVALID_SCENARIO_RESERVE');
-  return sendAncients('DEPLOY_SCENARIO_RESERVE',{section,placements:reserve.units.map((u,i)=>({unitId:u.id,col:Number(raw[i])-1})),leaderUnitId:el('ancients-reserve-leader').value});
+  const columns=raw.map(x=>Number(x)-1),option=reserve.options.find(o=>o.section===section);
+  const leaderUnitId=el('ancients-reserve-leader').value;
+  if(!option||new Set(columns).size!==3||columns.some(col=>!option.cells.some(c=>c.col===col))||
+     !reserve.units.some(u=>u.id===leaderUnitId))throw Error('INVALID_SCENARIO_RESERVE');
+  return sendAncients('DEPLOY_SCENARIO_RESERVE',{section,placements:reserve.units.map((u,i)=>({unitId:u.id,col:columns[i]})),leaderUnitId});
 });
 if(el('ancients-exit-unit'))action('ancients-exit-unit',()=>{
   if(!ancientsDraft||ancientsDraft.kind==='LEADER'||ancientsDraft.revision!==cached?.revision)throw Error('BORRADOR_DESACTUALIZADO');
+  const end=ancientsDraft.path.at(-1)??ancientsDraft.origin;
+  if(cached.scenarioUnitExit?.rule.side!==cached.you||
+     (Array.isArray(cached.scenarioExitCells)&&!cached.scenarioExitCells.some(c=>c.col===end.col&&c.row===end.row)))throw Error('INVALID_SCENARIO_EXIT');
   return sendAncients('EXIT_SCENARIO_UNIT',{unitId:ancientsDraft.unitId,path:ancientsDraft.path.map(p=>({col:p.col,row:p.row}))});
 });
 action('ancients-select-leader',async()=>{

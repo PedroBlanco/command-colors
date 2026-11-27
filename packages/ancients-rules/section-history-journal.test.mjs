@@ -2320,6 +2320,12 @@ test('scenario exit and ambush: authenticated orders, movement budget, victory a
  pick(x,'ORDER_MOUNTED_TROOPS',59);
  exercise(init({...x,randomIndex:n=>n-1}),(run,get,deny)=>{
   run('PLAY_SECTION_CARD',{cardInstanceId:get().hands.A[0].instanceId});run('ASSIGN_SECTION_ORDERS',{unitIds:['a1'],leaderIds:[]});
+  const exitCells=project(get(),'A').scenarioExitCells;
+  assert.ok(exitCells.some(c=>c.col===5&&c.row===0));
+  assert.ok(!exitCells.some(c=>c.col===1&&c.row===0));
+  assert.deepEqual(project(get(),'B').scenarioExitCells,exitCells);
+  for(const path of [null,{},'5,0',42])
+   deny('MOVE_SECTION_MOUNTED_PATH_V1',{unitId:'a1',path},'INVALID_MOUNTED_PATH');
   deny('EXIT_SCENARIO_UNIT',{unitId:'a2',path:[]},'INVALID_SCENARIO_EXIT');
   deny('EXIT_SCENARIO_UNIT',{unitId:'a1',path:[]},'INVALID_SCENARIO_EXIT');
   deny('EXIT_SCENARIO_UNIT',{unitId:'a1',path:[{col:12,row:0}]},'INVALID_SCENARIO_EXIT');

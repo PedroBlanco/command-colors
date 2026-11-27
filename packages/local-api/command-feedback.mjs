@@ -6,6 +6,7 @@
 const explanations=Object.freeze({
   INVALID_SCENARIO_RESERVE:'Los tres refuerzos deben entrar en hexágonos libres distintos del sector elegido, después del primer turno de su ejército.',
   INVALID_RESERVE_CONTINUATION:'La ruta de los refuerzos excede el movimiento restante o está bloqueada.',
+  INVALID_MOUNTED_PATH:'La trayectoria de la unidad montada no es válida.',
   INVALID_SCENARIO_EXIT:'La unidad debe estar ordenada, tener movimiento restante y salir por un sector autorizado del borde enemigo.',
   ACCION_NO_DISPONIBLE:'Esta acción no está disponible en la fase actual.',
   CARTA_NO_PROPIA:'Esa carta no está disponible en tu mano.',
